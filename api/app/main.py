@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -11,6 +13,13 @@ from .repositories import CanvasRepository
 from .routes import assets, canvases, events
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.settings.data_dir.mkdir(parents=True, exist_ok=True)
+    app.state.database.init_schema()
+    yield
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -21,7 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     command_service = CanvasCommandService(repository, event_store)
     asset_service = AssetService(settings, database, repository)
 
-    app = FastAPI(title="Infinite Media Canvas")
+    app = FastAPI(title="Infinite Media Canvas", lifespan=lifespan)
     app.state.settings = settings
     app.state.database = database
     app.state.canvas_repository = repository

@@ -2,11 +2,16 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  set -a
+  source "$ROOT_DIR/.env"
+  set +a
+fi
 API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-5173}"
 
 cleanup() {
-  kill "${API_PID:-}" "${WEB_PID:-}" 2>/dev/null || true
+  kill "${API_PID:-}" "${WORKER_PID:-}" "${WEB_PID:-}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -17,9 +22,15 @@ trap cleanup EXIT INT TERM
 API_PID=$!
 
 (
+  cd "$ROOT_DIR"
+  exec python -m api.app.worker
+) &
+WORKER_PID=$!
+
+(
   cd "$ROOT_DIR/web"
   exec npm run dev -- --host 127.0.0.1 --port "$WEB_PORT"
 ) &
 WEB_PID=$!
 
-wait -n "$API_PID" "$WEB_PID"
+wait -n "$API_PID" "$WORKER_PID" "$WEB_PID"

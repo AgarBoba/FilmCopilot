@@ -1,6 +1,7 @@
 from copy import copy
 import json
 from pathlib import Path
+import signal
 import time
 from typing import Any
 from urllib.parse import urlparse
@@ -156,3 +157,35 @@ class Worker:
             if error:
                 payload['error'] = error
             self.events.append(job['canvas_id'], revision, f'generation.{status}', payload)
+
+
+def main() -> None:
+    from .config import Settings
+    from .db import Database
+    from .providers.replicate import ReplicateProvider
+
+    settings = Settings.from_env()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    database = Database(settings.database_path)
+    database.init_schema()
+    repository = CanvasRepository(database)
+    worker = Worker(
+        repository,
+        ReplicateProvider(settings.replicate_api_token),
+        settings.data_dir,
+    )
+    running = True
+
+    def stop(*_args: Any) -> None:
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+    while running:
+        if not worker.run_once():
+            time.sleep(1)
+
+
+if __name__ == '__main__':
+    main()
