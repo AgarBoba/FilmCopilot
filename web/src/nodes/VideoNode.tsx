@@ -1,7 +1,10 @@
 import { useRef } from 'react';
 import { Position } from '@xyflow/react';
 
+import type { VideoGenerationParameters } from '../domain/types';
 import { NodeHandle } from './NodeHandles';
+import { getDefaultVideoParameters } from './generationParameters';
+import { PromptComposer } from './PromptComposer';
 
 
 export interface VideoNodeData {
@@ -12,6 +15,12 @@ export interface VideoNodeData {
   pause?: () => void;
   onUpload?: () => void;
   onGenerate?: () => void;
+  prompt?: string;
+  parameters?: VideoGenerationParameters;
+  generationStatus?: string;
+  onPromptChange?: (prompt: string) => void;
+  onParametersChange?: (parameters: VideoGenerationParameters) => void;
+  onGenerateRequest?: (request: { prompt: string; parameters: VideoGenerationParameters }) => void;
   [key: string]: unknown;
 }
 
@@ -68,12 +77,18 @@ export function VideoNode({ data }: VideoNodeProps) {
           <span>上传视频或连接参考素材</span>
         )}
       </div>
+      <PromptComposer
+        kind="video"
+        prompt={data.prompt ?? ''}
+        parameters={data.parameters ?? getDefaultVideoParameters()}
+        onPromptChange={(prompt) => data.onPromptChange?.(prompt)}
+        onParametersChange={(parameters) => data.onParametersChange?.(parameters as VideoGenerationParameters)}
+        onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: VideoGenerationParameters })}
+        disabled={data.generationStatus === 'queued' || data.generationStatus === 'running'}
+      />
       <div className="node-actions">
         <button type="button" onClick={(event) => { event.stopPropagation(); data.onUpload?.(); }}>
           上传
-        </button>
-        <button type="button" onClick={(event) => { event.stopPropagation(); data.onGenerate?.(); }}>
-          生成
         </button>
       </div>
     </div>

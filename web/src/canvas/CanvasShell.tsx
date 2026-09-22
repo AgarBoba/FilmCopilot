@@ -16,7 +16,12 @@ import {
 
 import { canConnect } from '../domain/connectionRules';
 import { api } from '../api/client';
-import type { CanvasNodeData, NodeType } from '../domain/types';
+import type {
+  CanvasNodeData,
+  ImageGenerationParameters,
+  NodeType,
+  VideoGenerationParameters,
+} from '../domain/types';
 import { ImageNode } from '../nodes/ImageNode';
 import { NoteNode } from '../nodes/NoteNode';
 import { VideoNode } from '../nodes/VideoNode';
@@ -71,15 +76,32 @@ export function CanvasShell() {
       .filter((edge) => edge.target === nodeId)
       .map((edge) => assetUrl(edge.source))
       .filter((url): url is string => Boolean(url));
+    const generationFor = (nodeId: string) => snapshot.jobs?.find((job) => (
+      job.targetNodeId === nodeId || job.target_node_id === nodeId
+    ));
     setNodes(flow.nodes.map((node) => ({
       ...node,
+      selected: node.id === selectedNodeId,
       data: {
         ...node.data,
         assetUrl: assetUrl(node.id),
         references: referencesFor(node.id),
+        generationStatus: generationFor(node.id)?.status,
         onUpload: () => {
           uploadTargetRef.current = node.id;
           fileInputRef.current?.click();
+        },
+        onPromptChange: (prompt: string) => {
+          void persistNodeData(node.id, { prompt });
+        },
+        onParametersChange: (parameters: ImageGenerationParameters | VideoGenerationParameters) => {
+          void persistNodeData(node.id, { parameters });
+        },
+        onGenerateRequest: (request: {
+          prompt: string;
+          parameters: ImageGenerationParameters | VideoGenerationParameters;
+        }) => {
+          void startGeneration(node.id, request);
         },
       },
     })));
@@ -109,6 +131,34 @@ export function CanvasShell() {
       baseRevision: snapshot.revision,
       idempotencyKey: commandKey('create-node'),
       payload: { nodeType, x: offset, y: offset },
+    });
+  }
+
+  async function persistNodeData(nodeId: string, data: Record<string, unknown>) {
+    const current = useCanvasStore.getState().snapshot;
+    if (!current) return;
+    await execute({
+      command: 'update_node',
+      baseRevision: current.revision,
+      idempotencyKey: commandKey('update-node-data'),
+      payload: { nodeId, data },
+    });
+  }
+
+  async function startGeneration(
+    nodeId: string,
+    request: {
+      prompt: string;
+      parameters: ImageGenerationParameters | VideoGenerationParameters;
+    },
+  ) {
+    const current = useCanvasStore.getState().snapshot;
+    if (!current) return;
+    await execute({
+      command: 'start_generation',
+      baseRevision: current.revision,
+      idempotencyKey: commandKey('start-generation'),
+      payload: { targetNodeId: nodeId, prompt: request.prompt, parameters: request.parameters },
     });
   }
 

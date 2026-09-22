@@ -126,7 +126,9 @@ class CanvasCommandService:
         return {'nodeId': node_id, 'assetId': asset_id}
 
     def _start_generation(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        node_id = self._required(payload, 'nodeId')
+        node_id = str(payload.get('nodeId') or payload.get('targetNodeId') or '')
+        if not node_id:
+            raise DomainError('INVALID_PAYLOAD', 'Missing payload field: targetNodeId')
         node_type = self.repository.node_type(canvas_id, node_id)
         if node_type not in {'image', 'video'}:
             raise DomainError('INVALID_NODE_TYPE', 'Only image and video nodes can generate media')

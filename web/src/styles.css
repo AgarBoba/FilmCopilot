@@ -307,6 +307,77 @@ h1 {
   background: var(--accent);
 }
 
+.prompt-composer {
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.prompt-composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.prompt-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.prompt-options label {
+  display: grid;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.prompt-options select {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
+  border-radius: 6px;
+  padding: 4px;
+  color: var(--text-primary);
+  background: var(--node-bg);
+  font-size: 10px;
+}
+
+.prompt-options .checkbox-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  align-self: end;
+  padding-bottom: 5px;
+}
+
+.prompt-composer > button {
+  width: 100%;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px;
+  color: white;
+  background: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.prompt-composer > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .note-node {
   resize: both;
   overflow: auto;

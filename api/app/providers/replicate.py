@@ -50,7 +50,11 @@ def map_seedream_input(job_snapshot: dict[str, Any]) -> ImageGenerationInput:
         image_inputs=[_reference_path(reference) for reference in references[:10]],
         size=parameters.get('size', '2K'),
         aspect_ratio=parameters.get('aspectRatio', parameters.get('aspect_ratio', 'match_input_image')),
-        output_format=parameters.get('outputFormat', parameters.get('output_format', 'png')),
+        output_format=(
+            'jpg'
+            if parameters.get('outputFormat', parameters.get('output_format', 'png')) == 'jpeg'
+            else parameters.get('outputFormat', parameters.get('output_format', 'png'))
+        ),
         warnings=warnings,
     )
 

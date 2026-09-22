@@ -16,15 +16,13 @@ export interface AssetSummary {
 }
 
 export interface ImageGenerationParameters {
-  kind: 'image';
   size: '1K' | '2K';
   aspectRatio: string;
-  outputFormat: 'jpg' | 'png' | 'webp';
+  outputFormat: 'png' | 'jpeg';
 }
 
 export interface VideoGenerationParameters {
-  kind: 'video';
-  durationSeconds: number;
+  duration: number;
   resolution: '480p' | '720p';
   aspectRatio: string;
   generateAudio: boolean;
@@ -35,7 +33,7 @@ export type GenerationParameters =
   | VideoGenerationParameters;
 
 export interface GenerationState {
-  status: 'idle' | 'queued' | 'running' | 'completed' | 'failed';
+  status: 'idle' | 'queued' | 'running' | 'succeeded' | 'failed' | 'completed_unattached';
   jobId?: string;
   error?: string;
 }
