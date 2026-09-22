@@ -1,0 +1,8 @@
+.worktrees/
+data/*.sqlite3
+data/assets/
+api/.pytest_cache/
+api/**/*.pyc
+web/node_modules/
+web/dist/
+.DS_Store
