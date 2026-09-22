@@ -52,5 +52,18 @@ class CanvasEvent(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class AssetRecord(BaseModel):
+    id: str
+    canvasId: str | None = None
+    kind: Literal['image', 'video']
+    path: str
+    originalName: str
+    mimeType: str
+    width: int | None = None
+    height: int | None = None
+    durationSeconds: float | None = None
+    checksum: str
+
+
 class CreateCanvasRequest(BaseModel):
     name: str = 'Untitled canvas'
