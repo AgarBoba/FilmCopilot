@@ -17,7 +17,7 @@
 - 画布和生成任务都通过本地服务持久化。
 - 后续 Agent 通过结构化画布命令接入，不直接操作前端 DOM 或数据库。
 
-第一版不包含多人协作、账号权限、评论、复杂富文本、模型自动路由、完整模型参数面板、节点分类颜色和自定义 RGB/HEX 颜色。
+第一版不包含多人协作、账号权限、评论、复杂富文本、模型自动路由、独立的复杂模型参数面板、节点分类颜色和自定义 RGB/HEX 颜色。
 
 ## 2. 技术选型
 
@@ -113,8 +113,8 @@ updated_at: timestamp
 
 `content_json` 按节点类型保存业务内容：
 
-- 图片：提示词、生成设置和当前错误信息。
-- 视频：提示词、生成设置和当前错误信息。
+- 图片：提示词、Prompt 输入区内的生成参数和当前错误信息。
+- 视频：提示词、Prompt 输入区内的生成参数和当前错误信息。
 - 便签：纯文本、字体、字号。
 
 便签第一版不参与参考素材连线。它的文本可以在目标节点的生成面板中被手动复制或作为后续 Agent 命令的输入，但不会被当作图片或视频参考素材。
@@ -165,6 +165,7 @@ base_canvas_revision: integer
 provider_prediction_id: string | null
 status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "completed_unattached"
 progress: number | null
+parameters_json: object
 output_asset_id: string | null
 warning_json: object | null
 error: string | null
@@ -242,6 +243,8 @@ attach_asset
 start_generation
 ~~~
 
+`update_node` 可以同时更新 Prompt 和节点内参数；`start_generation` 可以使用节点当前值，也可以在命令 payload 中提供一次性的 Prompt 和参数覆盖。覆盖值会写入 GenerationJob，但不会自动修改节点内容。
+
 服务端在一个 SQLite 事务中校验并保存命令，返回：
 
 ~~~json
@@ -288,6 +291,17 @@ GET /api/canvases/{canvas_id}/events?afterRevision=12
 - 参考图面板显示直接上游图片的缩略图；删除按钮只移除当前连接。
 - 便签支持文字编辑、字体和字号调整，宽度和高度可以独立修改。
 
+### Prompt 输入区
+
+图片节点和视频节点都在节点内部提供 Prompt 输入区。输入区由自由文本框和同一区域内的参数选择控件组成，参数不放到独立的复杂设置面板里。
+
+- 图片节点：选择尺寸、宽高比和输出格式。
+- 视频节点：选择时长、分辨率、宽高比和是否生成音频。
+- 选择控件使用紧凑的下拉框或标签按钮，保持 Prompt 文本的主要视觉优先级。
+- 参数选择结果和 Prompt 文本一起保存到节点的 `content_json`。
+- 点击生成时，前端提交当前 Prompt 和参数快照；Worker 只使用 GenerationJob 中保存的快照。
+- 参数控件只显示当前模型支持的选项，Provider 映射仍由后端负责。
+
 ### 连接操作
 
 1. 从任意可用端点拖出连接。
@@ -321,7 +335,7 @@ aspect_ratio: "match_input_image" 或产品允许的比例
 output_format: "png" | "jpeg"
 ~~~
 
-第一版默认 `size = "2K"`、`aspect_ratio = "match_input_image"`、`output_format = "png"`。画布可以存在超过 Provider 当前支持数量的连接；Adapter 传入稳定顺序的前 10 张，并把被省略的 Asset ID 写入 warning。Seedream 的图层拆分能力第一版不开放。
+第一版默认 `size = "2K"`、`aspect_ratio = "match_input_image"`、`output_format = "png"`，用户可以在图片节点的 Prompt 输入区内修改这些值。画布可以存在超过 Provider 当前支持数量的连接；Adapter 传入稳定顺序的前 10 张，并把被省略的 Asset ID 写入 warning。Seedream 的图层拆分能力第一版不开放。
 
 Seedream 返回多个图片 URI 时，第一张绑定到目标节点作为主素材，其余结果仍保存为 Asset，并关联到 GenerationJob，后续可扩展为结果变体列表。
 
@@ -339,7 +353,7 @@ aspect_ratio: "adaptive" 或产品指定比例
 generate_audio: boolean
 ~~~
 
-第一版默认 `duration = 5`、`resolution = "720p"`、`aspect_ratio = "adaptive"`、`generate_audio = true`。图片和视频参考按照边的稳定顺序编号，并在发送给 Provider 的提示词中使用 `[Image1]`、`[Video1]` 等引用。
+第一版默认 `duration = 5`、`resolution = "720p"`、`aspect_ratio = "adaptive"`、`generate_audio = true`，用户可以在视频节点的 Prompt 输入区内修改这些值。图片和视频参考按照边的稳定顺序编号，并在发送给 Provider 的提示词中使用 `[Image1]`、`[Video1]` 等引用。
 
 ### Provider 文件输入与输出
 
@@ -374,6 +388,7 @@ Worker 使用 Replicate 客户端上传本地文件输入；不能把本地文�
 - 配置 `REPLICATE_API_TOKEN` 后，可以从图片节点发起 Seedream 5 Pro 任务。
 - 可以从视频节点发起 Seedance 2.0 Mini 任务。
 - 任务状态从 queued 到 succeeded 或 failed 可见。
+- 用户可以在图片和视频节点的 Prompt 输入区选择当前模型的生成参数，刷新后参数保持不变。
 - 生成结果会下载到本地并绑定到目标节点。
 - 服务或 Worker 重启后，任务记录和已完成素材不会丢失。
 
