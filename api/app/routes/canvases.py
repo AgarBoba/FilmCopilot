@@ -11,7 +11,7 @@ router = APIRouter(prefix='/api')
 @router.post('/canvases', response_model=CanvasSnapshot, status_code=status.HTTP_201_CREATED)
 def create_canvas(request: Request, body: CreateCanvasRequest) -> CanvasSnapshot:
     repository: CanvasRepository = request.app.state.canvas_repository
-    return repository.create_canvas(body.name)
+    return repository.create_canvas(body.name, body.canvasId)
 
 
 @router.get('/canvases/{canvas_id}/snapshot', response_model=CanvasSnapshot)

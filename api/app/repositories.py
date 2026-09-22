@@ -25,8 +25,10 @@ class CanvasRepository:
         with self.database.transaction() as connection:
             yield connection
 
-    def create_canvas(self, name: str) -> CanvasSnapshot:
-        canvas_id = str(uuid4())
+    def create_canvas(self, name: str, canvas_id: str | None = None) -> CanvasSnapshot:
+        canvas_id = canvas_id or str(uuid4())
+        if self._fetchone('SELECT id FROM canvases WHERE id = ?', (canvas_id,)) is not None:
+            return self.get_snapshot(canvas_id)
         with self.transaction() as connection:
             connection.execute(
                 'INSERT INTO canvases (id, name, revision) VALUES (?, ?, 0)',

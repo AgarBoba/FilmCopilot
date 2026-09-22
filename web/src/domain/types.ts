@@ -8,7 +8,7 @@ export interface CanvasPosition {
 export interface AssetSummary {
   id: string;
   kind: 'image' | 'video';
-  url: string;
+  url?: string;
   mimeType: string;
   width?: number;
   height?: number;
@@ -51,8 +51,9 @@ export interface CanvasNodeData {
 
 export interface CanvasNode {
   id: string;
-  type: NodeType;
-  position: CanvasPosition;
+  nodeType: NodeType;
+  x: number;
+  y: number;
   width?: number;
   height?: number;
   data: CanvasNodeData;
@@ -71,17 +72,33 @@ export interface CanvasViewport {
 }
 
 export interface CanvasSnapshot {
+  canvasId: string;
+  name: string;
   revision: number;
   nodes: CanvasNode[];
   edges: CanvasEdge[];
-  viewport: CanvasViewport;
+  assets?: AssetSummary[];
+  jobs?: Record<string, unknown>[];
+  viewport?: CanvasViewport;
 }
 
 export interface CommandEnvelope<TPayload = Record<string, unknown>> {
   baseRevision: number;
   idempotencyKey: string;
-  command: {
-    type: string;
-    payload: TPayload;
-  };
+  command: string;
+  payload: TPayload;
+}
+
+export interface CommandResult {
+  revision: number;
+  command: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CanvasEvent {
+  id: number;
+  canvasId: string;
+  revision: number;
+  eventType: string;
+  payload: Record<string, unknown>;
 }

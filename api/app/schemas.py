@@ -67,3 +67,4 @@ class AssetRecord(BaseModel):
 
 class CreateCanvasRequest(BaseModel):
     name: str = 'Untitled canvas'
+    canvasId: str | None = None

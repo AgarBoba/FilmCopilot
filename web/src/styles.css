@@ -108,3 +108,86 @@ h1 {
 .empty-state p {
   color: var(--text-muted);
 }
+
+.canvas-page {
+  --canvas-bg: #f3f5f8;
+  --node-bg: #ffffff;
+  --text-primary: #18202e;
+  --text-muted: #6f7b8c;
+  --accent: #8b5cf6;
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  color: var(--text-primary);
+  background: var(--canvas-bg);
+}
+
+.canvas-page.theme-dark {
+  --canvas-bg: #11131a;
+  --node-bg: #1b1e27;
+  --text-primary: #f4f5f7;
+  --text-muted: #9ca3b4;
+  --accent: #a78bfa;
+}
+
+.canvas-toolbar {
+  position: absolute;
+  z-index: 10;
+  top: 18px;
+  right: 18px;
+  left: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.canvas-toolbar button,
+.save-state {
+  border: 1px solid color-mix(in srgb, var(--text-muted) 25%, transparent);
+  border-radius: 10px;
+  padding: 9px 12px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--node-bg) 88%, transparent);
+  font-size: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+}
+
+.canvas-toolbar button:hover {
+  border-color: var(--accent);
+}
+
+.save-state {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.canvas-viewport {
+  min-height: 100vh;
+  flex: 1;
+}
+
+.canvas-viewport .react-flow {
+  background: var(--canvas-bg);
+}
+
+.canvas-viewport .react-flow__minimap {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--node-bg) 88%, transparent);
+}
+
+.loading-state {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  color: var(--text-primary);
+}
