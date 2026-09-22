@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import uuid4
 
-from .domain import DomainError, NodeType
+from .domain import DomainError
 from .events import EventStore
 from .graph_rules import validate_connection
 from .repositories import CanvasRepository
@@ -43,6 +43,7 @@ class CanvasCommandService:
             'disconnect_nodes': self._disconnect_nodes,
             'update_note': self._update_note,
             'attach_asset': self._attach_asset,
+            'start_generation': self._start_generation,
         }
         handler = handlers.get(envelope.command)
         if handler is None:
@@ -123,6 +124,34 @@ class CanvasCommandService:
         asset_id = self._required(payload, 'assetId')
         self.repository.update_node(canvas_id, node_id, {'data': {'assetId': asset_id}})
         return {'nodeId': node_id, 'assetId': asset_id}
+
+    def _start_generation(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        node_id = self._required(payload, 'nodeId')
+        node_type = self.repository.node_type(canvas_id, node_id)
+        if node_type not in {'image', 'video'}:
+            raise DomainError('INVALID_NODE_TYPE', 'Only image and video nodes can generate media')
+        snapshot = self.repository.generation_snapshot(canvas_id, node_id)
+        if 'prompt' in payload:
+            snapshot['prompt'] = payload['prompt']
+        if 'parameters' in payload:
+            snapshot['parameters'] = payload['parameters']
+        provider = (
+            'bytedance/seedream-5-pro'
+            if node_type == 'image'
+            else 'bytedance/seedance-2.0-mini'
+        )
+        job_id = self.repository.create_generation_job(
+            canvas_id,
+            node_id,
+            provider,
+            snapshot,
+            {
+                'targetNodeId': node_id,
+                'baseCanvasRevision': snapshot['baseCanvasRevision'],
+                'references': snapshot['references'],
+            },
+        )
+        return {'jobId': job_id, 'status': 'queued', 'provider': provider}
 
     @staticmethod
     def _required(payload: dict[str, Any], key: str) -> str:

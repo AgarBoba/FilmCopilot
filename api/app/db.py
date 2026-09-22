@@ -80,6 +80,7 @@ class Database:
                     provider TEXT NOT NULL,
                     request_json TEXT NOT NULL,
                     input_snapshot_json TEXT NOT NULL,
+                    output_asset_id TEXT,
                     error TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -107,6 +108,12 @@ class Database:
                 );
                 '''
             )
+            columns = {
+                row['name']
+                for row in connection.execute('PRAGMA table_info(generation_jobs)').fetchall()
+            }
+            if 'output_asset_id' not in columns:
+                connection.execute('ALTER TABLE generation_jobs ADD COLUMN output_asset_id TEXT')
 
     def active_connection(self) -> sqlite3.Connection | None:
         return _active_connection.get()
