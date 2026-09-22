@@ -1,0 +1,56 @@
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field
+
+from .domain import NodeType
+
+
+class CanvasNodeSchema(BaseModel):
+    id: str
+    nodeType: NodeType
+    x: float
+    y: float
+    width: float | None = None
+    height: float | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class CanvasEdgeSchema(BaseModel):
+    id: str
+    source: str
+    target: str
+
+
+class CanvasSnapshot(BaseModel):
+    canvasId: str
+    name: str
+    revision: int
+    nodes: list[CanvasNodeSchema] = Field(default_factory=list)
+    edges: list[CanvasEdgeSchema] = Field(default_factory=list)
+    assets: list[dict[str, Any]] = Field(default_factory=list)
+    jobs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CommandEnvelope(BaseModel):
+    command: str
+    baseRevision: int
+    idempotencyKey: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CommandResult(BaseModel):
+    revision: int
+    command: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CanvasEvent(BaseModel):
+    id: int
+    canvasId: str
+    revision: int
+    eventType: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CreateCanvasRequest(BaseModel):
+    name: str = 'Untitled canvas'

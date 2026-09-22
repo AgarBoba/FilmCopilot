@@ -7,7 +7,7 @@ import os
 class Settings:
     data_dir: Path
     database_path: Path
-    replicate_api_token: str | None
+    replicate_api_token: str | None = None
     api_port: int = 8000
     web_port: int = 5173
 

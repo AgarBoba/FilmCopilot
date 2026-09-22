@@ -1,12 +1,48 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from .commands import CanvasCommandService
+from .config import Settings
+from .db import Database
+from .domain import DomainError
+from .events import EventStore
+from .repositories import CanvasRepository
+from .routes import canvases, events
 
 
-def create_app() -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    database = Database(settings.database_path)
+    database.init_schema()
+    repository = CanvasRepository(database)
+    event_store = EventStore(database)
+    command_service = CanvasCommandService(repository, event_store)
+
     app = FastAPI(title="Infinite Media Canvas")
+    app.state.settings = settings
+    app.state.database = database
+    app.state.canvas_repository = repository
+    app.state.event_store = event_store
+    app.state.canvas_command_service = command_service
+
+    @app.exception_handler(DomainError)
+    async def handle_domain_error(_: Request, error: DomainError) -> JSONResponse:
+        status_code = {
+            'NOT_FOUND': 404,
+            'REVISION_CONFLICT': 409,
+        }.get(error.code, 422)
+        return JSONResponse(
+            status_code=status_code,
+            content={'error': {'code': error.code, 'message': error.message}},
+        )
 
     @app.get("/api/health")
     def health() -> dict[str, bool]:
         return {"ok": True}
+
+    app.include_router(canvases.router)
+    app.include_router(events.router)
 
     return app
 

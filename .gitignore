@@ -1,6 +1,7 @@
 .worktrees/
 data/*.sqlite3
 data/assets/
+api/data/
 api/.pytest_cache/
 api/**/*.pyc
 api/*.egg-info/
