@@ -3,6 +3,10 @@ data/*.sqlite3
 data/assets/
 api/.pytest_cache/
 api/**/*.pyc
+api/*.egg-info/
 web/node_modules/
 web/dist/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
 .DS_Store

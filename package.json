@@ -1,0 +1,8 @@
+{
+  "name": "infinite-media-canvas",
+  "private": true,
+  "scripts": {
+    "dev": "./scripts/dev.sh",
+    "test": "npm run test --prefix web"
+  }
+}
