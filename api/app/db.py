@@ -29,6 +29,7 @@ class Database:
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     revision INTEGER NOT NULL DEFAULT 0,
+                    viewport_json TEXT NOT NULL DEFAULT '{"x": 0, "y": 0, "zoom": 1}',
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -114,6 +115,14 @@ class Database:
             }
             if 'output_asset_id' not in columns:
                 connection.execute('ALTER TABLE generation_jobs ADD COLUMN output_asset_id TEXT')
+            canvas_columns = {
+                row['name']
+                for row in connection.execute('PRAGMA table_info(canvases)').fetchall()
+            }
+            if 'viewport_json' not in canvas_columns:
+                connection.execute(
+                    "ALTER TABLE canvases ADD COLUMN viewport_json TEXT NOT NULL DEFAULT '{\"x\": 0, \"y\": 0, \"zoom\": 1}'"
+                )
 
     def active_connection(self) -> sqlite3.Connection | None:
         return _active_connection.get()

@@ -44,6 +44,7 @@ class CanvasCommandService:
             'update_note': self._update_note,
             'attach_asset': self._attach_asset,
             'start_generation': self._start_generation,
+            'update_canvas': self._update_canvas,
         }
         handler = handlers.get(envelope.command)
         if handler is None:
@@ -154,6 +155,20 @@ class CanvasCommandService:
             },
         )
         return {'jobId': job_id, 'status': 'queued', 'provider': provider}
+
+    def _update_canvas(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        viewport = payload.get('viewport')
+        if not isinstance(viewport, dict) or not all(
+            isinstance(viewport.get(key), (int, float)) for key in ('x', 'y', 'zoom')
+        ) or viewport['zoom'] <= 0:
+            raise DomainError('INVALID_PAYLOAD', 'Viewport must contain numeric x, y and positive zoom')
+        normalized = {
+            'x': float(viewport['x']),
+            'y': float(viewport['y']),
+            'zoom': float(viewport['zoom']),
+        }
+        self.repository.update_viewport(canvas_id, normalized)
+        return {'viewport': normalized}
 
     @staticmethod
     def _required(payload: dict[str, Any], key: str) -> str:

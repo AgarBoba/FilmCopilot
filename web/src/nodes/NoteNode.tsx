@@ -1,4 +1,4 @@
-import { Position } from '@xyflow/react';
+import { NodeResizer, Position } from '@xyflow/react';
 
 import { NodeHandle } from './NodeHandles';
 
@@ -11,6 +11,7 @@ export interface NoteNodeData {
   fontSize?: number;
   onChange?: (content: string) => void;
   onStyleChange?: (changes: { fontFamily?: string; fontSize?: number }) => void;
+  onResize?: (size: { width: number; height: number }) => void;
   [key: string]: unknown;
 }
 
@@ -23,6 +24,7 @@ interface NoteNodeProps {
 export function NoteNode({ data }: NoteNodeProps) {
   return (
     <div className="media-node note-node">
+      <NodeResizer minWidth={180} minHeight={120} onResizeEnd={(_, params) => data.onResize?.({ width: params.width, height: params.height })} />
       <NodeHandle type="target" position={Position.Left} id="target" />
       <NodeHandle type="source" position={Position.Right} id="source" />
       <div className="node-heading">

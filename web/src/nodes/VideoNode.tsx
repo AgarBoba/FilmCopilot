@@ -62,6 +62,7 @@ export function VideoNode({ data }: VideoNodeProps) {
       <div className="node-heading">
         <span className="node-kind">VIDEO</span>
         <strong>{data.title ?? '视频节点'}</strong>
+        {data.generationStatus && <span className="node-status">{data.generationStatus}</span>}
       </div>
       <div className="media-preview video-preview">
         {data.assetUrl ? (

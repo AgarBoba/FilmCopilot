@@ -12,6 +12,7 @@ import {
   type Node,
   type NodeChange,
   type OnSelectionChangeParams,
+  type Viewport,
 } from '@xyflow/react';
 
 import { canConnect } from '../domain/connectionRules';
@@ -103,6 +104,22 @@ export function CanvasShell() {
         }) => {
           void startGeneration(node.id, request);
         },
+        onRemoveReference: (url: string) => {
+          const edge = snapshot.edges.find((candidate) => (
+            candidate.target === node.id && assetUrl(candidate.source) === url
+          ));
+          if (edge) {
+            void execute({
+              command: 'disconnect_nodes',
+              baseRevision: useCanvasStore.getState().snapshot?.revision ?? snapshot.revision,
+              idempotencyKey: commandKey('disconnect-edge'),
+              payload: { edgeId: edge.id },
+            });
+          }
+        },
+        onResize: (size: { width: number; height: number }) => {
+          void persistNodeSize(node.id, size);
+        },
       },
     })));
     setEdges(flow.edges);
@@ -145,6 +162,17 @@ export function CanvasShell() {
     });
   }
 
+  async function persistNodeSize(nodeId: string, size: { width: number; height: number }) {
+    const current = useCanvasStore.getState().snapshot;
+    if (!current) return;
+    await execute({
+      command: 'update_node',
+      baseRevision: current.revision,
+      idempotencyKey: commandKey('resize-node'),
+      payload: { nodeId, width: size.width, height: size.height },
+    });
+  }
+
   async function startGeneration(
     nodeId: string,
     request: {
@@ -159,6 +187,17 @@ export function CanvasShell() {
       baseRevision: current.revision,
       idempotencyKey: commandKey('start-generation'),
       payload: { targetNodeId: nodeId, prompt: request.prompt, parameters: request.parameters },
+    });
+  }
+
+  async function onMoveEnd(_: MouseEvent | TouchEvent | null, viewport: Viewport) {
+    const current = useCanvasStore.getState().snapshot;
+    if (!current) return;
+    await execute({
+      command: 'update_canvas',
+      baseRevision: current.revision,
+      idempotencyKey: commandKey('update-viewport'),
+      payload: { viewport },
     });
   }
 
@@ -267,12 +306,14 @@ export function CanvasShell() {
           edges={visibleEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
+          defaultViewport={snapshot?.viewport ?? { x: 0, y: 0, zoom: 1 }}
           onNodesChange={onNodesChange}
           onNodeDragStop={onNodeDragStop}
           onConnect={onConnect}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
           onSelectionChange={onSelectionChange}
+          onMoveEnd={onMoveEnd}
           fitView
           proOptions={{ hideAttribution: true }}
         >

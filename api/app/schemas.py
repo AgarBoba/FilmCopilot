@@ -21,12 +21,19 @@ class CanvasEdgeSchema(BaseModel):
     target: str
 
 
+class CanvasViewport(BaseModel):
+    x: float = 0
+    y: float = 0
+    zoom: float = 1
+
+
 class CanvasSnapshot(BaseModel):
     canvasId: str
     name: str
     revision: int
     nodes: list[CanvasNodeSchema] = Field(default_factory=list)
     edges: list[CanvasEdgeSchema] = Field(default_factory=list)
+    viewport: CanvasViewport = Field(default_factory=CanvasViewport)
     assets: list[dict[str, Any]] = Field(default_factory=list)
     jobs: list[dict[str, Any]] = Field(default_factory=list)
 

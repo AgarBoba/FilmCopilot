@@ -37,6 +37,7 @@ export function ImageNode({ data }: ImageNodeProps) {
       <div className="node-heading">
         <span className="node-kind">IMAGE</span>
         <strong>{data.title ?? '图片节点'}</strong>
+        {data.generationStatus && <span className="node-status">{data.generationStatus}</span>}
       </div>
       <div className="media-preview image-preview">
         {data.assetUrl ? (

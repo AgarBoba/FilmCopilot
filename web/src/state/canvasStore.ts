@@ -96,6 +96,14 @@ export function createCanvasStore(initialSnapshot: CanvasSnapshot | null = null)
         return;
       }
       set({ snapshot: { ...snapshot, revision: event.revision } });
+      void api.getSnapshot(snapshot.canvasId).then((freshSnapshot) => {
+        const current = get().snapshot;
+        if (current && freshSnapshot.revision >= current.revision) {
+          set({ snapshot: freshSnapshot });
+        }
+      }).catch(() => {
+        // The next SSE event or manual reload can repair a transient refresh failure.
+      });
     },
 
     selectNode(selectedNodeId) {

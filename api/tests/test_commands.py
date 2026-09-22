@@ -97,3 +97,22 @@ def test_connect_command_rejects_cycle(client: TestClient):
     response = connect(client, canvas_id, video_id, image_id, 'edge-2', 3)
     assert response.status_code == 422
     assert response.json()['error']['code'] == 'INVALID_CONNECTION'
+
+
+def test_update_canvas_persists_viewport(client: TestClient):
+    canvas_id = create_canvas(client)
+    response = client.post(
+        f'/api/canvases/{canvas_id}/commands',
+        json={
+            'command': 'update_canvas',
+            'baseRevision': 0,
+            'idempotencyKey': 'viewport-1',
+            'payload': {'viewport': {'x': 120, 'y': -80, 'zoom': 0.8}},
+        },
+    )
+    assert response.status_code == 200
+    assert client.get(f'/api/canvases/{canvas_id}/snapshot').json()['viewport'] == {
+        'x': 120,
+        'y': -80,
+        'zoom': 0.8,
+    }

@@ -12,6 +12,7 @@ from .schemas import (
     CanvasEdgeSchema,
     CanvasNodeSchema,
     CanvasSnapshot,
+    CanvasViewport,
     CommandResult,
 )
 
@@ -39,7 +40,7 @@ class CanvasRepository:
     def get_snapshot(self, canvas_id: str) -> CanvasSnapshot:
         with self.database.connection() as connection:
             canvas = connection.execute(
-                'SELECT id, name, revision FROM canvases WHERE id = ?',
+                'SELECT id, name, revision, viewport_json FROM canvases WHERE id = ?',
                 (canvas_id,),
             ).fetchone()
             if canvas is None:
@@ -87,6 +88,7 @@ class CanvasRepository:
                 )
                 for row in edges
             ],
+            viewport=CanvasViewport(**json.loads(canvas['viewport_json'])),
             assets=[self._json_row(row, ('metadata_json',)) for row in assets],
             jobs=[self._json_row(row, ('request_json', 'input_snapshot_json')) for row in jobs],
         )
@@ -146,6 +148,12 @@ class CanvasRepository:
     def bump_revision(self, canvas_id: str) -> int:
         self._execute('UPDATE canvases SET revision = revision + 1 WHERE id = ?', (canvas_id,))
         return self._fetchone('SELECT revision FROM canvases WHERE id = ?', (canvas_id,))['revision']
+
+    def update_viewport(self, canvas_id: str, viewport: dict[str, Any]) -> None:
+        self._execute(
+            'UPDATE canvases SET viewport_json = ? WHERE id = ?',
+            (json.dumps(viewport), canvas_id),
+        )
 
     def node_type(self, canvas_id: str, node_id: str) -> NodeType:
         row = self._fetchone(
