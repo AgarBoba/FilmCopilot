@@ -282,6 +282,17 @@ export function CanvasShell() {
       idempotencyKey: commandKey('attach-asset'),
       payload: { nodeId, assetId: asset.id },
     });
+    const latest = useCanvasStore.getState().snapshot;
+    const target = latest?.nodes.find((node) => node.id === nodeId);
+    if (target?.nodeType === 'video' && asset.width && asset.height) {
+      const width = target.width ?? 360;
+      await execute({
+        command: 'update_node',
+        baseRevision: useCanvasStore.getState().snapshot?.revision ?? latest?.revision ?? 0,
+        idempotencyKey: commandKey('fit-video-ratio'),
+        payload: { nodeId, width, height: Math.round(width * asset.height / asset.width) },
+      });
+    }
     event.target.value = '';
   }
 
