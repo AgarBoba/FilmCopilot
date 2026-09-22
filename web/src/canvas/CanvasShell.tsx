@@ -325,7 +325,6 @@ export function CanvasShell() {
           onConnectEnd={onConnectEnd}
           onSelectionChange={onSelectionChange}
           onMoveEnd={onMoveEnd}
-          fitView
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={24} size={1} />
