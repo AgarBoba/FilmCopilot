@@ -88,6 +88,8 @@ export const api = {
       'canvas.create_node',
       'canvas.update_node',
       'canvas.delete_node',
+      'canvas.delete_elements',
+      'canvas.move_nodes',
       'canvas.connect_nodes',
       'canvas.disconnect_nodes',
       'canvas.update_note',
@@ -112,4 +114,3 @@ export const api = {
     };
   },
 };
-

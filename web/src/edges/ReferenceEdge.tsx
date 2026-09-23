@@ -31,15 +31,16 @@ export function ReferenceEdge({ selected, ...props }: EdgeProps<ReactFlowEdge>) 
 
 export function getVisibleEdgeIds(
   edges: Pick<ReactFlowEdge, 'id' | 'source' | 'target'>[],
-  selectedNodeId: string | null,
+  selectedNodeIds: string[],
   showEdges: boolean,
 ): Set<string> {
   if (showEdges) {
     return new Set(edges.map((edge) => edge.id));
   }
+  const selected = new Set(selectedNodeIds);
   return new Set(
     edges
-      .filter((edge) => edge.source === selectedNodeId || edge.target === selectedNodeId)
+      .filter((edge) => selected.has(edge.source) || selected.has(edge.target))
       .map((edge) => edge.id),
   );
 }

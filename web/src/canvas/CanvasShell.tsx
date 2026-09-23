@@ -2,13 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
   addEdge,
+  applyEdgeChanges,
   applyNodeChanges,
   Background,
   Controls,
   MiniMap,
   ReactFlow,
+  SelectionMode,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
   type NodeChange,
   type OnSelectionChangeParams,
@@ -28,7 +31,7 @@ import { NoteNode } from '../nodes/NoteNode';
 import { VideoNode } from '../nodes/VideoNode';
 import { ReferenceEdge, getVisibleEdgeIds } from '../edges/ReferenceEdge';
 import { snapshotToReactFlow, useCanvasStore } from '../state/canvasStore';
-import { CanvasToolbar } from './CanvasToolbar';
+import { CanvasToolbar, type CanvasTool } from './CanvasToolbar';
 import { ConnectionChooser } from './ConnectionChooser';
 
 
@@ -45,11 +48,12 @@ export function CanvasShell() {
   const {
     snapshot,
     canvasId,
-    selectedNodeId,
+    selectedNodeIds,
     showEdges,
     theme,
     isSaving,
-    selectNode,
+    error,
+    selectNodes,
     setShowEdges,
     setTheme,
     execute,
@@ -59,8 +63,47 @@ export function CanvasShell() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [connectionStart, setConnectionStart] = useState<string | null>(null);
   const [chooserPosition, setChooserPosition] = useState<{ x: number; y: number } | null>(null);
+  const [tool, setTool] = useState<CanvasTool>('select');
+  const [spaceHeld, setSpaceHeld] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef<string | null>(null);
+  const deletionPendingRef = useRef(false);
+  const selectionBeforePointerRef = useRef<string[]>([]);
+  const activeTool = spaceHeld ? 'hand' : tool;
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      if (
+        target instanceof Element
+        && target.closest('input, textarea, select, [contenteditable="true"]')
+      ) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.code === 'Space') {
+        if (target instanceof Element && target.closest('button')) return;
+        event.preventDefault();
+        setSpaceHeld(true);
+      } else if (event.key.toLowerCase() === 'v') {
+        setTool('select');
+      } else if (event.key.toLowerCase() === 'h') {
+        setTool('hand');
+      }
+    }
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.code === 'Space') setSpaceHeld(false);
+    }
+    function onWindowBlur() {
+      setSpaceHeld(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onWindowBlur);
+    };
+  }, []);
 
   useEffect(() => {
     if (!snapshot) {
@@ -82,7 +125,7 @@ export function CanvasShell() {
     ));
     setNodes(flow.nodes.map((node) => ({
       ...node,
-      selected: node.id === selectedNodeId,
+      selected: selectedNodeIds.includes(node.id),
       data: {
         ...node.data,
         assetUrl: assetUrl(node.id),
@@ -132,13 +175,10 @@ export function CanvasShell() {
     return api.subscribeEvents(canvasId, snapshot.revision, applyEvent);
   }, [canvasId, applyEvent]);
 
-  const visibleEdges = useMemo(
-    () => edges.map((edge) => ({
-      ...edge,
-      hidden: !getVisibleEdgeIds(edges, selectedNodeId, showEdges).has(edge.id),
-    })),
-    [edges, selectedNodeId, showEdges],
-  );
+  const visibleEdges = useMemo(() => {
+    const visibleIds = getVisibleEdgeIds(edges, selectedNodeIds, showEdges);
+    return edges.map((edge) => ({ ...edge, hidden: !visibleIds.has(edge.id) }));
+  }, [edges, selectedNodeIds, showEdges]);
 
   async function addNode(nodeType: NodeType) {
     if (!snapshot) return;
@@ -205,13 +245,48 @@ export function CanvasShell() {
     setNodes((current) => applyNodeChanges(changes, current) as Node<CanvasNodeData>[]);
   }
 
-  async function onNodeDragStop(_: MouseEvent | TouchEvent, node: Node) {
-    if (!snapshot) return;
+  function onEdgesChange(changes: EdgeChange[]) {
+    setEdges((current) => applyEdgeChanges(changes, current));
+  }
+
+  async function onBeforeDelete({ nodes: deletingNodes, edges: deletingEdges }: {
+    nodes: Node[];
+    edges: Edge[];
+  }): Promise<boolean> {
+    const current = useCanvasStore.getState().snapshot;
+    if (!current || deletionPendingRef.current || (!deletingNodes.length && !deletingEdges.length)) {
+      return false;
+    }
+    deletionPendingRef.current = true;
+    try {
+      await execute({
+        command: 'delete_elements',
+        baseRevision: current.revision,
+        idempotencyKey: commandKey('delete-elements'),
+        payload: {
+          nodeIds: deletingNodes.map((node) => node.id),
+          edgeIds: deletingEdges.map((edge) => edge.id),
+        },
+      });
+    } catch {
+      // The store exposes the save error and the nodes stay in place.
+    } finally {
+      deletionPendingRef.current = false;
+    }
+    return false;
+  }
+
+  async function onNodeDragStop(_: MouseEvent | TouchEvent, node: Node, draggedNodes: Node[]) {
+    const current = useCanvasStore.getState().snapshot;
+    if (!current) return;
+    const moved = draggedNodes.length ? draggedNodes : [node];
     await execute({
-      command: 'update_node',
-      baseRevision: useCanvasStore.getState().snapshot?.revision ?? snapshot.revision,
+      command: moved.length > 1 ? 'move_nodes' : 'update_node',
+      baseRevision: current.revision,
       idempotencyKey: commandKey('move-node'),
-      payload: { nodeId: node.id, x: node.position.x, y: node.position.y },
+      payload: moved.length > 1
+        ? { positions: moved.map((item) => ({ nodeId: item.id, x: item.position.x, y: item.position.y })) }
+        : { nodeId: node.id, x: node.position.x, y: node.position.y },
     });
   }
 
@@ -297,20 +372,42 @@ export function CanvasShell() {
   }
 
   function onSelectionChange(selection: OnSelectionChangeParams) {
-    selectNode(selection.nodes[0]?.id ?? null);
+    selectNodes(selection.nodes.map((node) => node.id));
+  }
+
+  function onNodeClick(event: React.MouseEvent, node: Node) {
+    if (activeTool !== 'select') return;
+    if (!event.shiftKey && !event.metaKey && !event.ctrlKey) return;
+    const previous = selectionBeforePointerRef.current;
+    const next = previous.includes(node.id)
+      ? previous.filter((id) => id !== node.id)
+      : [...previous, node.id];
+    setNodes((current) => current.map((item) => ({ ...item, selected: next.includes(item.id) })));
+    selectNodes(next);
   }
 
   return (
-    <div className={`canvas-page theme-${theme}`}>
+    <div className={`canvas-page theme-${theme} mode-${activeTool}`}>
       <CanvasToolbar
+        tool={activeTool}
         theme={theme}
         showEdges={showEdges}
         isSaving={isSaving}
+        error={error}
+        onToolChange={setTool}
         onThemeChange={setTheme}
         onEdgesChange={setShowEdges}
         onAddNode={addNode}
       />
-      <div className="canvas-viewport" data-testid="canvas-shell">
+      <div
+        className="canvas-viewport"
+        data-testid="canvas-shell"
+        onPointerDownCapture={(event) => {
+          if ((event.target as Element).closest('.react-flow__node')) {
+            selectionBeforePointerRef.current = useCanvasStore.getState().selectedNodeIds;
+          }
+        }}
+      >
         <input ref={fileInputRef} type="file" hidden onChange={(event) => void onFileSelected(event)} />
         <ReactFlow
           nodes={nodes}
@@ -319,12 +416,26 @@ export function CanvasShell() {
           edgeTypes={edgeTypes}
           defaultViewport={snapshot?.viewport ?? { x: 0, y: 0, zoom: 1 }}
           onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onBeforeDelete={onBeforeDelete}
           onNodeDragStop={onNodeDragStop}
+          onNodeClick={onNodeClick}
           onConnect={onConnect}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
           onSelectionChange={onSelectionChange}
           onMoveEnd={onMoveEnd}
+          panOnDrag={activeTool === 'hand' ? true : [1]}
+          selectionOnDrag={activeTool === 'select'}
+          selectionKeyCode={null}
+          selectionMode={SelectionMode.Partial}
+          nodesDraggable={activeTool === 'select'}
+          nodesConnectable={activeTool === 'select'}
+          elementsSelectable={activeTool === 'select'}
+          multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
+          panActivationKeyCode={null}
+          deleteKeyCode={['Backspace', 'Delete']}
+          colorMode={theme}
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={24} size={1} />

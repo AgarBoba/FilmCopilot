@@ -4,6 +4,7 @@ import {
   createCanvasStore,
   snapshotToReactFlow,
 } from '../state/canvasStore';
+import { getVisibleEdgeIds } from '../edges/ReferenceEdge';
 import type { CanvasEvent, CanvasSnapshot } from '../domain/types';
 
 
@@ -51,5 +52,29 @@ describe('canvas store', () => {
     store.getState().applyEvent(event);
     store.getState().applyEvent(event);
     expect(store.getState().snapshot?.revision).toBe(2);
+  });
+
+  it('preserves a multi-selection without redundant notifications', () => {
+    const store = createCanvasStore(snapshotAtRevision(1));
+    let notifications = 0;
+    store.subscribe(() => {
+      notifications += 1;
+    });
+
+    store.getState().selectNodes(['image-1', 'video-1']);
+    store.getState().selectNodes(['video-1', 'image-1']);
+
+    expect(notifications).toBe(1);
+    expect(store.getState().selectedNodeIds).toEqual(['image-1', 'video-1']);
+  });
+
+  it('keeps edges for every selected node visible when connections are hidden', () => {
+    const edges = [
+      { id: 'e1', source: 'image-1', target: 'video-1' },
+      { id: 'e2', source: 'image-2', target: 'video-2' },
+      { id: 'e3', source: 'image-3', target: 'video-3' },
+    ];
+
+    expect(getVisibleEdgeIds(edges, ['image-1', 'video-2'], false)).toEqual(new Set(['e1', 'e2']));
   });
 });

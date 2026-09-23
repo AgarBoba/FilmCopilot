@@ -117,6 +117,7 @@ h1 {
   --accent: #8b5cf6;
   display: flex;
   min-height: 100vh;
+  height: 100vh;
   flex-direction: column;
   color: var(--text-primary);
   background: var(--canvas-bg);
@@ -164,13 +165,52 @@ h1 {
   border-color: var(--accent);
 }
 
+.canvas-toolbar .tool-button.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--node-bg));
+}
+
+.tool-button kbd {
+  margin-left: 3px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.toolbar-divider {
+  width: 1px;
+  margin: 5px 2px;
+  background: color-mix(in srgb, var(--text-muted) 30%, transparent);
+}
+
+.canvas-page.mode-select .react-flow__pane {
+  cursor: default;
+}
+
+.canvas-page.mode-hand .react-flow__pane,
+.canvas-page.mode-hand .react-flow__node {
+  cursor: grab;
+}
+
+.canvas-page.mode-hand .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
 .save-state {
   color: var(--text-muted);
   cursor: default;
 }
 
+.save-state.save-error {
+  max-width: 220px;
+  overflow: hidden;
+  color: #ef4444;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .canvas-viewport {
-  min-height: 100vh;
+  min-height: 0;
   flex: 1;
 }
 
@@ -208,8 +248,9 @@ h1 {
   border-color: var(--accent);
 }
 
-.media-node.selected {
+.react-flow__node.selected .media-node {
   border-width: 2px;
+  border-color: var(--accent);
 }
 
 .node-heading {

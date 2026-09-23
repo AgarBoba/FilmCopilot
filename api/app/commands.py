@@ -1,3 +1,4 @@
+from math import isfinite
 from typing import Any
 from uuid import uuid4
 
@@ -38,7 +39,9 @@ class CanvasCommandService:
         handlers = {
             'create_node': self._create_node,
             'update_node': self._update_node,
+            'move_nodes': self._move_nodes,
             'delete_node': self._delete_node,
+            'delete_elements': self._delete_elements,
             'connect_nodes': self._connect_nodes,
             'disconnect_nodes': self._disconnect_nodes,
             'update_note': self._update_note,
@@ -80,10 +83,54 @@ class CanvasCommandService:
         self.repository.update_node(canvas_id, node_id, payload)
         return {'nodeId': node_id}
 
+    def _move_nodes(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        positions = payload.get('positions')
+        if not isinstance(positions, list) or not positions:
+            raise DomainError('INVALID_PAYLOAD', 'Expected a non-empty positions list')
+        node_ids: list[str] = []
+        for position in positions:
+            if not isinstance(position, dict):
+                raise DomainError('INVALID_PAYLOAD', 'Each position must name a node and coordinates')
+            node_id = position.get('nodeId')
+            x = position.get('x')
+            y = position.get('y')
+            if (
+                not isinstance(node_id, str)
+                or not node_id
+                or type(x) not in (int, float)
+                or type(y) not in (int, float)
+                or not isfinite(x)
+                or not isfinite(y)
+                or node_id in node_ids
+            ):
+                raise DomainError('INVALID_PAYLOAD', 'Each node needs unique finite coordinates')
+            node_ids.append(node_id)
+            self.repository.update_node(canvas_id, node_id, {'x': float(x), 'y': float(y)})
+        return {'nodeIds': node_ids}
+
     def _delete_node(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         node_id = self._required(payload, 'nodeId')
         self.repository.delete_node(canvas_id, node_id)
         return {'nodeId': node_id}
+
+    def _delete_elements(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        node_ids = payload.get('nodeIds', [])
+        edge_ids = payload.get('edgeIds', [])
+        if (
+            not isinstance(node_ids, list)
+            or not isinstance(edge_ids, list)
+            or not all(isinstance(item, str) and item for item in node_ids + edge_ids)
+            or not (node_ids or edge_ids)
+        ):
+            raise DomainError('INVALID_PAYLOAD', 'Expected non-empty nodeIds or edgeIds lists')
+
+        node_ids = list(dict.fromkeys(node_ids))
+        edge_ids = list(dict.fromkeys(edge_ids))
+        for edge_id in edge_ids:
+            self.repository.delete_edge(canvas_id, edge_id)
+        for node_id in node_ids:
+            self.repository.delete_node(canvas_id, node_id)
+        return {'nodeIds': node_ids, 'edgeIds': edge_ids}
 
     def _connect_nodes(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         edge_id = str(payload.get('edgeId') or uuid4())

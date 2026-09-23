@@ -116,3 +116,76 @@ def test_update_canvas_persists_viewport(client: TestClient):
         'y': -80,
         'zoom': 0.8,
     }
+
+
+def test_delete_elements_persists_multiple_nodes_and_connected_edge(client: TestClient):
+    canvas_id = create_canvas(client)
+    image_id = create_node(client, canvas_id, 'image', 'image')
+    video_id = create_node(client, canvas_id, 'video', 'video')
+    note_id = create_node(client, canvas_id, 'note', 'note')
+    assert connect(client, canvas_id, image_id, video_id, 'edge-1', 3).status_code == 200
+
+    response = client.post(
+        f'/api/canvases/{canvas_id}/commands',
+        json={
+            'command': 'delete_elements',
+            'baseRevision': 4,
+            'idempotencyKey': 'delete-selection',
+            'payload': {'nodeIds': [image_id, video_id], 'edgeIds': ['edge-1']},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()['revision'] == 5
+    snapshot = client.get(f'/api/canvases/{canvas_id}/snapshot').json()
+    assert [node['id'] for node in snapshot['nodes']] == [note_id]
+    assert snapshot['edges'] == []
+
+
+def test_delete_elements_rolls_back_when_a_node_is_missing(client: TestClient):
+    canvas_id = create_canvas(client)
+    image_id = create_node(client, canvas_id, 'image', 'image')
+
+    response = client.post(
+        f'/api/canvases/{canvas_id}/commands',
+        json={
+            'command': 'delete_elements',
+            'baseRevision': 1,
+            'idempotencyKey': 'delete-invalid-selection',
+            'payload': {'nodeIds': [image_id, 'missing-node'], 'edgeIds': []},
+        },
+    )
+
+    assert response.status_code == 404
+    snapshot = client.get(f'/api/canvases/{canvas_id}/snapshot').json()
+    assert snapshot['revision'] == 1
+    assert [node['id'] for node in snapshot['nodes']] == [image_id]
+
+
+def test_move_nodes_persists_a_selected_group_in_one_revision(client: TestClient):
+    canvas_id = create_canvas(client)
+    image_id = create_node(client, canvas_id, 'image', 'image')
+    video_id = create_node(client, canvas_id, 'video', 'video')
+
+    response = client.post(
+        f'/api/canvases/{canvas_id}/commands',
+        json={
+            'command': 'move_nodes',
+            'baseRevision': 2,
+            'idempotencyKey': 'move-selection',
+            'payload': {
+                'positions': [
+                    {'nodeId': image_id, 'x': 210, 'y': 220},
+                    {'nodeId': video_id, 'x': 510, 'y': 220},
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()['revision'] == 3
+    nodes = client.get(f'/api/canvases/{canvas_id}/snapshot').json()['nodes']
+    assert {node['id']: (node['x'], node['y']) for node in nodes} == {
+        image_id: (210, 220),
+        video_id: (510, 220),
+    }

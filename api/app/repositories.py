@@ -32,7 +32,7 @@ class CanvasRepository:
             return self.get_snapshot(canvas_id)
         with self.transaction() as connection:
             connection.execute(
-                'INSERT INTO canvases (id, name, revision) VALUES (?, ?, 0)',
+                'INSERT OR IGNORE INTO canvases (id, name, revision) VALUES (?, ?, 0)',
                 (canvas_id, name.strip() or 'Untitled canvas'),
             )
         return self.get_snapshot(canvas_id)

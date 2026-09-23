@@ -14,7 +14,7 @@ import type {
 export interface CanvasState {
   canvasId: string | null;
   snapshot: CanvasSnapshot | null;
-  selectedNodeId: string | null;
+  selectedNodeIds: string[];
   showEdges: boolean;
   theme: 'light' | 'dark';
   isSaving: boolean;
@@ -22,7 +22,7 @@ export interface CanvasState {
   load: (canvasId: string) => Promise<void>;
   execute: (envelope: CommandEnvelope) => Promise<CommandResult | null>;
   applyEvent: (event: CanvasEvent) => void;
-  selectNode: (nodeId: string | null) => void;
+  selectNodes: (nodeIds: string[]) => void;
   setShowEdges: (showEdges: boolean) => void;
   setTheme: (theme: 'light' | 'dark') => void;
 }
@@ -55,7 +55,7 @@ export function createCanvasStore(initialSnapshot: CanvasSnapshot | null = null)
   return create<CanvasState>((set, get) => ({
     canvasId: initialSnapshot?.canvasId ?? null,
     snapshot: initialSnapshot,
-    selectedNodeId: null,
+    selectedNodeIds: [],
     showEdges: true,
     theme: 'dark',
     isSaving: false,
@@ -65,7 +65,12 @@ export function createCanvasStore(initialSnapshot: CanvasSnapshot | null = null)
       set({ isSaving: true, error: null });
       try {
         const snapshot = await api.getSnapshot(canvasId);
-        set({ canvasId, snapshot, isSaving: false });
+        set({
+          canvasId,
+          snapshot,
+          selectedNodeIds: get().selectedNodeIds.filter((id) => snapshot.nodes.some((node) => node.id === id)),
+          isSaving: false,
+        });
       } catch (error) {
         set({ isSaving: false, error: error instanceof Error ? error.message : 'Failed to load canvas' });
         throw error;
@@ -81,8 +86,11 @@ export function createCanvasStore(initialSnapshot: CanvasSnapshot | null = null)
       try {
         const result = await api.executeCommand(canvasId, envelope);
         const snapshot = await api.getSnapshot(canvasId);
-        set({ snapshot });
-        set({ isSaving: false });
+        set({
+          snapshot,
+          selectedNodeIds: get().selectedNodeIds.filter((id) => snapshot.nodes.some((node) => node.id === id)),
+          isSaving: false,
+        });
         return result;
       } catch (error) {
         set({ isSaving: false, error: error instanceof Error ? error.message : 'Command failed' });
@@ -99,15 +107,22 @@ export function createCanvasStore(initialSnapshot: CanvasSnapshot | null = null)
       void api.getSnapshot(snapshot.canvasId).then((freshSnapshot) => {
         const current = get().snapshot;
         if (current && freshSnapshot.revision >= current.revision) {
-          set({ snapshot: freshSnapshot });
+          set({
+            snapshot: freshSnapshot,
+            selectedNodeIds: get().selectedNodeIds.filter((id) => freshSnapshot.nodes.some((node) => node.id === id)),
+          });
         }
       }).catch(() => {
         // The next SSE event or manual reload can repair a transient refresh failure.
       });
     },
 
-    selectNode(selectedNodeId) {
-      set({ selectedNodeId });
+    selectNodes(nodeIds) {
+      const nextIds = [...new Set(nodeIds)];
+      const currentIds = get().selectedNodeIds;
+      if (nextIds.length !== currentIds.length || nextIds.some((id) => !currentIds.includes(id))) {
+        set({ selectedNodeIds: nextIds });
+      }
     },
 
     setShowEdges(showEdges) {
