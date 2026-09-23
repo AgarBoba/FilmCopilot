@@ -42,7 +42,9 @@ import { CanvasRail } from './CanvasRail';
 import { TooltipLayer } from './TooltipLayer';
 import { AgentPanel } from '../agent/AgentPanel';
 import { titleFromMarkdown } from '../agent/Markdown';
+import { agentNodeMarks } from '../agent/agentMarks';
 import { useAgentStore } from '../agent/agentStore';
+import { isGenerationBusy } from '../nodes/GenerationOverlay';
 import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM, useTrackpadGestures } from './useTrackpadGestures';
 import { ConnectionChooser, type ChooserNodeType } from './ConnectionChooser';
 
@@ -106,6 +108,9 @@ export function CanvasShell() {
   const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
   const flowRef = useRef<Pick<ReactFlowInstance<Node<CanvasNodeData>, Edge>, 'screenToFlowPosition' | 'getNodes' | 'getViewport' | 'setViewport' | 'fitView'> | null>(null);
   const agentOpen = useAgentStore((state) => state.open);
+  const agentEvents = useAgentStore((state) => state.events);
+  const agentActiveRun = useAgentStore((state) => state.activeRunId);
+  const agentRecentRun = useAgentStore((state) => state.recentRunId);
   const viewportRef = useRef<HTMLDivElement>(null);
   const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useTrackpadGestures(viewportRef, flowRef);
@@ -275,6 +280,23 @@ export function CanvasShell() {
     }
     return api.subscribeEvents(canvasId, snapshot.revision, applyEvent);
   }, [canvasId, applyEvent]);
+
+  // Nodes the agent is working on get a dashed ring and a small "Agent" tag (not a lock).
+  const agentMarks = useMemo(
+    () => agentNodeMarks(agentEvents, agentActiveRun, agentRecentRun),
+    [agentEvents, agentActiveRun, agentRecentRun],
+  );
+  const displayNodes = useMemo(() => {
+    if (!agentMarks.size) return nodes;
+    return nodes.map((node) => {
+      const mark = agentMarks.get(node.id);
+      if (!mark) return node;
+      const generating = mark !== 'recent' && isGenerationBusy(node.data.generationStatus as string | undefined);
+      const className = [node.className, `agent-mark is-agent-${mark}`, generating ? 'is-agent-generating' : '']
+        .filter(Boolean).join(' ');
+      return { ...node, className };
+    });
+  }, [nodes, agentMarks]);
 
   const visibleEdges = useMemo(() => {
     const visibleIds = getVisibleEdgeIds(edges, selectedNodeIds, showEdges);
@@ -659,7 +681,7 @@ export function CanvasShell() {
       >
         <input ref={fileInputRef} type="file" accept="image/*,video/*" hidden onChange={(event) => void onFileSelected(event)} />
         <ReactFlow
-          nodes={nodes}
+          nodes={displayNodes}
           edges={visibleEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}

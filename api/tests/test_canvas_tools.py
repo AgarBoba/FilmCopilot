@@ -74,10 +74,67 @@ def test_conflict_rereads_and_reports_user_changes(repository):
 
     result = tools.update_node(node, {'prompt': 'agent 覆盖'})
 
-    assert result.is_error and '用户刚刚修改了' in result.text and node in result.text
+    assert result.is_error and '用户刚刚' in result.text and '改了文字/Prompt' in result.text and node in result.text
     assert repository.node_snapshot(canvas_id, node)['data']['prompt'] == '我改的'  # not overwritten
-    # After reporting, the tool has caught up; a deliberate retry now works.
+    # A blind retry still refuses; after looking at the node it goes through.
+    assert tools.update_node(node, {'prompt': 'agent 再试'}).is_error
+    assert not tools.get_node(node).is_error
     assert not tools.update_node(node, {'prompt': 'agent 看过之后再改'}).is_error
+
+
+def test_unrelated_user_edits_do_not_stop_the_agent(repository):
+    tools, service, canvas_id = setup(repository)
+    mine, other = tools.create_nodes([{'type': 'image', 'prompt': 'agent'}, {'type': 'note'}]).touched
+    user(service, repository, canvas_id, 'update_node', {'nodeId': other, 'data': {'content': '用户写的'}}, 'u1')
+    user(service, repository, canvas_id, 'move_nodes', {'positions': [{'nodeId': mine, 'x': 900, 'y': 900}]}, 'u2')
+    user(service, repository, canvas_id, 'update_canvas', {'viewport': {'x': 10, 'y': 10, 'zoom': 1.5}}, 'u3')
+
+    # Different node / only moved: goes ahead and keeps the user's position.
+    assert not tools.update_node(mine, {'prompt': 'agent 新的'}).is_error
+    node = repository.node_snapshot(canvas_id, mine)
+    assert node['data']['prompt'] == 'agent 新的' and node['x'] == 900
+    # Parameters don't clash with a moved node either, but moving it back does.
+    moved = tools.move_nodes([{'node_id': mine, 'x': 0, 'y': 0}])
+    assert moved.is_error and '移动了' in moved.text
+    # The user's note edit only blocks a step that touches that note.
+    assert tools.update_node(other, {'content': 'agent 覆盖'}).is_error
+    assert not tools.update_node(other, {'title': '新名字'}).is_error
+
+
+def test_generation_results_and_other_generations_do_not_conflict(repository, tmp_path):
+    tools, service, canvas_id = setup(repository)
+    key, video = tools.create_nodes([{'type': 'image', 'prompt': '关键帧'}, {'type': 'video', 'prompt': '推镜'}]).touched
+    assert not tools.connect(key, video).is_error
+    assert not tools.generate([key]).is_error
+    job = repository.get_snapshot(canvas_id).jobs[0]
+    # The worker finishes: the keyframe gets its image and the revision moves on.
+    add_image_asset(repository, canvas_id, key, tmp_path / 'k.png', 'asset-k')
+    repository._execute("UPDATE generation_jobs SET status = 'completed', output_asset_id = 'asset-k' WHERE id = ?", (job['id'],))
+    repository.bump_revision(canvas_id)
+    assert not tools.generate([video]).is_error
+
+    # But a user replacing the upstream image does matter.
+    other, second = tools.create_nodes([{'type': 'image', 'prompt': '参考'}, {'type': 'video', 'prompt': 'x'}]).touched
+    assert not tools.connect(other, second).is_error
+    add_image_asset(repository, canvas_id, other, tmp_path / 'u.png', 'asset-upload')
+    repository.bump_revision(canvas_id)
+    result = tools.generate([second])
+    assert result.is_error and '换了图片/视频' in result.text
+
+
+def test_several_generations_in_one_call_survive_worker_updates(repository, monkeypatch):
+    tools, _, canvas_id = setup(repository)
+    nodes = tools.create_nodes([{'type': 'image', 'prompt': f'镜头{i}'} for i in range(3)]).touched
+    real = tools.service.execute
+
+    def execute_then_worker_bumps(canvas, envelope):
+        result = real(canvas, envelope)
+        repository.bump_revision(canvas)  # job moved queued -> running
+        return result
+
+    monkeypatch.setattr(tools.service, 'execute', execute_then_worker_bumps)
+    result = tools.generate(nodes)
+    assert not result.is_error and len(repository.get_snapshot(canvas_id).jobs) == 3
 
 
 def test_busy_nodes_cannot_be_changed_or_regenerated(repository):

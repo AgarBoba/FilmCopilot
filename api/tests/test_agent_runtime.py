@@ -91,6 +91,7 @@ def test_generation_waits_for_confirmation(repository):
             event = await asyncio.wait_for(queue.get(), 5)
             if event['kind'] == 'confirm_request':
                 assert event['summary'].startswith('生成 1 个节点')
+                assert event["touched"] == [repository.get_snapshot(canvas_id).nodes[0].id]
                 assert store.get_run(event['runId'])['status'] == 'waiting_confirmation'
                 service.confirm(event['requestId'], approve)
                 break

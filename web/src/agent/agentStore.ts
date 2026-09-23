@@ -2,6 +2,8 @@ import { create } from 'zustand';
 
 import type { AgentEvent, AgentSession, AgentSettings } from './agentApi';
 
+export const RECENT_MARK_MS = 4000;
+
 /** What the panel renders: persisted events plus the text currently streaming in. */
 export interface AgentState {
   open: boolean;
@@ -13,6 +15,8 @@ export interface AgentState {
   /** Text of the assistant message still streaming, per run. */
   streaming: Record<string, string>;
   activeRunId: string | null;
+  /** The run that just finished while we watched; its nodes stay marked for a moment. */
+  recentRunId: string | null;
   settings: AgentSettings | null;
   lastEventId: number;
   error: string | null;
@@ -30,6 +34,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   events: [],
   streaming: {},
   activeRunId: null,
+  recentRunId: null,
   settings: null,
   lastEventId: 0,
   error: null,
@@ -37,8 +42,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   setOpen: (open) => set({ open }),
 
   reset: (sessionId, events = []) => {
-    set({ sessionId, events: [], streaming: {}, activeRunId: null, lastEventId: 0, error: null });
+    set({ sessionId, events: [], streaming: {}, activeRunId: null, recentRunId: null, lastEventId: 0, error: null });
     events.forEach((event) => get().apply(event));
+    set({ recentRunId: null }); // history, not something that just happened
   },
 
   apply: (event) => {
@@ -47,6 +53,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const runId = event.runId ?? '';
     const streaming = { ...state.streaming };
     let activeRunId = state.activeRunId;
+    let recentRunId = state.recentRunId;
 
     switch (event.kind) {
       case 'text_delta':
@@ -61,7 +68,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         break;
       case 'run_finished':
         delete streaming[runId];
-        if (activeRunId === event.runId) activeRunId = null;
+        if (activeRunId === event.runId) {
+          activeRunId = null;
+          recentRunId = event.runId;
+          setTimeout(() => {
+            if (get().recentRunId === event.runId) set({ recentRunId: null });
+          }, RECENT_MARK_MS);
+        }
         break;
       default:
         break;
@@ -70,6 +83,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       events: [...state.events, event],
       streaming,
       activeRunId,
+      recentRunId,
       lastEventId: event.id ?? state.lastEventId,
     });
   },

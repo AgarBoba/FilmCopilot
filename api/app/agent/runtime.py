@@ -19,7 +19,7 @@ from ..schemas import CommandEnvelope
 from .canvas_tools import CanvasTools, ToolResult
 from .config import AgentConfig
 from .mcp_server import READ_ONLY, build_handlers, build_server, qualified
-from .permissions import ConfirmationBroker, RunState, decide, describe_request
+from .permissions import ConfirmationBroker, RunState, decide, describe_request, request_node_ids
 from .prompts import SYSTEM_PROMPT, build_user_message
 from .store import AgentStore
 
@@ -233,6 +233,7 @@ class AgentService:
         self.store.set_run_status(run_id, 'waiting_confirmation')
         self._emit(runtime.session_id, run_id, 'confirm_request', {
             'requestId': request.id, 'summary': summary, 'reason': reason,
+            'touched': [i for i in request_node_ids(tool_input) if i in titles],
         }, role='system_event')
         approved, note = await self.broker.wait(request)
         if self.store.get_run(run_id)['status'] == 'waiting_confirmation':

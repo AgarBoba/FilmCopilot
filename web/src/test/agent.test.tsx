@@ -152,3 +152,33 @@ describe('note markdown', () => {
     expect(screen.getByText('狐狸')).toBeInTheDocument();
   });
 });
+
+describe('agent node marks', () => {
+  it('marks what the running turn touched, pending confirmations and the turn that just ended', async () => {
+    const { agentNodeMarks } = await import('../agent/agentMarks');
+    const events = [
+      event({ id: 1, runId: 'old', kind: 'tool_step', tool: 'create_nodes', touched: ['x'] }),
+      event({ id: 2, runId: 'r1', kind: 'tool_step', tool: 'create_nodes', touched: ['a', 'b'] }),
+      event({ id: 3, runId: 'r1', kind: 'tool_step', tool: 'update_node', touched: ['c'], isError: true }),
+      event({ id: 4, runId: 'r1', kind: 'confirm_request', requestId: 'q1', touched: ['b'] }),
+    ];
+    const marks = agentNodeMarks(events, 'r1', null);
+    expect(Object.fromEntries(marks)).toEqual({ a: 'working', b: 'pending' });
+    const after = [...events, event({ id: 5, runId: 'r1', kind: 'confirm_resolved', requestId: 'q1', approved: true })];
+    expect(agentNodeMarks(after, null, 'r1').get('b')).toBe('recent');
+    expect(agentNodeMarks(after, null, null).size).toBe(0);
+  });
+
+  it('keeps a finished turn as recent only when it ended live', () => {
+    vi.useFakeTimers();
+    const { apply, reset } = useAgentStore.getState();
+    apply(event({ id: 1, kind: 'user_message', text: 'go' }));
+    apply(event({ id: 2, kind: 'run_finished', status: 'completed' }));
+    expect(useAgentStore.getState().recentRunId).toBe('r1');
+    vi.advanceTimersByTime(4000);
+    expect(useAgentStore.getState().recentRunId).toBeNull();
+    reset('s', [event({ id: 1, kind: 'user_message' }), event({ id: 2, kind: 'run_finished', status: 'completed' })]);
+    expect(useAgentStore.getState().recentRunId).toBeNull();
+    vi.useRealTimers();
+  });
+});

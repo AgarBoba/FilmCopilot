@@ -21,7 +21,7 @@
 
 ## Review Focus
 
-- **Agent 不覆盖用户改动：** Agent 写入时版本号冲突，必须重新读取画布并告知 Agent，不能用新版本号直接重发原命令。由 Task 4 `test_conflict_rereads_and_reports_user_changes` 固定。
+- **Agent 不覆盖用户改动：** 冲突按节点和字段判断（`api/app/agent/conflicts.py`）：只有用户改了这一步依赖的节点/字段才拦下并告诉 Agent，Agent 必须先 `get_node` 看过才能再改；无关改动（动别的节点、平移画布、生成完成）不打断。由 `test_conflict_rereads_and_reports_user_changes`、`test_unrelated_user_edits_do_not_stop_the_agent`、`test_generation_results_and_other_generations_do_not_conflict` 固定。（2026-09-23 由整画布版本号改为节点级判断）
 - **撤销不回滚用户的改动：** 节点在 Agent 改完后被用户改过，撤销时跳过。由 Task 3 `test_undo_skips_nodes_user_changed_later` 固定。
 - **权限不能被绕过：** 视频生成在任何档位都要确认；超出生成次数上限要确认。由 Task 5 `test_video_generation_always_asks` 和 `test_generation_cap_forces_confirmation` 固定。
 - **停止真的停止：** 点停止后不再发出任何画布命令。由 Task 6 `test_stop_prevents_further_commands` 固定。
@@ -230,10 +230,10 @@ web/src/
 
 **Files:** `web/src/state/canvasStore.ts`、`web/src/canvas/CanvasShell.tsx`、`web/src/styles.css`
 
-- [ ] 从画布事件的 `actor` / `agentRunId` 得出「当前 run 改动过的节点」集合
-- [ ] 这些节点加一圈强调色描边和「Agent」小标签，悬停显示「Agent 修改」；run 结束 10 秒后淡出，撤销后立即移除
-- [ ] 点击面板里的工具步骤时，画布平移到对应节点并短暂闪烁
-- [ ] 测试：事件驱动的高亮集合计算
+- [x] 从 Agent 事件流（工具步骤的 `touched`、确认请求的 `touched`）得出节点标记：working / pending / recent（`web/src/agent/agentMarks.ts`）
+- [x] 标记节点加虚线外圈和「Agent」小标签；选中时标签变成「Agent 正在用 · 你的改动它会看到」；等确认的节点为琥珀色「等你确认」；生成中外圈呼吸；run 结束后显示「Agent 刚改过」4 秒淡出。只提示不锁定。
+- [x] 点击面板里的工具步骤时，画布平移到对应节点（Task 8 已做）
+- [x] 测试：标记集合计算、recent 只在实时结束时出现
 
 ---
 

@@ -269,6 +269,13 @@ class CanvasRepository:
             'data': json.loads(row['data_json']),
         }
 
+    def generated_asset_ids(self, canvas_id: str) -> set[str]:
+        rows = self._fetchall(
+            'SELECT output_asset_id FROM generation_jobs WHERE canvas_id = ? AND output_asset_id IS NOT NULL',
+            (canvas_id,),
+        )
+        return {row['output_asset_id'] for row in rows}
+
     def canvas_revision(self, canvas_id: str) -> int:
         return self.assert_canvas(canvas_id)['revision']
 

@@ -14,7 +14,7 @@ from ..domain import DomainError
 from ..events import EventStore
 from ..repositories import CanvasRepository
 from ..schemas import CommandEnvelope
-from . import media
+from . import conflicts, media
 from .config import AgentConfig
 from .store import AgentStore
 
@@ -79,6 +79,8 @@ class CanvasTools:
         # Notes the user typed when approving a call; attached to that call's result.
         self.confirmation_notes: list[str] = []
         self.last_seen_revision = repository.get_snapshot(canvas_id).revision
+        # The canvas as the agent knows it: what it last looked at plus its own changes.
+        self.seen = repository.canvas_state(canvas_id)
 
     # ------------------------------------------------------------------ reads
 
@@ -98,6 +100,7 @@ class CanvasTools:
             for node_id in list(wanted):
                 wanted.update(upstream[node_id])
                 wanted.update(downstream[node_id])
+        conflicts.refresh(self.seen, self.repository.canvas_state(self.canvas_id), set(wanted) if wanted else None)
         lines = [f'画布共 {len(snapshot.nodes)} 个节点、{len(snapshot.edges)} 条连线。']
         for node in snapshot.nodes:
             if wanted and node.id not in wanted:
@@ -128,6 +131,7 @@ class CanvasTools:
     def get_node(self, node_id: str) -> ToolResult:
         snapshot = self.repository.get_snapshot(self.canvas_id)
         self.last_seen_revision = snapshot.revision
+        conflicts.refresh(self.seen, self.repository.canvas_state(self.canvas_id), {node_id})
         node = next((item for item in snapshot.nodes if item.id == node_id), None)
         if node is None:
             return self._error(ERROR_TEXT['NOT_FOUND'])
@@ -259,7 +263,8 @@ class CanvasTools:
                 }
         if not data:
             return self._error('没有要修改的内容（可改 title、prompt / content、parameters）。')
-        result = self._command('update_node', {'nodeId': node_id, 'data': data})
+        aspects = {'gone'} | {conflicts.DATA_ASPECTS[key] for key in data}
+        result = self._command('update_node', {'nodeId': node_id, 'data': data}, {node_id: aspects})
         if isinstance(result, ToolResult):
             return result
         title = data.get('title') or node['data'].get('title', '')
@@ -268,7 +273,10 @@ class CanvasTools:
     def connect(self, source_id: str, target_id: str) -> ToolResult:
         if (busy := self._busy_error([target_id])):
             return busy
-        result = self._command('connect_nodes', {'sourceNodeId': source_id, 'targetNodeId': target_id})
+        result = self._command(
+            'connect_nodes', {'sourceNodeId': source_id, 'targetNodeId': target_id},
+            {source_id: {'gone'}, target_id: {'gone'}},
+        )
         if isinstance(result, ToolResult):
             return result
         titles = self._titles([source_id, target_id])
@@ -285,7 +293,7 @@ class CanvasTools:
         )
         if edge is None:
             return self._error('这两个节点之间没有连线。')
-        result = self._command('disconnect_nodes', {'edgeId': edge.id})
+        result = self._command('disconnect_nodes', {'edgeId': edge.id}, {source_id: {'gone'}, target_id: {'gone'}})
         if isinstance(result, ToolResult):
             return result
         titles = self._titles([source_id, target_id])
@@ -297,7 +305,10 @@ class CanvasTools:
             {'nodeId': item.get('node_id') or item.get('nodeId'), 'x': item.get('x'), 'y': item.get('y')}
             for item in positions or []
         ]
-        result = self._command('move_nodes', {'positions': payload})
+        result = self._command(
+            'move_nodes', {'positions': payload},
+            {item['nodeId']: {'gone', 'layout'} for item in payload if isinstance(item['nodeId'], str)},
+        )
         if isinstance(result, ToolResult):
             return result
         return ToolResult(
@@ -311,7 +322,7 @@ class CanvasTools:
         result = self._command('duplicate_nodes', {'nodes': [
             {'sourceNodeId': node_id, 'x': nodes[node_id].x + offset, 'y': nodes[node_id].y + offset}
             for node_id in node_ids
-        ]})
+        ]}, {node_id: {'gone'} for node_id in node_ids})
         if isinstance(result, ToolResult):
             return result
         created = [item['nodeId'] for item in result['nodes']]
@@ -325,7 +336,9 @@ class CanvasTools:
         if not node_ids:
             return self._error('没有指定要删除的节点。')
         titles = self._titles(node_ids)
-        result = self._command('delete_elements', {'nodeIds': node_ids})
+        # Don't throw away something the user has just been working on.
+        edited = {'gone', 'title', 'prompt', 'parameters', 'media', 'inputs'}
+        result = self._command('delete_elements', {'nodeIds': node_ids}, {node_id: edited for node_id in node_ids})
         if isinstance(result, ToolResult):
             return result
         return ToolResult(
@@ -354,7 +367,12 @@ class CanvasTools:
             return busy
         started: list[str] = []
         for node_id in node_ids:
-            result = self._command('start_generation', {'targetNodeId': node_id})
+            # What gets generated: the node's own prompt/parameters/inputs and its upstream content.
+            deps = {node_id: {'gone', 'prompt', 'parameters', 'inputs'}}
+            for edge in snapshot.edges:
+                if edge.target == node_id:
+                    deps[edge.source] = {'gone', 'prompt', 'media'}
+            result = self._command('start_generation', {'targetNodeId': node_id}, deps)
             if isinstance(result, ToolResult):
                 prefix = f'已开始 {len(started)} 个生成，之后出错：' if started else ''
                 return ToolResult(prefix + result.text, is_error=True, touched=started)
@@ -408,50 +426,53 @@ class CanvasTools:
 
     # ---------------------------------------------------------------- helpers
 
-    def _command(self, command: str, payload: dict[str, Any]) -> dict[str, Any] | ToolResult:
+    def _command(
+        self, command: str, payload: dict[str, Any], deps: dict[str, set[str]] | None = None,
+    ) -> dict[str, Any] | ToolResult:
+        """Run one canvas command for the agent.
+
+        The user may be working on the canvas at the same time. Only edits to what this step
+        depends on (`deps`: node id -> aspects, see conflicts.py) stop it; anything else, such
+        as moving other nodes or a generation finishing, is merged in and the step goes ahead.
+        """
         if self.stopped:
             return self._error('已停止：用户中止了这一轮任务，不要再修改画布。')
         step = self.store.next_step(self.run_id)
-        envelope = CommandEnvelope(
-            command=command,
-            baseRevision=self.last_seen_revision,
-            idempotencyKey=f'agent:{self.run_id}:{step}',
-            payload=payload,
-            actor='agent',
-            agentRunId=self.run_id,
-        )
-        try:
-            result = self.service.execute(self.canvas_id, envelope)
-        except DomainError as error:
-            if error.code == 'REVISION_CONFLICT':
-                return self._conflict()
-            return self._error(ERROR_TEXT.get(error.code, error.message))
-        self.last_seen_revision = result.revision
-        return result.payload
+        for _ in range(5):
+            before = self.repository.canvas_state(self.canvas_id)
+            changes = conflicts.node_changes(self.seen, before, self.repository.generated_asset_ids(self.canvas_id))
+            hits = conflicts.blocking(changes, deps or {})
+            if hits:
+                return self._conflict(hits)
+            envelope = CommandEnvelope(
+                command=command,
+                baseRevision=self.repository.canvas_revision(self.canvas_id),
+                idempotencyKey=f'agent:{self.run_id}:{step}',
+                payload=payload,
+                actor='agent',
+                agentRunId=self.run_id,
+            )
+            try:
+                result = self.service.execute(self.canvas_id, envelope)
+            except DomainError as error:
+                if error.code == 'REVISION_CONFLICT':
+                    continue  # something changed in between; check again
+                return self._error(ERROR_TEXT.get(error.code, error.message))
+            conflicts.apply_changes(self.seen, before, self.repository.canvas_state(self.canvas_id))
+            self.last_seen_revision = result.revision
+            return result.payload
+        return self._error('画布正在频繁变化，这一步没有执行。稍等几秒再试。')
 
-    def _conflict(self) -> ToolResult:
-        """Someone else changed the canvas: never resend blindly; tell the model what changed."""
-        changed: list[str] = []
-        for event in self.events.after_revision(self.canvas_id, self.last_seen_revision):
-            if event.payload.get('agentRunId') == self.run_id:
-                continue
-            payload = event.payload.get('payload', event.payload)
-            for key in ('nodeId', 'targetNodeId', 'sourceNodeId'):
-                if isinstance(payload.get(key), str):
-                    changed.append(payload[key])
-            changed.extend(item for item in payload.get('nodeIds') or [] if isinstance(item, str))
-            for key in ('positions', 'nodes'):
-                for item in payload.get(key) or []:
-                    if isinstance(item, dict) and isinstance(item.get('nodeId'), str):
-                        changed.append(item['nodeId'])
-        changed = list(dict.fromkeys(changed))
-        self.last_seen_revision = self.repository.get_snapshot(self.canvas_id).revision
-        titles = self._titles(changed)
-        detail = '、'.join(f"「{titles.get(i, '已删除的节点')}」[{i}]" for i in changed) or '画布'
+    def _conflict(self, hits: dict[str, set[str]]) -> ToolResult:
+        """The user changed something this step depends on: don't overwrite it, tell the model."""
+        titles = {node_id: (node.get('data') or {}).get('title', '') for node_id, node in self.seen['node'].items()}
+        titles.update(self._titles(list(hits)))
         return ToolResult(
-            f'这一步没有执行：用户刚刚修改了{detail}。'
-            '请先用 get_canvas 或 get_node 看最新内容；如果和你的计划冲突，先向用户说明，不要覆盖用户的改动。',
-            is_error=True, touched=changed, summary='画布被用户修改，这一步未执行',
+            f'这一步没有执行：用户刚刚{conflicts.describe(hits, titles)}。'
+            '先用 get_node 看这些节点的最新内容。如果用户的改动和你的计划不矛盾，就在最新内容的基础上继续做完，'
+            '不用停下来问；只有改动和计划矛盾时（比如删了你要用的节点、改了你正要改的同一处），才向用户说明并询问。'
+            '不要覆盖用户的改动。',
+            is_error=True, touched=list(hits), summary='用户改了相关节点，这一步先没执行',
         )
 
     def _busy_error(self, node_ids: list[str]) -> ToolResult | None:

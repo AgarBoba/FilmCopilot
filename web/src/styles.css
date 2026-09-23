@@ -1681,3 +1681,50 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   .agent-thinking span, .agent-msg.is-streaming .markdown > :last-child::after { animation: none; }
 }
+
+/* ---------- Agent working marks (not a lock: the user can still edit) ---------- */
+.react-flow__node.agent-mark .media-node {
+  outline: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 6px;
+  transition: outline-color 0.6s ease;
+}
+.react-flow__node.agent-mark::after {
+  content: 'Agent';
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+}
+.react-flow__node.agent-mark.selected::after { content: 'Agent 正在用 · 你的改动它会看到'; }
+.react-flow__node.is-agent-pending .media-node {
+  outline-color: color-mix(in srgb, #f59e0b 80%, transparent);
+}
+.react-flow__node.is-agent-pending::after { content: '等你确认'; background: #f59e0b; }
+.react-flow__node.is-agent-generating .media-node { animation: agent-ring-pulse 1.6s ease-in-out infinite; }
+.react-flow__node.is-agent-recent .media-node { animation: agent-ring-fade 4s ease-in forwards; }
+.react-flow__node.is-agent-recent::after { content: 'Agent 刚改过'; animation: agent-tag-fade 4s ease-in forwards; }
+
+@keyframes agent-ring-pulse {
+  0%, 100% { outline-color: color-mix(in srgb, var(--accent) 80%, transparent); outline-offset: 6px; }
+  50% { outline-color: color-mix(in srgb, var(--accent) 25%, transparent); outline-offset: 9px; }
+}
+@keyframes agent-ring-fade {
+  0%, 60% { outline-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+  100% { outline-color: transparent; }
+}
+@keyframes agent-tag-fade {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node.is-agent-generating .media-node { animation: none; }
+}

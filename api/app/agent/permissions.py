@@ -93,6 +93,19 @@ class PendingConfirmation:
 MAX_NOTE_LENGTH = 2000
 
 
+def request_node_ids(tool_input: dict[str, Any]) -> list[str]:
+    """Existing nodes a tool call is about, so the canvas can mark them while it waits."""
+    ids: list[str] = []
+    for key in ('node_id', 'source_id', 'target_id'):
+        if isinstance(tool_input.get(key), str):
+            ids.append(tool_input[key])
+    ids.extend(item for item in tool_input.get('node_ids') or [] if isinstance(item, str))
+    for item in tool_input.get('positions') or []:
+        if isinstance(item, dict) and isinstance(item.get('node_id') or item.get('nodeId'), str):
+            ids.append(item.get('node_id') or item.get('nodeId'))
+    return list(dict.fromkeys(ids))
+
+
 class ConfirmationBroker:
     """Holds a tool call until the user answers in the agent panel (or it times out)."""
 
