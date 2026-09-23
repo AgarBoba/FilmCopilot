@@ -43,6 +43,26 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-09-23：Agent 第一阶段 Task 4–5（画布工具、权限）
+
+**Task 4：画布工具**（`app/agent/canvas_tools.py`、`app/agent/media.py`）
+
+- 12 个工具：`get_canvas`、`get_node`、`view_asset`、`create_nodes`、`update_node`、`connect`、`disconnect`、`move_nodes`、`duplicate_nodes`、`delete_nodes`、`generate`、`wait_for_generation`。纯 Python 实现，不依赖 SDK。
+- 所有写入走画布命令服务，`actor=agent` + 任务 ID，幂等键为「任务 ID + 步骤序号」。
+- 版本冲突时不重发，把冲突期间用户改过的节点告诉 Agent，并要求它先看最新内容、有冲突先问用户。
+- 生成中的节点拒绝修改、连线变更和重复生成；没有 Prompt 也没连便签的节点拒绝生成。
+- 参数只接受界面上有的取值，错误用中文说明，方便 Agent 自己改正。
+- 新节点自动命名（图片 N），默认排在现有内容右侧一列。
+- 图片发给模型前缩到长边 1024；视频用 ffmpeg 取首、中、尾 3 帧。
+- `wait_for_generation` 轮询任务，完成后直接返回结果图 / 关键帧，失败返回原因。
+
+**Task 5：权限**（`app/agent/permissions.py`）
+
+- `decide()`：只读工具放行；三档（每步确认 / 只确认生成和删除 / 全自动）；视频生成、超出本轮生成上限在任何档位都要确认；未知工具拒绝。
+- `ConfirmationBroker`：挂起工具调用等用户确认；超时（默认 10 分钟）或任务被停止都按拒绝处理。
+
+**验证**：后端 84 项测试全部通过（含视频抽帧，需要 ffmpeg）。
+
 ### 2026-09-23：Agent 第一阶段 Task 1–3（数据表、来源标记、按任务撤销）
 
 **缺陷修复：带便签的生成结果不会显示到节点上（已确认）**
