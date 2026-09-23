@@ -39,15 +39,20 @@ export function PromptComposer({
   const { draft, setDraft, flush } = useDebouncedDraft(prompt, onPromptChange);
 
   return (
-    <div className="prompt-composer" data-testid={testId}>
+    <div className={`prompt-composer ${disabled ? 'is-locked' : ''}`} data-testid={testId}>
       <textarea
         aria-label="Prompt"
         value={draft}
         placeholder={noteCount ? '可以留空，会使用上游便签的文字' : '描述你想生成的画面…'}
+        readOnly={disabled}
+        aria-readonly={disabled}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={flush}
         onMouseDown={(event) => event.stopPropagation()}
       />
+      {disabled && (
+        <p className="prompt-lock-hint">生成中，完成后才能修改提示词和参数</p>
+      )}
       {noteCount > 0 && (
         <p className="prompt-note-hint">
           上游 {noteCount} 条便签的文字会放在这段提示词前面，一起发给模型
@@ -58,6 +63,7 @@ export function PromptComposer({
           <label>
             size
             <select
+              disabled={disabled}
               aria-label="size"
               value={imageParameters.size}
               onChange={(event) => onParametersChange({ ...imageParameters, size: event.target.value as '1K' | '2K' })}
@@ -69,6 +75,7 @@ export function PromptComposer({
           <label>
             aspect ratio
             <select
+              disabled={disabled}
               aria-label="aspect-ratio"
               value={imageParameters.aspectRatio}
               onChange={(event) => onParametersChange({ ...imageParameters, aspectRatio: event.target.value })}
@@ -83,6 +90,7 @@ export function PromptComposer({
           <label>
             format
             <select
+              disabled={disabled}
               aria-label="output-format"
               value={imageParameters.outputFormat}
               onChange={(event) => onParametersChange({ ...imageParameters, outputFormat: event.target.value as 'png' | 'jpeg' })}
@@ -97,6 +105,7 @@ export function PromptComposer({
           <label>
             duration
             <select
+              disabled={disabled}
               aria-label="duration"
               value={videoParameters.duration}
               onChange={(event) => onParametersChange({ ...videoParameters, duration: Number(event.target.value) })}
@@ -108,6 +117,7 @@ export function PromptComposer({
           <label>
             resolution
             <select
+              disabled={disabled}
               aria-label="resolution"
               value={videoParameters.resolution}
               onChange={(event) => onParametersChange({ ...videoParameters, resolution: event.target.value as '480p' | '720p' })}
@@ -119,6 +129,7 @@ export function PromptComposer({
           <label>
             aspect ratio
             <select
+              disabled={disabled}
               aria-label="aspect-ratio"
               value={videoParameters.aspectRatio}
               onChange={(event) => onParametersChange({ ...videoParameters, aspectRatio: event.target.value })}
@@ -133,6 +144,7 @@ export function PromptComposer({
             <input
               aria-label="generate-audio"
               type="checkbox"
+              disabled={disabled}
               checked={videoParameters.generateAudio}
               onChange={(event) => onParametersChange({ ...videoParameters, generateAudio: event.target.checked })}
             />

@@ -148,3 +148,25 @@ describe('note references', () => {
     expect(onRemove).toHaveBeenCalledWith(expect.objectContaining({ edgeId: 'n1' }));
   });
 });
+
+describe('locked while generating', () => {
+  it('locks prompt, parameters and reference removal', () => {
+    const onPromptChange = vi.fn();
+    render(
+      <ImageNode
+        data={{
+          generationStatus: 'running',
+          prompt: '兔子',
+          onPromptChange,
+          references: [{ edgeId: 'e1', url: '/a.png', kind: 'image' }],
+          onRemoveReference: vi.fn(),
+        }}
+      />,
+    );
+    const prompt = screen.getByLabelText('Prompt') as HTMLTextAreaElement;
+    expect(prompt.readOnly).toBe(true);
+    for (const select of screen.getAllByRole('combobox')) expect((select as HTMLSelectElement).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /删除参考素材/ })).toBeNull();
+    expect(screen.getByText(/生成中，完成后才能修改/)).toBeInTheDocument();
+  });
+});

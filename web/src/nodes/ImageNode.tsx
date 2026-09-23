@@ -64,7 +64,7 @@ export function ImageNode({ data }: ImageNodeProps) {
           <EmptyPreview kind="image" busy={busy} onUpload={data.onUpload} />
         )}
       </div>
-      <ReferenceStrip references={references} onRemove={data.onRemoveReference} />
+      <ReferenceStrip references={references} onRemove={busy ? undefined : data.onRemoveReference} />
       <PromptComposer
         kind="image"
         prompt={data.prompt ?? ''}

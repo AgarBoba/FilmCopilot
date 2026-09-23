@@ -1311,3 +1311,18 @@ h1 {
 .react-flow__node.is-duplicate-ghost .react-flow__handle {
   display: none;
 }
+
+/* ---------- Prompt area locked while generating ---------- */
+
+.prompt-composer.is-locked textarea,
+.prompt-composer.is-locked select,
+.prompt-composer.is-locked input[type="checkbox"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.prompt-lock-hint {
+  margin: 6px 2px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}

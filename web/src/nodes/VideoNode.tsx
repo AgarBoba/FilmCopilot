@@ -102,7 +102,7 @@ export function VideoNode({ data }: VideoNodeProps) {
           <EmptyPreview kind="video" busy={busy} onUpload={data.onUpload} />
         )}
       </div>
-      <ReferenceStrip references={references} onRemove={data.onRemoveReference} />
+      <ReferenceStrip references={references} onRemove={busy ? undefined : data.onRemoveReference} />
       <PromptComposer
         kind="video"
         prompt={data.prompt ?? ''}

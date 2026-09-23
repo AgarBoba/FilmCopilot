@@ -148,6 +148,7 @@ web/src/
 - [ ] 所有写入工具用 `actor=agent`、`agentRunId`、确定性的 idempotency key（run ID + 步骤序号），Agent 重试同一步不会重复写
 - [ ] `get_canvas` 精简输出：每个节点 ID、类型、标题、位置、Prompt 前 80 字、生成状态、上游节点 ID；可选 `node_ids` 只看指定节点及其上下游
 - [ ] **版本冲突处理：** 写入遇到 `REVISION_CONFLICT` 时，不重发，返回错误说明 + 本次冲突期间变化的节点列表（从事件表读取），由 Agent 决定下一步
+- [ ] 节点生成中（queued / running）时，`update_node`、`connect` / `disconnect` 到该节点、`generate` 都拒绝，并说明「节点正在生成，完成后再改」，和前端锁定规则一致
 - [ ] 错误信息改写成中文说明，例如 `INVALID_CONNECTION` →「视频节点不能作为图片节点的参考」
 - [ ] `create_nodes` 未给位置时，自动排在当前画布内容右侧，不与现有节点重叠
 - [ ] `media.py`：
