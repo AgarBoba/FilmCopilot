@@ -19,3 +19,6 @@ web/vite.config.d.ts
 
 # local Python environment
 .venv/
+
+# package manager cache
+.pnpm-store/
