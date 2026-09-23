@@ -33,6 +33,11 @@ def _reference_path(reference: dict[str, Any]) -> Path:
     return resolve_project_path(path)
 
 
+def _output_format(parameters: dict[str, Any]) -> str:
+    value = str(parameters.get('outputFormat', parameters.get('output_format', 'png'))).lower()
+    return 'jpeg' if value in {'jpeg', 'jpg'} else 'png'
+
+
 def _reference_kind(reference: dict[str, Any]) -> str:
     return reference.get('kind') or reference.get('asset_kind') or ''
 
@@ -51,11 +56,8 @@ def map_seedream_input(job_snapshot: dict[str, Any]) -> ImageGenerationInput:
         image_inputs=[_reference_path(reference) for reference in references[:10]],
         size=parameters.get('size', '2K'),
         aspect_ratio=parameters.get('aspectRatio', parameters.get('aspect_ratio', 'match_input_image')),
-        output_format=(
-            'jpg'
-            if parameters.get('outputFormat', parameters.get('output_format', 'png')) == 'jpeg'
-            else parameters.get('outputFormat', parameters.get('output_format', 'png'))
-        ),
+        # Seedream 5 Pro accepts exactly "png" or "jpeg" (it rejects "jpg" with a 422).
+        output_format=_output_format(parameters),
         warnings=warnings,
     )
 

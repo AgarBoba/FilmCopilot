@@ -58,3 +58,10 @@ def test_seedance_maps_image_and_video_references():
     assert mapped.resolution == '720p'
     assert mapped.aspect_ratio == 'adaptive'
     assert mapped.generate_audio is True
+
+
+def test_seedream_sends_jpeg_not_jpg():
+    """Replicate rejected "jpg" with 422: output_format must be "png" or "jpeg"."""
+    for value in ('jpeg', 'jpg', 'JPEG'):
+        mapped = map_seedream_input({'prompt': 'x', 'parameters': {'outputFormat': value}})
+        assert mapped.output_format == 'jpeg'
