@@ -27,6 +27,15 @@ command -v "$PYTHON" >/dev/null 2>&1 || fail "找不到 Python。请先按 READM
   || fail "API 依赖没装。运行：$PYTHON -m pip install -e 'api[dev]'（或 uv pip install -e 'api[dev]'）"
 command -v node >/dev/null 2>&1 || fail "找不到 Node.js。请先安装（例如 brew install node）。"
 [[ -d "$ROOT_DIR/web/node_modules" ]] || fail "Web 依赖没装。运行：npm install --prefix web"
+# Fail early if a port is taken (usually a previous dev.sh still running).
+for port in "$API_PORT" "$WEB_PORT"; do
+  if command -v lsof >/dev/null 2>&1; then
+    holder="$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN -t 2>/dev/null | head -1 || true)"
+    if [[ -n "${holder}" ]]; then
+      fail "端口 ${port} 已被进程 ${holder}（$(ps -p "${holder}" -o comm= 2>/dev/null || echo 未知)）占用。可能是之前启动的服务还没关，运行 kill ${holder} 后再试。"
+    fi
+  fi
+done
 [[ -n "${REPLICATE_API_TOKEN:-}" ]] || echo "dev.sh: 警告：没有 REPLICATE_API_TOKEN，真实生成会失败。" >&2
 
 PIDS=()
@@ -65,7 +74,7 @@ while true; do
   for pid in "${PIDS[@]}"; do
     if ! kill -0 "$pid" 2>/dev/null; then
       wait "$pid" 2>/dev/null && status=0 || status=$?
-      echo "dev.sh: 进程 $pid 已退出（状态 $status），正在关闭其余进程。" >&2
+      echo "dev.sh: 进程 ${pid} 已退出（状态 ${status}），正在关闭其余进程。" >&2
       exit "$status"
     fi
   done
