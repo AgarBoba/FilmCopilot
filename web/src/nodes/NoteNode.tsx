@@ -1,10 +1,13 @@
 import { NodeResizer, Position } from '@xyflow/react';
 
 import { NodeHandle } from './NodeHandles';
+import { NodeTitle } from './NodeTitle';
+import { useDebouncedDraft } from './useDebouncedDraft';
 
 
 export interface NoteNodeData {
   title?: string;
+  onTitleChange?: (title: string) => void;
   prompt?: string;
   content?: string;
   fontFamily?: string;
@@ -22,23 +25,24 @@ interface NoteNodeProps {
 
 
 export function NoteNode({ data }: NoteNodeProps) {
+  const { draft, setDraft, flush } = useDebouncedDraft(data.content ?? data.prompt ?? '', data.onChange);
   return (
     <div className="media-node note-node">
       <NodeResizer minWidth={180} minHeight={120} onResizeEnd={(_, params) => data.onResize?.({ width: params.width, height: params.height })} />
-      <NodeHandle type="target" position={Position.Left} id="target" />
       <NodeHandle type="source" position={Position.Right} id="source" />
       <div className="node-heading">
         <span className="node-kind">NOTE</span>
-        <strong>{data.title ?? '便签'}</strong>
+        <NodeTitle title={data.title} fallback="便签" onChange={data.onTitleChange} />
       </div>
       <textarea
-        value={data.content ?? data.prompt ?? ''}
+        value={draft}
         aria-label="便签内容"
         style={{
           fontFamily: data.fontFamily,
           fontSize: data.fontSize,
         }}
-        onChange={(event) => data.onChange?.(event.target.value)}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={flush}
         onMouseDown={(event) => event.stopPropagation()}
       />
       <div className="note-controls">

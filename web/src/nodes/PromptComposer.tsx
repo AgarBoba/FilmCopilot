@@ -1,3 +1,4 @@
+import { useDebouncedDraft } from './useDebouncedDraft';
 import type {
   ImageGenerationParameters,
   VideoGenerationParameters,
@@ -17,6 +18,8 @@ interface PromptComposerProps {
     parameters: ImageGenerationParameters | VideoGenerationParameters;
   }) => void;
   disabled?: boolean;
+  /** How many connected notes have text; their text is added in front of this prompt. */
+  noteCount?: number;
 }
 
 
@@ -28,20 +31,28 @@ export function PromptComposer({
   onParametersChange,
   onGenerate,
   disabled = false,
+  noteCount = 0,
 }: PromptComposerProps) {
   const imageParameters = parameters as ImageGenerationParameters;
   const videoParameters = parameters as VideoGenerationParameters;
   const testId = `prompt-composer-${kind}`;
+  const { draft, setDraft, flush } = useDebouncedDraft(prompt, onPromptChange);
 
   return (
     <div className="prompt-composer" data-testid={testId}>
       <textarea
         aria-label="Prompt"
-        value={prompt}
-        placeholder="描述你想生成的画面…"
-        onChange={(event) => onPromptChange(event.target.value)}
+        value={draft}
+        placeholder={noteCount ? '可以留空，会使用上游便签的文字' : '描述你想生成的画面…'}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={flush}
         onMouseDown={(event) => event.stopPropagation()}
       />
+      {noteCount > 0 && (
+        <p className="prompt-note-hint">
+          上游 {noteCount} 条便签的文字会放在这段提示词前面，一起发给模型
+        </p>
+      )}
       {kind === 'image' ? (
         <div className="prompt-options">
           <label>
@@ -134,7 +145,8 @@ export function PromptComposer({
         disabled={disabled}
         onClick={(event) => {
           event.stopPropagation();
-          onGenerate({ prompt, parameters });
+          flush();
+          onGenerate({ prompt: draft, parameters });
         }}
       >
         生成

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Edge, Node } from '@xyflow/react';
 
-import { api } from '../api/client';
+import { ApiError, api } from '../api/client';
 import type {
   CanvasEvent,
   CanvasNodeData,
@@ -52,6 +52,7 @@ export function snapshotToReactFlow(snapshot: CanvasSnapshot): {
 
 
 export function createCanvasStore(initialSnapshot: CanvasSnapshot | null = null) {
+  let commandQueue: Promise<unknown> = Promise.resolve();
   return create<CanvasState>((set, get) => ({
     canvasId: initialSnapshot?.canvasId ?? null,
     snapshot: initialSnapshot,
@@ -77,25 +78,44 @@ export function createCanvasStore(initialSnapshot: CanvasSnapshot | null = null)
       }
     },
 
-    async execute(envelope) {
-      const canvasId = get().canvasId;
-      if (!canvasId || !get().snapshot) {
-        return null;
-      }
-      set({ isSaving: true, error: null });
-      try {
-        const result = await api.executeCommand(canvasId, envelope);
-        const snapshot = await api.getSnapshot(canvasId);
-        set({
-          snapshot,
-          selectedNodeIds: get().selectedNodeIds.filter((id) => snapshot.nodes.some((node) => node.id === id)),
-          isSaving: false,
+    execute(envelope) {
+      // Commands run one at a time. Each is sent with the newest revision we know,
+      // so rapid edits (typing, dragging) don't collide with our own earlier saves.
+      const run = async () => {
+        const canvasId = get().canvasId;
+        if (!canvasId || !get().snapshot) {
+          return null;
+        }
+        set({ isSaving: true, error: null });
+        const send = () => api.executeCommand(canvasId, {
+          ...envelope,
+          baseRevision: Math.max(envelope.baseRevision, get().snapshot?.revision ?? 0),
         });
-        return result;
-      } catch (error) {
-        set({ isSaving: false, error: error instanceof Error ? error.message : 'Command failed' });
-        throw error;
-      }
+        try {
+          let result: CommandResult;
+          try {
+            result = await send();
+          } catch (error) {
+            // Someone else (another tab, the Agent API) changed the canvas: refresh and retry once.
+            if (!(error instanceof ApiError) || error.code !== 'REVISION_CONFLICT') throw error;
+            set({ snapshot: await api.getSnapshot(canvasId) });
+            result = await send();
+          }
+          const snapshot = await api.getSnapshot(canvasId);
+          set({
+            snapshot,
+            selectedNodeIds: get().selectedNodeIds.filter((id) => snapshot.nodes.some((node) => node.id === id)),
+            isSaving: false,
+          });
+          return result;
+        } catch (error) {
+          set({ isSaving: false, error: error instanceof Error ? error.message : 'Command failed' });
+          throw error;
+        }
+      };
+      const next = commandQueue.then(run, run);
+      commandQueue = next.catch(() => undefined);
+      return next;
     },
 
     applyEvent(event) {

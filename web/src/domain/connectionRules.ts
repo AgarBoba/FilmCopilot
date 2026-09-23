@@ -4,6 +4,9 @@ const allowedConnections = new Set<string>([
   'image:image',
   'image:video',
   'video:video',
+  // A note's text is added to the downstream node's prompt. Notes have no input port.
+  'note:image',
+  'note:video',
 ]);
 
 export function canConnect(source: NodeType, target: NodeType): boolean {

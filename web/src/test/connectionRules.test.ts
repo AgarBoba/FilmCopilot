@@ -11,10 +11,16 @@ describe('canvas connection rules', () => {
     expect(canConnect('video', 'video')).toBe(true);
   });
 
-  it('rejects unsupported media and note connections', () => {
+  it('rejects unsupported media connections and anything into a note', () => {
     expect(canConnect('video', 'image')).toBe(false);
-    expect(canConnect('note', 'image')).toBe(false);
     expect(canConnect('image', 'note')).toBe(false);
+    expect(canConnect('video', 'note')).toBe(false);
+    expect(canConnect('note', 'note')).toBe(false);
+  });
+
+  it('lets a note feed image and video nodes as prompt text', () => {
+    expect(canConnect('note', 'image')).toBe(true);
+    expect(canConnect('note', 'video')).toBe(true);
   });
 
   it('detects a cycle in directed reference edges', () => {

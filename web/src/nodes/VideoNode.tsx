@@ -3,21 +3,32 @@ import { Position } from '@xyflow/react';
 
 import type { VideoGenerationParameters } from '../domain/types';
 import { NodeHandle } from './NodeHandles';
+import { NodeTitle } from './NodeTitle';
+import { EmptyPreview } from './EmptyPreview';
+import { MediaNodeActions } from './MediaNodeActions';
+import { ReferenceStrip, normalizeReferences, type NodeReference } from './ReferenceStrip';
+import { GenerationOverlay, isGenerationBusy } from './GenerationOverlay';
 import { getDefaultVideoParameters } from './generationParameters';
 import { PromptComposer } from './PromptComposer';
+import { VideoPlayer } from './VideoPlayer';
 
 
 export interface VideoNodeData {
   title?: string;
+  onTitleChange?: (title: string) => void;
   assetUrl?: string;
   posterUrl?: string;
   play?: () => Promise<void> | void;
   pause?: () => void;
   onUpload?: () => void;
+  onDuplicate?: () => void;
   onGenerate?: () => void;
   prompt?: string;
   parameters?: VideoGenerationParameters;
   generationStatus?: string;
+  generationError?: string;
+  references?: Array<NodeReference | string>;
+  onRemoveReference?: (reference: NodeReference) => void;
   onPromptChange?: (prompt: string) => void;
   onParametersChange?: (parameters: VideoGenerationParameters) => void;
   onGenerateRequest?: (request: { prompt: string; parameters: VideoGenerationParameters }) => void;
@@ -32,8 +43,14 @@ interface VideoNodeProps {
 
 export function VideoNode({ data }: VideoNodeProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const manualRef = useRef(false);
+  const busy = isGenerationBusy(data.generationStatus);
+  const references = normalizeReferences(data.references);
+  const noteCount = references.filter((reference) => reference.kind === 'note' && reference.text?.trim()).length;
 
+  // Hover = silent preview. Skipped once the user is driving playback with the controls.
   async function playPreview() {
+    if (manualRef.current) return;
     if (data.play) {
       await data.play();
       return;
@@ -42,6 +59,12 @@ export function VideoNode({ data }: VideoNodeProps) {
   }
 
   function pausePreview() {
+    const video = videoRef.current;
+    if (manualRef.current) {
+      // Leave a video the user started playing alone; hand a paused one back to hover preview.
+      if (!video || video.paused) manualRef.current = false;
+      return;
+    }
     if (data.pause) {
       data.pause();
     } else if (videoRef.current) {
@@ -61,23 +84,25 @@ export function VideoNode({ data }: VideoNodeProps) {
       <NodeHandle type="source" position={Position.Right} id="source" />
       <div className="node-heading">
         <span className="node-kind">VIDEO</span>
-        <strong>{data.title ?? '视频节点'}</strong>
-        {data.generationStatus && <span className="node-status">{data.generationStatus}</span>}
+        <NodeTitle title={data.title} fallback="视频节点" onChange={data.onTitleChange} />
+        <MediaNodeActions
+          kind="video"
+          assetUrl={data.assetUrl}
+          title={data.title?.trim() || '视频节点'}
+          busy={busy}
+          onUpload={data.onUpload}
+          onDuplicate={data.onDuplicate}
+        />
       </div>
       <div className="media-preview video-preview">
+        <GenerationOverlay status={data.generationStatus} error={data.generationError} />
         {data.assetUrl ? (
-          <video
-            ref={videoRef}
-            src={data.assetUrl}
-            poster={data.posterUrl}
-            muted
-            playsInline
-            preload="metadata"
-          />
+          <VideoPlayer src={data.assetUrl} poster={data.posterUrl} videoRef={videoRef} manualRef={manualRef} />
         ) : (
-          <span>上传视频或连接参考素材</span>
+          <EmptyPreview kind="video" busy={busy} onUpload={data.onUpload} />
         )}
       </div>
+      <ReferenceStrip references={references} onRemove={data.onRemoveReference} />
       <PromptComposer
         kind="video"
         prompt={data.prompt ?? ''}
@@ -85,13 +110,9 @@ export function VideoNode({ data }: VideoNodeProps) {
         onPromptChange={(prompt) => data.onPromptChange?.(prompt)}
         onParametersChange={(parameters) => data.onParametersChange?.(parameters as VideoGenerationParameters)}
         onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: VideoGenerationParameters })}
-        disabled={data.generationStatus === 'queued' || data.generationStatus === 'running'}
+        disabled={busy}
+        noteCount={noteCount}
       />
-      <div className="node-actions">
-        <button type="button" onClick={(event) => { event.stopPropagation(); data.onUpload?.(); }}>
-          上传
-        </button>
-      </div>
     </div>
   );
 }
