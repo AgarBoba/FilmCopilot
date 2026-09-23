@@ -16,3 +16,6 @@ web/vite.config.d.ts
 .env
 .env.*
 !.env.example
+
+# local Python environment
+.venv/
