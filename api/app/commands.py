@@ -12,6 +12,12 @@ from .schemas import CommandEnvelope, CommandResult
 _NODE_TYPES = {'image', 'video', 'note'}
 
 
+def compose_prompt(note_texts: list[str], node_prompt: str) -> str:
+    """Upstream note texts (in connection order), then the node's own prompt, blank-line separated."""
+    parts = [text.strip() for text in note_texts] + [str(node_prompt or '').strip()]
+    return '\n\n'.join(part for part in parts if part)
+
+
 class CanvasCommandService:
     def __init__(self, repository: CanvasRepository, events: EventStore) -> None:
         self.repository = repository
@@ -43,6 +49,7 @@ class CanvasCommandService:
             'delete_node': self._delete_node,
             'delete_elements': self._delete_elements,
             'connect_nodes': self._connect_nodes,
+            'duplicate_nodes': self._duplicate_nodes,
             'disconnect_nodes': self._disconnect_nodes,
             'update_note': self._update_note,
             'attach_asset': self._attach_asset,
@@ -155,6 +162,56 @@ class CanvasCommandService:
             'targetNodeId': target_id,
         }
 
+    def _duplicate_nodes(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Copy nodes (content, prompt, parameters, size) to new positions.
+
+        Payload: {"nodes": [{"sourceNodeId", "x", "y", "nodeId"?}], "titleSuffix"?}.
+        The copies keep their inputs: edges coming into a copied node are copied too
+        (from the same upstream node, or from its copy when that was duplicated as well),
+        so a duplicate can be regenerated with the same references. Outgoing edges to
+        nodes that were not duplicated are not copied.
+        """
+        items = payload.get('nodes')
+        if not isinstance(items, list) or not items:
+            raise DomainError('INVALID_PAYLOAD', 'Expected a non-empty nodes list')
+        suffix = str(payload.get('titleSuffix', ' 副本'))
+        id_map: dict[str, str] = {}
+        created = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise DomainError('INVALID_PAYLOAD', 'Each node entry must be an object')
+            source_id = self._required(item, 'sourceNodeId')
+            if source_id in id_map:
+                raise DomainError('INVALID_PAYLOAD', f'Node {source_id} is listed twice')
+            source = self.repository.node_snapshot(canvas_id, source_id)
+            new_id = str(item.get('nodeId') or uuid4())
+            data = dict(source['data'])
+            title = str(data.get('title') or '').strip()
+            if title:
+                data['title'] = f'{title}{suffix}'
+            self.repository.insert_node(
+                canvas_id,
+                new_id,
+                source['nodeType'],
+                float(item.get('x', source['x'] + 40)),
+                float(item.get('y', source['y'] + 40)),
+                source['width'],
+                source['height'],
+                data,
+            )
+            id_map[source_id] = new_id
+            created.append({'sourceNodeId': source_id, 'nodeId': new_id})
+
+        edge_ids = []
+        for edge in self.repository.node_edges(canvas_id):
+            if edge.target_node_id not in id_map:
+                continue
+            source_id = id_map.get(edge.source_node_id, edge.source_node_id)
+            edge_id = str(uuid4())
+            self.repository.insert_edge(canvas_id, edge_id, source_id, id_map[edge.target_node_id])
+            edge_ids.append(edge_id)
+        return {'nodes': created, 'edgeIds': edge_ids}
+
     def _disconnect_nodes(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         edge_id = self._required(payload, 'edgeId')
         self.repository.delete_edge(canvas_id, edge_id)
@@ -185,6 +242,12 @@ class CanvasCommandService:
             snapshot['prompt'] = payload['prompt']
         if 'parameters' in payload:
             snapshot['parameters'] = payload['parameters']
+        # Text from connected notes goes in front of the node's own prompt.
+        snapshot['nodePrompt'] = snapshot['prompt']
+        snapshot['prompt'] = compose_prompt(
+            [note['text'] for note in snapshot.get('notePrompts', [])],
+            snapshot['prompt'],
+        )
         provider = (
             'bytedance/seedream-5-pro'
             if node_type == 'image'

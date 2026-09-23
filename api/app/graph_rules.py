@@ -8,6 +8,9 @@ _ALLOWED_CONNECTIONS: set[tuple[NodeType, NodeType]] = {
     ("image", "image"),
     ("image", "video"),
     ("video", "video"),
+    # A note's text is added to the downstream node's prompt. Notes have no input port.
+    ("note", "image"),
+    ("note", "video"),
 }
 
 

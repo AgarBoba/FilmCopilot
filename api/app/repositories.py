@@ -190,11 +190,21 @@ class CanvasRepository:
     def generation_snapshot(self, canvas_id: str, node_id: str) -> dict[str, Any]:
         node = self.node_snapshot(canvas_id, node_id)
         references = []
+        note_prompts = []
         for edge in self._fetchall(
-            'SELECT source_node_id FROM canvas_edges WHERE canvas_id = ? AND target_node_id = ?',
+            'SELECT source_node_id FROM canvas_edges WHERE canvas_id = ? AND target_node_id = ? ORDER BY rowid',
             (canvas_id, node_id),
         ):
             source = self.node_snapshot(canvas_id, edge['source_node_id'])
+            if source['nodeType'] == 'note':
+                text = str(source['data'].get('content') or source['data'].get('prompt') or '').strip()
+                if text:
+                    note_prompts.append({
+                        'nodeId': source['id'],
+                        'title': source['data'].get('title', ''),
+                        'text': text,
+                    })
+                continue
             asset_id = source['data'].get('assetId')
             if asset_id:
                 asset = self.asset_dict(asset_id)
@@ -203,6 +213,7 @@ class CanvasRepository:
             'targetNodeId': node_id,
             'nodeType': node['nodeType'],
             'prompt': node['data'].get('prompt', ''),
+            'notePrompts': note_prompts,
             'parameters': node['data'].get('parameters', {}),
             'references': references,
             'baseCanvasRevision': self.canvas_revision(canvas_id),

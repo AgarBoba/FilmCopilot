@@ -25,3 +25,11 @@ def test_self_link_and_duplicate_are_rejected():
 def test_cycle_detection_follows_directed_reference_edges():
     edges = [EdgeRecord("image-1", "video-1"), EdgeRecord("video-1", "video-2")]
     assert would_create_cycle(edges, "video-2", "image-1") is True
+
+
+def test_note_feeds_image_and_video_but_has_no_input():
+    validate_connection("note", "image", "note-1", "image-1", [])
+    validate_connection("note", "video", "note-1", "video-1", [])
+    for source in ("image", "video", "note"):
+        with pytest.raises(DomainError, match="INVALID_CONNECTION"):
+            validate_connection(source, "note", f"{source}-1", "note-2", [])
