@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from .db import Database
 from .domain import DomainError, EdgeRecord, NodeType
+from .prompting import compose_prompt
 from .schemas import (
     CanvasEdgeSchema,
     CanvasNodeSchema,
@@ -36,6 +37,88 @@ class CanvasRepository:
                 (canvas_id, name.strip() or 'Untitled canvas'),
             )
         return self.get_snapshot(canvas_id)
+
+    def canvas_state(self, canvas_id: str) -> dict[str, dict[str, dict[str, Any]]]:
+        """Raw nodes and edges keyed by id, for recording and undoing agent changes."""
+        nodes = self._fetchall(
+            'SELECT id, node_type, x, y, width, height, data_json FROM canvas_nodes WHERE canvas_id = ?',
+            (canvas_id,),
+        )
+        edges = self._fetchall(
+            'SELECT id, source_node_id, target_node_id FROM canvas_edges WHERE canvas_id = ?',
+            (canvas_id,),
+        )
+        return {
+            'node': {
+                row['id']: {
+                    'id': row['id'],
+                    'nodeType': row['node_type'],
+                    'x': row['x'],
+                    'y': row['y'],
+                    'width': row['width'],
+                    'height': row['height'],
+                    'data': json.loads(row['data_json']),
+                }
+                for row in nodes
+            },
+            'edge': {
+                row['id']: {'id': row['id'], 'source': row['source_node_id'], 'target': row['target_node_id']}
+                for row in edges
+            },
+        }
+
+    def replace_node(self, canvas_id: str, node: dict[str, Any]) -> None:
+        """Insert or fully overwrite a node (used by undo)."""
+        self._execute(
+            '''
+            INSERT INTO canvas_nodes (canvas_id, id, node_type, x, y, width, height, data_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (canvas_id, id) DO UPDATE SET
+                node_type = excluded.node_type, x = excluded.x, y = excluded.y,
+                width = excluded.width, height = excluded.height, data_json = excluded.data_json
+            ''',
+            (
+                canvas_id, node['id'], node['nodeType'], node['x'], node['y'],
+                node['width'], node['height'], json.dumps(node['data']),
+            ),
+        )
+
+    def record_agent_changes(
+        self, run_id: str, canvas_id: str, revision: int, changes: list[tuple[str, str, Any, Any]]
+    ) -> None:
+        if not changes:
+            return
+        row = self._fetchone(
+            'SELECT COALESCE(MAX(seq), 0) AS seq FROM agent_run_changes WHERE run_id = ?', (run_id,)
+        )
+        seq = int(row['seq']) if row else 0
+        for entity_type, entity_id, before, after in changes:
+            seq += 1
+            self._execute(
+                '''
+                INSERT INTO agent_run_changes
+                    (run_id, canvas_id, seq, entity_type, entity_id, before_json, after_json, revision)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    run_id, canvas_id, seq, entity_type, entity_id,
+                    None if before is None else json.dumps(before),
+                    None if after is None else json.dumps(after),
+                    revision,
+                ),
+            )
+
+    def agent_run_changes(self, run_id: str) -> list[dict[str, Any]]:
+        rows = self._fetchall(
+            'SELECT * FROM agent_run_changes WHERE run_id = ? ORDER BY seq', (run_id,)
+        )
+        changes = []
+        for row in rows:
+            item = dict(row)
+            item['before'] = json.loads(item.pop('before_json')) if item['before_json'] is not None else None
+            item['after'] = json.loads(item.pop('after_json')) if item['after_json'] is not None else None
+            changes.append(item)
+        return changes
 
     def get_snapshot(self, canvas_id: str) -> CanvasSnapshot:
         with self.database.connection() as connection:
@@ -209,10 +292,14 @@ class CanvasRepository:
             if asset_id:
                 asset = self.asset_dict(asset_id)
                 references.append(asset)
+        node_prompt = node['data'].get('prompt', '')
         return {
             'targetNodeId': node_id,
             'nodeType': node['nodeType'],
-            'prompt': node['data'].get('prompt', ''),
+            # Text from connected notes goes in front of the node's own prompt. Built here so the
+            # worker's "has the node changed since submit?" check compares like with like.
+            'prompt': compose_prompt([note['text'] for note in note_prompts], node_prompt),
+            'nodePrompt': node_prompt,
             'notePrompts': note_prompts,
             'parameters': node['data'].get('parameters', {}),
             'references': references,

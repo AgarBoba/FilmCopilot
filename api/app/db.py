@@ -107,6 +107,65 @@ class Database:
                     PRIMARY KEY (canvas_id, idempotency_key),
                     FOREIGN KEY (canvas_id) REFERENCES canvases(id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    settings_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                INSERT OR IGNORE INTO projects (id, name) VALUES ('default', '默认项目');
+
+                CREATE TABLE IF NOT EXISTS agent_sessions (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    canvas_id TEXT,
+                    title TEXT,
+                    summary TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    ended_at TEXT,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_runs (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN (
+                        'running', 'waiting_confirmation', 'stopped', 'completed', 'failed', 'undone'
+                    )),
+                    permission_mode TEXT NOT NULL,
+                    generation_count INTEGER NOT NULL DEFAULT 0,
+                    step_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    finished_at TEXT,
+                    FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    run_id TEXT,
+                    role TEXT NOT NULL CHECK (role IN (
+                        'user', 'assistant', 'tool_call', 'tool_result', 'system_event'
+                    )),
+                    content_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_run_changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    canvas_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    entity_type TEXT NOT NULL CHECK (entity_type IN ('node', 'edge', 'job')),
+                    entity_id TEXT NOT NULL,
+                    before_json TEXT,
+                    after_json TEXT,
+                    revision INTEGER NOT NULL,
+                    FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS agent_run_changes_run ON agent_run_changes (run_id, seq);
                 '''
             )
             columns = {
@@ -119,6 +178,11 @@ class Database:
                 row['name']
                 for row in connection.execute('PRAGMA table_info(canvases)').fetchall()
             }
+            if 'project_id' not in canvas_columns:
+                # Existing canvases belong to the default project.
+                connection.execute(
+                    "ALTER TABLE canvases ADD COLUMN project_id TEXT NOT NULL DEFAULT 'default'"
+                )
             if 'viewport_json' not in canvas_columns:
                 connection.execute(
                     "ALTER TABLE canvases ADD COLUMN viewport_json TEXT NOT NULL DEFAULT '{\"x\": 0, \"y\": 0, \"zoom\": 1}'"

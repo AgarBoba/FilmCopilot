@@ -43,6 +43,32 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-09-23：Agent 第一阶段 Task 1–3（数据表、来源标记、按任务撤销）
+
+**缺陷修复：带便签的生成结果不会显示到节点上（已确认）**
+
+- 现象：加入「便签作为提示词」后，生成完成的结果都被标为 `completed_unattached`，不会挂到节点上。
+- 根因：Worker 通过比较「提交时的生成快照」和「当前快照」判断节点是否被改过；提交时快照多了 `nodePrompt` 字段、`prompt` 也被拼上了便签文字，而当前快照没有，所以永远不相等。
+- 修复：拼接逻辑移到 `repository.generation_snapshot`（新文件 `app/prompting.py`），两边用同一种方式生成；加了回归测试。
+
+**Task 1：数据表**
+
+- 新表 `projects`（含 `settings_json`，默认项目 `default`）、`agent_sessions`、`agent_runs`、`agent_messages`、`agent_run_changes`；`canvases` 增加 `project_id`，旧库自动迁移。
+- `app/agent/store.py`：项目设置（权限档位、生成上限）、会话、任务、消息的读写。
+
+**Task 2：命令来源**
+
+- `CommandEnvelope` / `CommandResult` 增加 `actor`、`agentRunId`；画布事件带上这两项。
+- 带 `agentRunId` 的命令在同一事务里对比执行前后的整张画布，记录每个节点、连线的改动前后状态（能捕捉删除节点时级联删掉的连线）；生成任务单独记录。视口变化和撤销本身不记录。
+
+**Task 3：按任务撤销**
+
+- 新命令 `undo_agent_run`（`app/agent/undo.py`），在一个事务里完成：删除本轮新建的、按原样恢复本轮修改或删除的节点和连线、取消还没开始的生成任务。
+- 本轮结束后又被改过的节点跳过，结果里列出；本轮自己的生成结果挂到节点上不算「被改过」。
+- 运行中的任务不能撤销；同一任务不能撤销两次。
+
+**验证**：后端 50 项测试全部通过。
+
 ### 2026-09-23：Agent 第一阶段 Task 0 技术验证
 
 - 脚本：[scripts/agent_spike.py](scripts/agent_spike.py)，在用户 Mac 上运行，6/6 通过，花费约 $0.07。

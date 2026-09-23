@@ -5,6 +5,7 @@ from uuid import uuid4
 from .domain import DomainError
 from .events import EventStore
 from .graph_rules import validate_connection
+from .prompting import compose_prompt
 from .repositories import CanvasRepository
 from .schemas import CommandEnvelope, CommandResult
 
@@ -12,10 +13,25 @@ from .schemas import CommandEnvelope, CommandResult
 _NODE_TYPES = {'image', 'video', 'note'}
 
 
-def compose_prompt(note_texts: list[str], node_prompt: str) -> str:
-    """Upstream note texts (in connection order), then the node's own prompt, blank-line separated."""
-    parts = [text.strip() for text in note_texts] + [str(node_prompt or '').strip()]
-    return '\n\n'.join(part for part in parts if part)
+
+
+# Viewport changes are not canvas content; undo runs are never themselves undone.
+_UNTRACKED_COMMANDS = {'update_canvas', 'undo_agent_run'}
+
+
+def diff_canvas_state(before: dict, after: dict) -> list[tuple[str, str, Any, Any]]:
+    """(entity_type, id, before, after) for every node/edge that was created, changed or removed.
+
+    Comparing whole-canvas state catches side effects such as edges removed by a node
+    delete cascade, which the command payload alone would miss.
+    """
+    changes: list[tuple[str, str, Any, Any]] = []
+    for entity_type in ('node', 'edge'):
+        old, new = before[entity_type], after[entity_type]
+        for entity_id in sorted(old.keys() | new.keys()):
+            if old.get(entity_id) != new.get(entity_id):
+                changes.append((entity_type, entity_id, old.get(entity_id), new.get(entity_id)))
+    return changes
 
 
 class CanvasCommandService:
@@ -28,15 +44,27 @@ class CanvasCommandService:
         if cached is not None:
             return cached
 
+        if envelope.agentRunId and envelope.actor != 'agent':
+            raise DomainError('INVALID_PAYLOAD', 'agentRunId is only valid for agent commands')
+
         with self.repository.transaction():
             self.repository.assert_revision(canvas_id, envelope.baseRevision)
+            track = bool(envelope.agentRunId) and envelope.command not in _UNTRACKED_COMMANDS
+            before = self.repository.canvas_state(canvas_id) if track else None
             payload = self._dispatch(canvas_id, envelope)
             revision = self.repository.bump_revision(canvas_id)
             result = CommandResult(
                 revision=revision,
                 command=envelope.command,
                 payload=payload,
+                actor=envelope.actor,
+                agentRunId=envelope.agentRunId,
             )
+            if track:
+                changes = diff_canvas_state(before, self.repository.canvas_state(canvas_id))
+                if envelope.command == 'start_generation' and payload.get('jobId'):
+                    changes.append(('job', payload['jobId'], None, {'targetNodeId': payload.get('targetNodeId')}))
+                self.repository.record_agent_changes(envelope.agentRunId, canvas_id, revision, changes)
             self.events.append_for_result(canvas_id, revision, result)
             self.repository.save_command(canvas_id, envelope.idempotencyKey, result)
         return result
@@ -55,6 +83,7 @@ class CanvasCommandService:
             'attach_asset': self._attach_asset,
             'start_generation': self._start_generation,
             'update_canvas': self._update_canvas,
+            'undo_agent_run': self._undo_agent_run,
         }
         handler = handlers.get(envelope.command)
         if handler is None:
@@ -239,15 +268,13 @@ class CanvasCommandService:
             raise DomainError('INVALID_NODE_TYPE', 'Only image and video nodes can generate media')
         snapshot = self.repository.generation_snapshot(canvas_id, node_id)
         if 'prompt' in payload:
-            snapshot['prompt'] = payload['prompt']
+            snapshot['nodePrompt'] = payload['prompt']
+            snapshot['prompt'] = compose_prompt(
+                [note['text'] for note in snapshot.get('notePrompts', [])],
+                payload['prompt'],
+            )
         if 'parameters' in payload:
             snapshot['parameters'] = payload['parameters']
-        # Text from connected notes goes in front of the node's own prompt.
-        snapshot['nodePrompt'] = snapshot['prompt']
-        snapshot['prompt'] = compose_prompt(
-            [note['text'] for note in snapshot.get('notePrompts', [])],
-            snapshot['prompt'],
-        )
         provider = (
             'bytedance/seedream-5-pro'
             if node_type == 'image'
@@ -264,7 +291,11 @@ class CanvasCommandService:
                 'references': snapshot['references'],
             },
         )
-        return {'jobId': job_id, 'status': 'queued', 'provider': provider}
+        return {'jobId': job_id, 'status': 'queued', 'provider': provider, 'targetNodeId': node_id}
+
+    def _undo_agent_run(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        from .agent.undo import undo_agent_run
+        return undo_agent_run(self.repository, canvas_id, self._required(payload, 'runId'))
 
     def _update_canvas(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         viewport = payload.get('viewport')

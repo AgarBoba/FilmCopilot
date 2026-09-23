@@ -37,3 +37,22 @@ def test_connected_note_text_is_sent_as_prompt(repository: CanvasRepository):
     assert snapshot['nodePrompt'] == '兔子吃胡萝卜'
     assert [note['title'] for note in snapshot['notePrompts']] == ['风格']
     assert snapshot['references'] == []
+
+
+def test_unchanged_node_still_accepts_its_generation_result(repository: CanvasRepository):
+    """Regression: composing note text into the prompt made every result 'completed_unattached'."""
+    from app.worker import Worker
+    canvas = repository.create_canvas('Attach')
+    service = CanvasCommandService(repository, EventStore(repository.database))
+    cid = canvas.canvasId
+    note = run(service, cid, repository, 'create_node', {'nodeType': 'note', 'data': {'content': '午后光线'}}, 'n')['nodeId']
+    image = run(service, cid, repository, 'create_node', {'nodeType': 'image', 'data': {'prompt': '兔子'}}, 'i')['nodeId']
+    run(service, cid, repository, 'connect_nodes', {'sourceNodeId': note, 'targetNodeId': image}, 'c')
+    for key, payload in (('g1', {'targetNodeId': image}), ('g2', {'targetNodeId': image, 'prompt': '兔子'})):
+        job_id = run(service, cid, repository, 'start_generation', payload, key)['jobId']
+        job = repository.get_generation_job(job_id)
+        worker = Worker(repository, provider=None, data_dir=None)
+        assert worker._can_attach(job, json.loads(job['request_json'])) is True
+
+    run(service, cid, repository, 'update_node', {'nodeId': image, 'data': {'prompt': '改了'}}, 'u')
+    assert worker._can_attach(job, json.loads(job['request_json'])) is False

@@ -38,17 +38,26 @@ class CanvasSnapshot(BaseModel):
     jobs: list[dict[str, Any]] = Field(default_factory=list)
 
 
+Actor = Literal['user', 'agent']
+
+
 class CommandEnvelope(BaseModel):
     command: str
     baseRevision: int
     idempotencyKey: str
     payload: dict[str, Any] = Field(default_factory=dict)
+    # Who issued the command. Agent commands also carry their run, so they can be
+    # highlighted in the UI and undone as a group.
+    actor: Actor = 'user'
+    agentRunId: str | None = None
 
 
 class CommandResult(BaseModel):
     revision: int
     command: str
     payload: dict[str, Any] = Field(default_factory=dict)
+    actor: Actor = 'user'
+    agentRunId: str | None = None
 
 
 class CanvasEvent(BaseModel):
