@@ -2,6 +2,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile, status
 from fastapi.responses import FileResponse
 
 from ..assets import AssetService
+from ..config import resolve_project_path
 from ..schemas import AssetRecord
 
 
@@ -22,4 +23,4 @@ def upload_asset(
 def get_asset_file(request: Request, asset_id: str) -> FileResponse:
     service: AssetService = request.app.state.asset_service
     asset = service.get_asset(asset_id)
-    return FileResponse(asset.path, media_type=asset.mimeType, filename=asset.originalName)
+    return FileResponse(resolve_project_path(asset.path), media_type=asset.mimeType, filename=asset.originalName)

@@ -4,6 +4,7 @@ import shutil
 from typing import Any
 from urllib.request import urlopen
 
+from ..config import resolve_project_path
 from .base import (
     GenerationProvider,
     ImageGenerationInput,
@@ -29,7 +30,7 @@ def _reference_path(reference: dict[str, Any]) -> Path:
     path = reference.get('path') or reference.get('filePath')
     if not path:
         raise ValueError('generation reference is missing a local path')
-    return Path(path)
+    return resolve_project_path(path)
 
 
 def _reference_kind(reference: dict[str, Any]) -> str:

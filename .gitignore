@@ -11,3 +11,8 @@ web/*.tsbuildinfo
 web/vite.config.js
 web/vite.config.d.ts
 .DS_Store
+
+# local secrets
+.env
+.env.*
+!.env.example
