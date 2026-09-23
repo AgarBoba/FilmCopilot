@@ -121,8 +121,15 @@ export function AgentPanel({
     }
   }
 
-  async function confirm(event: AgentEvent, approved: boolean) {
-    if (event.runId && event.requestId) await agentApi.confirm(event.runId, event.requestId, approved);
+  async function confirm(event: AgentEvent, approved: boolean, note: string): Promise<boolean> {
+    if (!event.runId || !event.requestId) return false;
+    try {
+      await agentApi.confirm(event.runId, event.requestId, approved, note);
+      return true;
+    } catch (error) {
+      useAgentStore.setState({ error: error instanceof Error ? error.message : '提交失败' });
+      return false;
+    }
   }
 
   async function undo(runId: string) {
@@ -214,7 +221,7 @@ export function AgentPanel({
             focusTitles={focusTitles}
             onFocusNodes={onFocusNodes}
             onSaveToCanvas={onSaveToCanvas}
-            onConfirm={(target, approved) => void confirm(target, approved)}
+            onConfirm={(target, approved, note) => confirm(target, approved, note)}
             pending={pending.has(event.requestId)}
           />
         ))}

@@ -164,3 +164,38 @@ def test_undo_after_a_run(repository):
     result = service.undo(run['id'])
     assert len(result['deletedNodes']) == 2 and repository.get_snapshot(canvas_id).nodes == []
     assert kinds(store, session_id)[-1] == 'run_undone'
+
+
+def test_confirmation_notes_reach_the_model(repository):
+    factory = FakeFactory([('tool', 'create_nodes', {'nodes': [{'type': 'image', 'prompt': '兔子'}]})])
+    service, store, canvas_id, session_id = make_service(repository, factory)
+    store.update_settings('default', {'permissionMode': 'confirm_all'})
+
+    async def answer(approve: bool, note: str):
+        queue = service.subscribe(session_id)
+        await service.send_message(session_id, 'go')
+        resolved = None
+        while resolved is None:
+            event = await asyncio.wait_for(queue.get(), 5)
+            if event['kind'] == 'confirm_request':
+                service.confirm(event['requestId'], approve, note)
+            elif event['kind'] == 'confirm_resolved':
+                resolved = event
+        await finish(service, session_id)
+        return resolved
+
+    async def run_all():
+        event = await answer(False, '  改成狐狸  ')
+        assert event['approved'] is False and event['note'] == '改成狐狸'
+        assert '用户补充：改成狐狸' in factory.clients[0].denials[-1]
+        assert '不要重试' not in factory.clients[0].denials[-1]
+        assert repository.get_snapshot(canvas_id).nodes == []
+
+        factory.scripts.append([('tool', 'create_nodes', {'nodes': [{'type': 'image', 'prompt': '兔子'}]})])
+        event = await answer(True, '后面都用暖色调')
+        assert event['approved'] is True and event['note'] == '后面都用暖色调'
+        text = factory.clients[0].tool_results[-1]['content'][0]['text']
+        assert '[用户确认时的补充] 后面都用暖色调' in text
+        assert len(repository.get_snapshot(canvas_id).nodes) == 1
+
+    asyncio.run(run_all())

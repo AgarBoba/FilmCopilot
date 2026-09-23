@@ -44,6 +44,7 @@ export interface AgentEvent {
   requestId?: string;
   reason?: string;
   approved?: boolean;
+  note?: string;
   message?: string;
   status?: 'completed' | 'stopped' | 'failed';
   costUsd?: number | null;
@@ -86,10 +87,10 @@ export const agentApi = {
       method: 'POST',
       body: JSON.stringify({ text, focusNodeIds }),
     }),
-  confirm: (runId: string, requestId: string, approved: boolean) =>
+  confirm: (runId: string, requestId: string, approved: boolean, note = '') =>
     call<{ resolved: boolean }>(`/agent/runs/${runId}/confirm`, {
       method: 'POST',
-      body: JSON.stringify({ requestId, approved }),
+      body: JSON.stringify({ requestId, approved, note }),
     }),
   stop: (runId: string) => call<{ stopping: boolean }>(`/agent/runs/${runId}/stop`, { method: 'POST' }),
   undo: (runId: string) => call<AgentEvent>(`/agent/runs/${runId}/undo`, { method: 'POST' }),

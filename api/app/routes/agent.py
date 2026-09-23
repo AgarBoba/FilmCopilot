@@ -27,6 +27,7 @@ class SendMessageRequest(BaseModel):
 class ConfirmRequest(BaseModel):
     requestId: str
     approved: bool
+    note: str = Field(default='', max_length=2000)
 
 
 def _service(request: Request) -> AgentService:
@@ -116,7 +117,7 @@ def _format(event: dict) -> str:
 @router.post('/agent/runs/{run_id}/confirm')
 def confirm(request: Request, run_id: str, body: ConfirmRequest) -> dict:
     _store(request).get_run(run_id)
-    return {'resolved': _service(request).confirm(body.requestId, body.approved)}
+    return {'resolved': _service(request).confirm(body.requestId, body.approved, body.note)}
 
 
 @router.post('/agent/runs/{run_id}/stop')

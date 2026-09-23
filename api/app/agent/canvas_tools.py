@@ -76,6 +76,8 @@ class CanvasTools:
         self.run_id = run_id
         self.config = config or AgentConfig()
         self.stopped = False
+        # Notes the user typed when approving a call; attached to that call's result.
+        self.confirmation_notes: list[str] = []
         self.last_seen_revision = repository.get_snapshot(canvas_id).revision
 
     # ------------------------------------------------------------------ reads

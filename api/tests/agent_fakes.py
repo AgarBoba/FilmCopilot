@@ -29,6 +29,7 @@ class FakeClient:
         self.scripts = scripts
         self.prompts: list[str] = []
         self.denials: list[str] = []
+        self.tool_results: list[dict] = []
         self.interrupted = False
         self.connected = False
 
@@ -66,7 +67,7 @@ class FakeClient:
                     if not isinstance(decision, PermissionResultAllow):
                         self.denials.append(decision.message)
                         continue
-                await self.handlers[name](args)
+                self.tool_results.append(await self.handlers[name](args))
             elif kind == 'pause':
                 await asyncio.sleep(step[1])
         yield ResultMessage(

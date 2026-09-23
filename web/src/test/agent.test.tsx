@@ -97,11 +97,32 @@ describe('agent messages', () => {
     );
     expect(screen.getByText('包含视频生成')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '确认' }));
-    expect(onConfirm).toHaveBeenCalledWith(request, true);
+    expect(onConfirm).toHaveBeenCalledWith(request, true, '');
     rerender(
       <AgentMessage event={request} focusTitles={{}} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} onConfirm={onConfirm} pending={false} />,
     );
     expect(screen.queryByRole('button', { name: '确认' })).toBeNull();
+  });
+
+  it('confirmation card sends an optional note with the answer', () => {
+    const onConfirm = vi.fn();
+    const request = event({ kind: 'confirm_request', requestId: 'q1', summary: '生成 4 个节点' });
+    render(
+      <AgentMessage event={request} focusTitles={{}} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} onConfirm={onConfirm} pending />,
+    );
+    fireEvent.change(screen.getByLabelText('补充说明'), { target: { value: '  镜头2 改成夜景 ' } });
+    fireEvent.click(screen.getByRole('button', { name: '拒绝并说明' }));
+    expect(onConfirm).toHaveBeenCalledWith(request, false, '镜头2 改成夜景');
+    expect(screen.queryByLabelText('补充说明')).toBeNull();
+  });
+
+  it('resolved note shows what the user added', () => {
+    render(
+      <AgentMessage event={event({ kind: 'confirm_resolved', requestId: 'q1', approved: true, note: '后面都用暖色调' })}
+        focusTitles={{}} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} onConfirm={vi.fn()} pending={false} />,
+    );
+    expect(screen.getByText('已确认')).toBeInTheDocument();
+    expect(screen.getByText('补充：后面都用暖色调')).toBeInTheDocument();
   });
 
   it('tool steps locate their nodes', () => {

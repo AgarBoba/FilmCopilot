@@ -9,7 +9,7 @@ interface AgentMessageProps {
   focusTitles: Record<string, string>;
   onFocusNodes: (nodeIds: string[]) => void;
   onSaveToCanvas: (text: string) => void;
-  onConfirm: (event: AgentEvent, approved: boolean) => void;
+  onConfirm: (event: AgentEvent, approved: boolean, note: string) => Promise<boolean> | void;
   pending: boolean;
 }
 
@@ -47,21 +47,14 @@ export function AgentMessage({ event, focusTitles, onFocusNodes, onSaveToCanvas,
       );
     }
     case 'confirm_request':
+      return <ConfirmCard event={event} pending={pending} onConfirm={onConfirm} />;
+    case 'confirm_resolved':
       return (
-        <div className={`agent-confirm ${pending ? '' : 'is-done'}`}>
-          <div className="agent-confirm-title">需要你确认</div>
-          <div className="agent-confirm-summary">{event.summary}</div>
-          {event.reason && <div className="agent-confirm-reason">{event.reason}</div>}
-          {pending && (
-            <div className="agent-confirm-actions">
-              <button type="button" className="is-primary" onClick={() => onConfirm(event, true)}>确认</button>
-              <button type="button" onClick={() => onConfirm(event, false)}>拒绝</button>
-            </div>
-          )}
+        <div className="agent-note">
+          {event.approved ? '已确认' : '已拒绝'}
+          {event.note && <span className="agent-note-extra">补充：{event.note}</span>}
         </div>
       );
-    case 'confirm_resolved':
-      return <div className="agent-note">{event.approved ? '已确认' : '已拒绝'}</div>;
     case 'error':
       return <div className="agent-note is-error">{event.message}</div>;
     case 'run_finished':
@@ -79,6 +72,61 @@ export function AgentMessage({ event, focusTitles, onFocusNodes, onSaveToCanvas,
     default:
       return null;
   }
+}
+
+
+/**
+ * Confirm or reject, optionally with a note. Rejecting with a note tells the agent what to
+ * change; confirming with a note lets the step run as proposed and steers the next steps.
+ */
+function ConfirmCard({ event, pending, onConfirm }: {
+  event: AgentEvent;
+  pending: boolean;
+  onConfirm: (event: AgentEvent, approved: boolean, note: string) => Promise<boolean> | void;
+}) {
+  const [note, setNote] = useState('');
+  const [sent, setSent] = useState(false);
+  const answer = (approved: boolean) => {
+    if (sent) return;
+    setSent(true);
+    void Promise.resolve(onConfirm(event, approved, note.trim())).then((ok) => {
+      if (ok === false) setSent(false); // request failed: let the user try again
+    });
+  };
+  const open = pending && !sent;
+  return (
+    <div className={`agent-confirm ${open ? '' : 'is-done'}`}>
+      <div className="agent-confirm-title">需要你确认</div>
+      <div className="agent-confirm-summary">{event.summary}</div>
+      {event.reason && <div className="agent-confirm-reason">{event.reason}</div>}
+      {open && (
+        <>
+          <textarea
+            className="agent-confirm-note"
+            aria-label="补充说明"
+            rows={1}
+            value={note}
+            placeholder="补充说明（可选）：拒绝时告诉它怎么改，确认时作为后续要求"
+            onChange={(change) => setNote(change.target.value)}
+            onKeyDown={(key) => {
+              if (key.key === 'Enter' && (key.metaKey || key.ctrlKey) && !key.nativeEvent.isComposing) {
+                key.preventDefault();
+                answer(true);
+              }
+            }}
+          />
+          <div className="agent-confirm-actions">
+            <button type="button" className="is-primary" data-tooltip-shortcut="⌘↵" onClick={() => answer(true)}>
+              {note.trim() ? '确认并补充' : '确认'}
+            </button>
+            <button type="button" onClick={() => answer(false)}>
+              {note.trim() ? '拒绝并说明' : '拒绝'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 

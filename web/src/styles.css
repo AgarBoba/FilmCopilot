@@ -1566,7 +1566,27 @@ h1 {
 .agent-confirm-title { color: #f59e0b; font-size: 11px; font-weight: 700; }
 .agent-confirm-summary { margin-top: 4px; }
 .agent-confirm-reason { margin-top: 2px; color: var(--text-muted); font-size: 12px; }
-.agent-confirm-actions { display: flex; gap: 6px; margin-top: 10px; }
+.agent-confirm-note {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  max-height: 140px;
+  margin-top: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: var(--node-bg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  field-sizing: content;
+}
+.agent-confirm-note:focus { outline: none; border-color: var(--accent); }
+.agent-confirm-note::placeholder { color: var(--text-muted); }
+.agent-confirm-actions { display: flex; gap: 6px; margin-top: 8px; }
 .agent-confirm-actions button {
   padding: 6px 14px;
   border: 1px solid var(--chrome-border);
@@ -1578,7 +1598,8 @@ h1 {
 }
 .agent-confirm-actions button.is-primary { border-color: var(--accent); color: #fff; background: var(--accent); }
 
-.agent-note { align-self: center; color: var(--text-muted); font-size: 11px; }
+.agent-note { align-self: center; max-width: 100%; color: var(--text-muted); font-size: 11px; text-align: center; }
+.agent-note-extra { display: block; margin-top: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-note.is-error { align-self: stretch; padding: 8px 10px; border-radius: 8px; color: #ef4444; background: color-mix(in srgb, #ef4444 10%, transparent); font-size: 12px; }
 
 .agent-thinking { display: flex; gap: 4px; padding: 4px 2px; }

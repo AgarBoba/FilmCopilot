@@ -57,14 +57,14 @@ def test_broker_resolves_times_out_and_cancels():
 
         approved = broker.open('run', 'generate', 's', '')
         asyncio.get_running_loop().call_later(0.01, broker.resolve, approved.id, True)
-        assert await broker.wait(approved) is True
+        assert await broker.wait(approved) == (True, '')
 
         timed_out = broker.open('run', 'generate', 's', '')
-        assert await broker.wait(timed_out) is False
+        assert await broker.wait(timed_out) == (False, '')
 
         cancelled = broker.open('run', 'generate', 's', '')
         asyncio.get_running_loop().call_later(0.01, broker.cancel_run, 'run')
-        assert await broker.wait(cancelled) is False
+        assert await broker.wait(cancelled) == (False, '')
         assert broker.pending == {}
         assert broker.resolve(cancelled.id, True) is False  # already gone
 

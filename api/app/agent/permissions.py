@@ -90,6 +90,9 @@ class PendingConfirmation:
     future: asyncio.Future
 
 
+MAX_NOTE_LENGTH = 2000
+
+
 class ConfirmationBroker:
     """Holds a tool call until the user answers in the agent panel (or it times out)."""
 
@@ -105,23 +108,23 @@ class ConfirmationBroker:
         self.pending[request.id] = request
         return request
 
-    async def wait(self, request: PendingConfirmation) -> bool:
-        """True when approved. Timing out or the run being stopped counts as a refusal."""
+    async def wait(self, request: PendingConfirmation) -> tuple[bool, str]:
+        """(approved, note). Timing out or the run being stopped counts as a refusal without a note."""
         try:
             return await asyncio.wait_for(asyncio.shield(request.future), self.timeout_seconds)
         except asyncio.TimeoutError:
-            return False
+            return False, ''
         finally:
             self.pending.pop(request.id, None)
 
-    def resolve(self, request_id: str, approved: bool) -> bool:
+    def resolve(self, request_id: str, approved: bool, note: str = '') -> bool:
         request = self.pending.get(request_id)
         if request is None or request.future.done():
             return False
-        request.future.set_result(approved)
+        request.future.set_result((approved, (note or '').strip()[:MAX_NOTE_LENGTH]))
         return True
 
     def cancel_run(self, run_id: str) -> None:
         for request in list(self.pending.values()):
             if request.run_id == run_id and not request.future.done():
-                request.future.set_result(False)
+                request.future.set_result((False, ''))

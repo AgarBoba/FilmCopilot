@@ -130,6 +130,13 @@ def build_handlers(
                     result = ToolResult(f'缺少参数 {missing}', is_error=True)
                 except Exception as error:  # never let one tool crash the run
                     result = ToolResult(f'工具出错：{error}', is_error=True)
+            if tools is not None and tools.confirmation_notes:
+                notes = '；'.join(tools.confirmation_notes)
+                tools.confirmation_notes.clear()
+                result.text = (
+                    f'{result.text}\n\n[用户确认时的补充] {notes}\n'
+                    '这一步已按原计划执行。接下来的步骤照这条补充来；如果补充要求改动刚做的内容，先说明再改。'
+                )
             await on_step(name, args or {}, result)
             return to_mcp_result(result)
 

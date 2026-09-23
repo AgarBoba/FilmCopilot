@@ -107,8 +107,8 @@ class AgentService:
             except Exception:  # client may already be idle
                 log.debug('interrupt failed', exc_info=True)
 
-    def confirm(self, request_id: str, approved: bool) -> bool:
-        return self.broker.resolve(request_id, approved)
+    def confirm(self, request_id: str, approved: bool, note: str = '') -> bool:
+        return self.broker.resolve(request_id, approved, note)
 
     def undo(self, run_id: str) -> dict:
         run = self.store.get_run(run_id)
@@ -234,16 +234,24 @@ class AgentService:
         self._emit(runtime.session_id, run_id, 'confirm_request', {
             'requestId': request.id, 'summary': summary, 'reason': reason,
         }, role='system_event')
-        approved = await self.broker.wait(request)
+        approved, note = await self.broker.wait(request)
         if self.store.get_run(run_id)['status'] == 'waiting_confirmation':
             self.store.set_run_status(run_id, 'running')
         self._emit(runtime.session_id, run_id, 'confirm_resolved', {
-            'requestId': request.id, 'approved': approved,
+            'requestId': request.id, 'approved': approved, 'note': note,
         }, role='system_event')
         if approved:
+            if note:
+                # The call runs as proposed; the note rides back on this tool's result.
+                runtime.tools.confirmation_notes.append(note)
             return PermissionResultAllow()
         if runtime.tools.stopped:
             return PermissionResultDeny(message='用户已停止这一轮任务。', interrupt=True)
+        if note:
+            return PermissionResultDeny(message=(
+                f'用户拒绝了：{summary}。用户补充：{note}\n'
+                '按用户的补充调整后再继续；如果补充里的意思不清楚，先问用户。'
+            ))
         return PermissionResultDeny(message=f'用户拒绝了：{summary}。不要重试或换个方式再做，先问用户想怎么调整。')
 
     async def _run(self, runtime: SessionRuntime, run_id: str, prompt: str) -> None:
