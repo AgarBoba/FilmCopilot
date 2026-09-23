@@ -178,6 +178,11 @@ class Database:
                 row['name']
                 for row in connection.execute('PRAGMA table_info(canvases)').fetchall()
             }
+            session_columns = {
+                row['name'] for row in connection.execute('PRAGMA table_info(agent_sessions)').fetchall()
+            }
+            if 'sdk_session_id' not in session_columns:
+                connection.execute('ALTER TABLE agent_sessions ADD COLUMN sdk_session_id TEXT')
             if 'project_id' not in canvas_columns:
                 # Existing canvases belong to the default project.
                 connection.execute(

@@ -82,6 +82,13 @@ class AgentStore:
         with self.database.transaction() as connection:
             connection.execute('UPDATE agent_sessions SET title = ? WHERE id = ?', (title, session_id))
 
+    def set_sdk_session(self, session_id: str, sdk_session_id: str) -> None:
+        """Remember the SDK's own session id so the conversation can resume after a restart."""
+        with self.database.transaction() as connection:
+            connection.execute(
+                'UPDATE agent_sessions SET sdk_session_id = ? WHERE id = ?', (sdk_session_id, session_id)
+            )
+
     # ---- runs -----------------------------------------------------------
 
     def create_run(self, session_id: str, permission_mode: str) -> dict[str, Any]:

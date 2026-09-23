@@ -43,6 +43,21 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-09-23：Agent 第一阶段 Task 6–7（运行时、接口）
+
+- `app/agent/mcp_server.py`：把 12 个画布工具包成 SDK 的进程内 MCP 工具（工具说明为中文）；只读工具标 `readOnlyHint`。
+- `app/agent/prompts.py`：系统提示词；每条用户消息前附上当前权限档位、本轮可直接生成次数、选中的节点。
+- `app/agent/runtime.py`：`AgentService`
+  - 每个会话一个长期存在的 SDK 客户端；记下 SDK 的会话 ID（新列 `agent_sessions.sdk_session_id`），后端重启后可以接着聊。
+  - 每条消息开启一个 run；同一会话同时只允许一个 run。
+  - 权限：`can_use_tool` 调用 `decide()`，需要确认时挂起并推送 `confirm_request`；写入工具不放进 `allowed_tools`。
+  - 事件：`user_message`、`text_delta`（只推送不保存）、`assistant_text`、`tool_step`、`confirm_request` / `confirm_resolved`、`error`、`run_finished`、`run_undone`；除 `text_delta` 外都存进 `agent_messages`。
+  - 停止：工具层停止标志 + 取消待确认 + SDK `interrupt()`。认证失败（401/403）时直接结束并提示。
+- `app/routes/agent.py`：`/api/agent/status`、会话创建 / 列表 / 消息、发送消息、SSE（先订阅再回放，断线可从某条消息之后继续，15 秒心跳）、确认、停止、撤销、项目 Agent 设置。
+- `scripts/agent_chat.py`：面板完成前，在终端里和 Agent 对话、确认、停止、撤销。
+- 测试：用脚本化的假 SDK 客户端（`tests/agent_fakes.py`）覆盖流式、工具调用、确认同意 / 拒绝、停止、单 run 限制、未配置 Key、撤销、接口流程，以及 Key 不出现在任何接口返回、日志、数据库和 SDK 参数里。后端共 93 项通过。
+- 未验证：真实模型下的完整对话（需在用户本机用 `agent_chat.py` 试）。
+
 ### 2026-09-23：Agent 第一阶段 Task 4–5（画布工具、权限）
 
 **Task 4：画布工具**（`app/agent/canvas_tools.py`、`app/agent/media.py`）
