@@ -43,6 +43,21 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-09-23：Agent 第一阶段 Task 0 技术验证
+
+- 脚本：[scripts/agent_spike.py](scripts/agent_spike.py)，在用户 Mac 上运行，6/6 通过，花费约 $0.07。
+- 结论：
+  - `claude-agent-sdk` 0.2.158 可直接使用，自带运行时，无需另装 Claude Code。
+  - `claude-opus-5-5` 首次响应约 3 秒；`include_partial_messages=True` 可拿到流式文字。
+  - `tools=[]` 后模型只能看到我们的 MCP 工具。
+  - 进程内 MCP 工具返回 `image` 内容块，模型能正确描述图片。
+  - `can_use_tool` 回调可以异步等待（模拟等用户确认）后拒绝，工具不会执行。选定 `can_use_tool` 作为权限入口。
+  - **注意：** 写入类工具不能放进 `allowed_tools`，否则会跳过 `can_use_tool`（SDK 会给出 `CanUseToolShadowedWarning`）。只读工具可以放行。
+  - `interrupt()` 后工具不再执行。
+  - 用户 Mac 已安装 ffmpeg（`/opt/homebrew/bin/ffmpeg`）。
+- 环境限制：Claude 的远程开发环境会拦截带 Anthropic Key 的请求，真实模型调用只能在用户本机验证；自动化测试一律使用假的 SDK 客户端。
+- `.env` / `.env.example` 新增 `ANTHROPIC_API_KEY`、`AGENT_MODEL`；`api/pyproject.toml` 加入 `claude-agent-sdk` 依赖。
+
 ### 2026-09-23（下午）：界面重做、便签提示词、节点复制等
 
 **缺陷修复**
