@@ -4,6 +4,7 @@ import { Position } from '@xyflow/react';
 import type { VideoGenerationParameters } from '../domain/types';
 import { NodeHandle } from './NodeHandles';
 import { NodeTitle } from './NodeTitle';
+import { UpstreamBadge } from './UpstreamBadge';
 import { EmptyPreview } from './EmptyPreview';
 import { MediaNodeActions } from './MediaNodeActions';
 import { ReferenceStrip, normalizeReferences, type NodeReference } from './ReferenceStrip';
@@ -27,6 +28,7 @@ export interface VideoNodeData {
   parameters?: VideoGenerationParameters;
   generationStatus?: string;
   generationError?: string;
+  upstreamChanges?: string[];
   references?: Array<NodeReference | string>;
   onRemoveReference?: (reference: NodeReference) => void;
   onPromptChange?: (prompt: string) => void;
@@ -80,6 +82,7 @@ export function VideoNode({ data }: VideoNodeProps) {
       onMouseEnter={() => { void playPreview().catch(() => undefined); }}
       onMouseLeave={pausePreview}
     >
+      {!busy && <UpstreamBadge changes={data.upstreamChanges} />}
       <NodeHandle type="target" position={Position.Left} id="target" />
       <NodeHandle type="source" position={Position.Right} id="source" />
       <div className="node-heading">

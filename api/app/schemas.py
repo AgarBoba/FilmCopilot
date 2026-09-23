@@ -36,6 +36,8 @@ class CanvasSnapshot(BaseModel):
     viewport: CanvasViewport = Field(default_factory=CanvasViewport)
     assets: list[dict[str, Any]] = Field(default_factory=list)
     jobs: list[dict[str, Any]] = Field(default_factory=list)
+    # nodeId -> what changed upstream since the node's current result was generated
+    upstreamChanges: dict[str, list[str]] = Field(default_factory=dict)
 
 
 Actor = Literal['user', 'agent']

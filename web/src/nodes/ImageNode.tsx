@@ -3,6 +3,7 @@ import { Position } from '@xyflow/react';
 import type { ImageGenerationParameters } from '../domain/types';
 import { NodeHandle } from './NodeHandles';
 import { NodeTitle } from './NodeTitle';
+import { UpstreamBadge } from './UpstreamBadge';
 import { EmptyPreview } from './EmptyPreview';
 import { MediaNodeActions } from './MediaNodeActions';
 import { ReferenceStrip, normalizeReferences, type NodeReference } from './ReferenceStrip';
@@ -23,6 +24,7 @@ export interface ImageNodeData {
   parameters?: ImageGenerationParameters;
   generationStatus?: string;
   generationError?: string;
+  upstreamChanges?: string[];
   onPromptChange?: (prompt: string) => void;
   onParametersChange?: (parameters: ImageGenerationParameters) => void;
   onGenerateRequest?: (request: { prompt: string; parameters: ImageGenerationParameters }) => void;
@@ -42,6 +44,7 @@ export function ImageNode({ data }: ImageNodeProps) {
   const noteCount = references.filter((reference) => reference.kind === 'note' && reference.text?.trim()).length;
   return (
     <div className="media-node image-node" data-testid="image-node">
+      {!busy && <UpstreamBadge changes={data.upstreamChanges} />}
       <NodeHandle type="target" position={Position.Left} id="target" />
       <NodeHandle type="source" position={Position.Right} id="source" />
       <div className="node-heading">

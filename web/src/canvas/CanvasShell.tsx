@@ -214,6 +214,7 @@ export function CanvasShell() {
         references: referencesFor(node.id),
         generationStatus: generationFor(node.id)?.status as string | undefined,
         generationError: generationFor(node.id)?.error as string | undefined,
+        upstreamChanges: snapshot.upstreamChanges?.[node.id] ?? [],
         onUpload: () => {
           uploadTargetRef.current = node.id;
           fileInputRef.current?.click();

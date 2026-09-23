@@ -9,6 +9,7 @@ from uuid import uuid4
 from .db import Database
 from .domain import DomainError, EdgeRecord, NodeType
 from .prompting import compose_prompt
+from .upstream import upstream_changes
 from .schemas import (
     CanvasEdgeSchema,
     CanvasNodeSchema,
@@ -174,6 +175,7 @@ class CanvasRepository:
             viewport=CanvasViewport(**json.loads(canvas['viewport_json'])),
             assets=[self._json_row(row, ('metadata_json',)) for row in assets],
             jobs=[self._json_row(row, ('request_json', 'input_snapshot_json')) for row in jobs],
+            upstreamChanges=upstream_changes(self, canvas_id),
         )
 
     def _node_schema(self, row: sqlite3.Row) -> CanvasNodeSchema:
@@ -291,7 +293,11 @@ class CanvasRepository:
             asset_id = source['data'].get('assetId')
             if asset_id:
                 asset = self.asset_dict(asset_id)
-                references.append(asset)
+                references.append({
+                    **asset,
+                    'sourceNodeId': source['id'],
+                    'sourceTitle': source['data'].get('title', ''),
+                })
         node_prompt = node['data'].get('prompt', '')
         return {
             'targetNodeId': node_id,

@@ -170,3 +170,15 @@ describe('locked while generating', () => {
     expect(screen.getByText(/生成中，完成后才能修改/)).toBeInTheDocument();
   });
 });
+
+describe('upstream badge', () => {
+  it('shows when upstream changed after the result, hidden while generating', () => {
+    const { unmount } = render(<ImageNode data={{ upstreamChanges: ['「风格」的文字改了', '「参考图」的内容更新了'] }} />);
+    const badge = screen.getByRole('note');
+    expect(badge.textContent).toContain('上游有更新 · 2');
+    expect(badge.getAttribute('data-tooltip')).toContain('「风格」的文字改了');
+    unmount();
+    render(<ImageNode data={{ upstreamChanges: ['x'], generationStatus: 'running' }} />);
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+});

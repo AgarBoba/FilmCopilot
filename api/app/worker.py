@@ -1,4 +1,3 @@
-from copy import copy
 import json
 from pathlib import Path
 import signal
@@ -56,7 +55,9 @@ class Worker:
                 snapshot['nodeType'],
             )
             asset = self._save_generated_asset(job, output_path, snapshot['nodeType'])
-            can_attach = self._can_attach(job, snapshot)
+            # Results always go onto their node; later upstream edits are shown as an
+            # "上游有更新" badge instead (see upstream.py). Only a deleted node can't take it.
+            can_attach = self._target_exists(job)
             target_status = 'completed' if can_attach else 'completed_unattached'
             self._complete(job, target_status, asset['id'] if can_attach else None, asset)
         except Exception as error:
@@ -112,18 +113,12 @@ class Worker:
             self.repository.insert_asset(asset)
         return asset
 
-    def _can_attach(self, job: dict[str, Any], snapshot: dict[str, Any]) -> bool:
+    def _target_exists(self, job: dict[str, Any]) -> bool:
         try:
-            current = self.repository.generation_snapshot(job['canvas_id'], job['target_node_id'])
+            self.repository.node_snapshot(job['canvas_id'], job['target_node_id'])
         except Exception:
             return False
-        return self._stable_snapshot(current) == self._stable_snapshot(snapshot)
-
-    @staticmethod
-    def _stable_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
-        result = copy(snapshot)
-        result.pop('baseCanvasRevision', None)
-        return result
+        return True
 
     def _complete(
         self,

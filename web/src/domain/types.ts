@@ -77,6 +77,8 @@ export interface CanvasSnapshot {
   edges: CanvasEdge[];
   assets?: AssetSummary[];
   jobs?: Record<string, unknown>[];
+  /** nodeId -> what changed upstream since the node's current result was generated */
+  upstreamChanges?: Record<string, string[]>;
   viewport?: CanvasViewport;
 }
 

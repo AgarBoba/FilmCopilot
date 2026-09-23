@@ -39,20 +39,52 @@ def test_connected_note_text_is_sent_as_prompt(repository: CanvasRepository):
     assert snapshot['references'] == []
 
 
-def test_unchanged_node_still_accepts_its_generation_result(repository: CanvasRepository):
-    """Regression: composing note text into the prompt made every result 'completed_unattached'."""
+
+def attach_result(repository, cid, node_id, job_id, asset_id):
+    repository._execute(
+        "INSERT INTO assets (id, canvas_id, kind, path, mime_type) VALUES (?, ?, 'image', 'x', 'image/png')",
+        (asset_id, cid),
+    )
+    repository._execute(
+        "UPDATE generation_jobs SET status = 'completed', output_asset_id = ? WHERE id = ?", (asset_id, job_id)
+    )
+    repository.update_node(cid, node_id, {'data': {'assetId': asset_id}})
+
+
+def test_upstream_changes_are_reported_after_the_result(repository: CanvasRepository):
+    canvas = repository.create_canvas('Upstream')
+    service = CanvasCommandService(repository, EventStore(repository.database))
+    cid = canvas.canvasId
+    note = run(service, cid, repository, 'create_node', {'nodeType': 'note', 'title': '风格', 'data': {'content': '午后光线'}}, 'n')['nodeId']
+    ref = run(service, cid, repository, 'create_node', {'nodeType': 'image', 'title': '参考图'}, 'r')['nodeId']
+    image = run(service, cid, repository, 'create_node', {'nodeType': 'image', 'data': {'prompt': '兔子'}}, 'i')['nodeId']
+    attach_result(repository, cid, ref, run(service, cid, repository, 'start_generation', {'targetNodeId': ref}, 'g0')['jobId'], 'ref-v1')
+    run(service, cid, repository, 'connect_nodes', {'sourceNodeId': note, 'targetNodeId': image}, 'c1')
+    run(service, cid, repository, 'connect_nodes', {'sourceNodeId': ref, 'targetNodeId': image}, 'c2')
+    job = run(service, cid, repository, 'start_generation', {'targetNodeId': image}, 'g1')['jobId']
+    attach_result(repository, cid, image, job, 'out-1')
+    assert image not in repository.get_snapshot(cid).upstreamChanges
+
+    # Editing the node's own prompt is not an upstream change.
+    run(service, cid, repository, 'update_node', {'nodeId': image, 'data': {'prompt': '猫'}}, 'u0')
+    assert image not in repository.get_snapshot(cid).upstreamChanges
+
+    run(service, cid, repository, 'update_node', {'nodeId': note, 'data': {'content': '夜景霓虹'}}, 'u1')
+    repository.update_node(cid, ref, {'data': {'assetId': 'ref-v2'}})
+    repository._execute("INSERT INTO assets (id, canvas_id, kind, path, mime_type) VALUES ('ref-v2', ?, 'image', 'x', 'image/png')", (cid,))
+    assert repository.get_snapshot(cid).upstreamChanges[image] == ['「风格」的文字改了', '「参考图」的内容更新了']
+
+
+def test_results_attach_even_if_the_node_changed(repository: CanvasRepository):
     from app.worker import Worker
     canvas = repository.create_canvas('Attach')
     service = CanvasCommandService(repository, EventStore(repository.database))
     cid = canvas.canvasId
-    note = run(service, cid, repository, 'create_node', {'nodeType': 'note', 'data': {'content': '午后光线'}}, 'n')['nodeId']
     image = run(service, cid, repository, 'create_node', {'nodeType': 'image', 'data': {'prompt': '兔子'}}, 'i')['nodeId']
-    run(service, cid, repository, 'connect_nodes', {'sourceNodeId': note, 'targetNodeId': image}, 'c')
-    for key, payload in (('g1', {'targetNodeId': image}), ('g2', {'targetNodeId': image, 'prompt': '兔子'})):
-        job_id = run(service, cid, repository, 'start_generation', payload, key)['jobId']
-        job = repository.get_generation_job(job_id)
-        worker = Worker(repository, provider=None, data_dir=None)
-        assert worker._can_attach(job, json.loads(job['request_json'])) is True
-
+    job_id = run(service, cid, repository, 'start_generation', {'targetNodeId': image}, 'g')['jobId']
     run(service, cid, repository, 'update_node', {'nodeId': image, 'data': {'prompt': '改了'}}, 'u')
-    assert worker._can_attach(job, json.loads(job['request_json'])) is False
+    worker = Worker(repository, provider=None, data_dir=None)
+    job = repository.get_generation_job(job_id)
+    assert worker._target_exists(job) is True
+    run(service, cid, repository, 'delete_elements', {'nodeIds': [image]}, 'd')
+    assert worker._target_exists(job) is False
