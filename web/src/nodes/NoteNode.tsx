@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import { NodeResizer, Position } from '@xyflow/react';
 
+import { Markdown } from '../agent/Markdown';
 import { NodeHandle } from './NodeHandles';
 import { NodeTitle } from './NodeTitle';
 import { useDebouncedDraft } from './useDebouncedDraft';
@@ -24,8 +26,24 @@ interface NoteNodeProps {
 }
 
 
+/**
+ * Note text is Markdown. Not editing: rendered (headings, lists, tables). Double-click the
+ * text (or press Enter when the note is focused) to edit the source; click outside to finish.
+ */
 export function NoteNode({ data }: NoteNodeProps) {
   const { draft, setDraft, flush } = useDebouncedDraft(data.content ?? data.prompt ?? '', data.onChange);
+  const [editing, setEditing] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    const textarea = textareaRef.current;
+    textarea?.focus();
+    textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
+  }, [editing]);
+
+  const style = { fontFamily: data.fontFamily, fontSize: data.fontSize };
+
   return (
     <div className="media-node note-node">
       <NodeResizer minWidth={180} minHeight={120} onResizeEnd={(_, params) => data.onResize?.({ width: params.width, height: params.height })} />
@@ -34,17 +52,43 @@ export function NoteNode({ data }: NoteNodeProps) {
         <span className="node-kind">NOTE</span>
         <NodeTitle title={data.title} fallback="便签" onChange={data.onTitleChange} />
       </div>
-      <textarea
-        value={draft}
-        aria-label="便签内容"
-        style={{
-          fontFamily: data.fontFamily,
-          fontSize: data.fontSize,
-        }}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={flush}
-        onMouseDown={(event) => event.stopPropagation()}
-      />
+      {editing ? (
+        <textarea
+          ref={textareaRef}
+          className="nodrag nowheel"
+          value={draft}
+          aria-label="便签内容"
+          placeholder="支持 Markdown：# 标题、- 列表、| 表格 |"
+          style={style}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
+            flush();
+            setEditing(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') event.currentTarget.blur();
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+        />
+      ) : (
+        <div
+          className={`note-preview nowheel ${draft.trim() ? '' : 'is-empty'}`}
+          style={style}
+          role="button"
+          tabIndex={0}
+          aria-label="便签内容，双击编辑"
+          data-tooltip={draft.trim() ? '双击编辑' : undefined}
+          onDoubleClick={() => setEditing(true)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              setEditing(true);
+            }
+          }}
+        >
+          {draft.trim() ? <Markdown text={draft} /> : '双击输入文字'}
+        </div>
+      )}
       <div className="note-controls">
         <select
           aria-label="字体"

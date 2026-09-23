@@ -43,6 +43,17 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-09-23：Agent 第一阶段 Task 8（对话面板）+ Markdown
+
+- 新依赖：`react-markdown`、`remark-gfm`（需要在 `web/` 里重新安装依赖）。
+- `web/src/agent/`：`agentApi`（接口 + 自动重连的 SSE）、`agentStore`（事件归并、流式文字、待确认、可撤销的轮次）、`AgentPanel`、`AgentMessage`、`Markdown`。
+- 回复按 Markdown 渲染，表格横向可滑，原始 HTML 不执行；每条回复可复制、可「存到画布」（存成便签，标题取第一行）。
+- 便签改为 Markdown：平时显示渲染结果，双击编辑原文。
+- 系统提示词：剧本、分镜等长内容优先按场景写进画布便签（从左到右一排），对话里只给概要；用户明确要文字时才整段回复。
+- 左侧栏新增 Agent 入口，⌘J 开关；点击工具步骤会选中并定位节点。
+- 验证：前端 45 项、后端 93 项测试通过；用假模型在浏览器里走通「写三场剧本 → 画布出现三个便签 → 面板显示表格 → 可撤销」。
+- 已知：点步骤定位节点时，缩放没有避开面板，节点可能被面板挡住一部分。
+
 ### 2026-09-23：Agent 第一阶段 Task 6–7（运行时、接口）
 
 - `app/agent/mcp_server.py`：把 12 个画布工具包成 SDK 的进程内 MCP 工具（工具说明为中文）；只读工具标 `readOnlyHint`。

@@ -1,5 +1,5 @@
 {
-  "name": "film-copilot-web",
+  "name": "infinite-media-canvas-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -12,6 +12,8 @@
     "@xyflow/react": "^12.8.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

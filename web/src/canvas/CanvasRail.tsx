@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { NodeType } from '../domain/types';
-import { ImageIcon, NoteIcon, PlusIcon, UploadIcon, VideoIcon } from './icons';
+import { ImageIcon, NoteIcon, PlusIcon, SparkIcon, UploadIcon, VideoIcon } from './icons';
 
 
 const NODE_OPTIONS: { type: NodeType; label: string; hint: string; Icon: typeof ImageIcon }[] = [
@@ -13,11 +13,13 @@ const NODE_OPTIONS: { type: NodeType; label: string; hint: string; Icon: typeof 
 interface CanvasRailProps {
   onAddNode: (nodeType: NodeType) => void;
   onUpload: () => void;
+  agentOpen?: boolean;
+  onToggleAgent?: () => void;
 }
 
 
 /** Left-side rail: "+" opens the node menu; upload picks the node type from the file. */
-export function CanvasRail({ onAddNode, onUpload }: CanvasRailProps) {
+export function CanvasRail({ onAddNode, onUpload, agentOpen = false, onToggleAgent }: CanvasRailProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +67,23 @@ export function CanvasRail({ onAddNode, onUpload }: CanvasRailProps) {
       >
         <UploadIcon />
       </button>
+      {onToggleAgent && (
+        <button
+          type="button"
+          className={`rail-button ${agentOpen ? 'is-active' : ''}`}
+          aria-label="Agent"
+          aria-pressed={agentOpen}
+          data-tooltip="Agent：用对话让它帮你操作画布"
+          data-tooltip-shortcut="⌘J"
+          data-tooltip-side="right"
+          onClick={() => {
+            setMenuOpen(false);
+            onToggleAgent();
+          }}
+        >
+          <SparkIcon />
+        </button>
+      )}
 
       {menuOpen && (
         <div className="rail-menu" role="menu" aria-label="选择节点类型">

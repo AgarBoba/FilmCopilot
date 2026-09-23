@@ -40,6 +40,9 @@ import { snapshotToReactFlow, useCanvasStore } from '../state/canvasStore';
 import { CanvasControls, type CanvasTool } from './CanvasControls';
 import { CanvasRail } from './CanvasRail';
 import { TooltipLayer } from './TooltipLayer';
+import { AgentPanel } from '../agent/AgentPanel';
+import { titleFromMarkdown } from '../agent/Markdown';
+import { useAgentStore } from '../agent/agentStore';
 import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM, useTrackpadGestures } from './useTrackpadGestures';
 import { ConnectionChooser, type ChooserNodeType } from './ConnectionChooser';
 
@@ -101,7 +104,8 @@ export function CanvasShell() {
   const [nodes, setNodes] = useState<Node<CanvasNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
-  const flowRef = useRef<Pick<ReactFlowInstance, 'screenToFlowPosition' | 'getNodes' | 'getViewport' | 'setViewport'> | null>(null);
+  const flowRef = useRef<Pick<ReactFlowInstance<Node<CanvasNodeData>, Edge>, 'screenToFlowPosition' | 'getNodes' | 'getViewport' | 'setViewport' | 'fitView'> | null>(null);
+  const agentOpen = useAgentStore((state) => state.open);
   const viewportRef = useRef<HTMLDivElement>(null);
   const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useTrackpadGestures(viewportRef, flowRef);
@@ -126,6 +130,13 @@ export function CanvasShell() {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Alt') setAltHeld(true);
+      // Cmd/Ctrl + J opens / closes the agent panel.
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'j') {
+        event.preventDefault();
+        const agent = useAgentStore.getState();
+        agent.setOpen(!agent.open);
+        return;
+      }
       const target = event.target;
       if (
         target instanceof Element
@@ -302,17 +313,37 @@ export function CanvasShell() {
     return { x: Math.round(origin.x), y: Math.round(origin.y) };
   }
 
-  async function addNode(nodeType: NodeType) {
+  async function addNode(nodeType: NodeType, extra?: { title?: string; data?: Record<string, unknown> }) {
     const current = useCanvasStore.getState().snapshot;
     if (!current) return undefined;
     const result = await execute({
       command: 'create_node',
       baseRevision: current.revision,
       idempotencyKey: commandKey('create-node'),
-      payload: { nodeType, title: defaultNodeTitle(nodeType), ...nextNodePosition() },
+      payload: {
+        nodeType,
+        title: extra?.title || defaultNodeTitle(nodeType),
+        ...(extra?.data ? { data: extra.data } : {}),
+        ...nextNodePosition(),
+      },
     });
     const nodeId = result?.payload.nodeId;
     return typeof nodeId === 'string' ? nodeId : undefined;
+  }
+
+  /** Agent panel: "存到画布" turns a reply into a note next to the current view. */
+  async function saveTextAsNote(text: string) {
+    const nodeId = await addNode('note', { title: titleFromMarkdown(text, 'Agent 笔记'), data: { content: text } });
+    if (nodeId) focusNodes([nodeId]);
+  }
+
+  /** Agent panel: clicking a step selects its nodes and brings them into view. */
+  function focusNodes(nodeIds: string[]) {
+    const existing = nodeIds.filter((id) => useCanvasStore.getState().snapshot?.nodes.some((node) => node.id === id));
+    if (!existing.length) return;
+    selectNodes(existing);
+    setNodes((current) => current.map((node) => ({ ...node, selected: existing.includes(node.id) })));
+    void flowRef.current?.fitView({ nodes: existing.map((id) => ({ id })), padding: 0.4, duration: 400, maxZoom: 1 });
   }
 
   /** Upload from the left rail: no target node yet, the file type decides image vs video. */
@@ -615,7 +646,7 @@ export function CanvasShell() {
   }
 
   return (
-    <div className={`canvas-page theme-${theme} mode-${activeTool} ${altHeld ? 'is-alt-held' : ''}`}>
+    <div className={`canvas-page theme-${theme} mode-${activeTool} ${altHeld ? 'is-alt-held' : ''} ${agentOpen ? 'agent-open' : ''}`}>
       <div
         ref={viewportRef}
         className="canvas-viewport"
@@ -672,7 +703,12 @@ export function CanvasShell() {
           <Background gap={24} size={1} />
           <MiniMap position="bottom-right" pannable zoomable />
           <Panel position="center-left" className="canvas-panel">
-            <CanvasRail onAddNode={(type) => void addNode(type)} onUpload={requestUploadAsNewNode} />
+            <CanvasRail
+              onAddNode={(type) => void addNode(type)}
+              onUpload={requestUploadAsNewNode}
+              agentOpen={agentOpen}
+              onToggleAgent={() => useAgentStore.getState().setOpen(!agentOpen)}
+            />
           </Panel>
           <Panel position="bottom-left" className="canvas-panel">
             <CanvasControls
@@ -704,6 +740,16 @@ export function CanvasShell() {
           />
         )}
       </div>
+      {agentOpen && canvasId && (
+        <AgentPanel
+          canvasId={canvasId}
+          selectedNodeIds={selectedNodeIds}
+          nodeTitles={Object.fromEntries((snapshot?.nodes ?? []).map((node) => [node.id, String(node.data?.title ?? '')]))}
+          onFocusNodes={focusNodes}
+          onSaveToCanvas={(text) => void saveTextAsNote(text)}
+          onClose={() => useAgentStore.getState().setOpen(false)}
+        />
+      )}
       <TooltipLayer />
     </div>
   );
