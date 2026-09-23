@@ -1,6 +1,6 @@
-# Infinite Media Canvas
+# Film Copilot
 
-本项目是一个本地运行的单用户图片/视频生成无限画布。
+Film Copilot 是一个本地运行的单用户图片/视频生成无限画布。
 
 ## 本地启动
 

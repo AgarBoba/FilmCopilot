@@ -1,5 +1,5 @@
 {
-  "name": "infinite-media-canvas",
+  "name": "film-copilot",
   "private": true,
   "scripts": {
     "dev": "./scripts/dev.sh",

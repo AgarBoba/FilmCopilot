@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "infinite-media-canvas-api"
+name = "film-copilot-api"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [

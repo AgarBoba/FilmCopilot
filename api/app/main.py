@@ -30,7 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     command_service = CanvasCommandService(repository, event_store)
     asset_service = AssetService(settings, database, repository)
 
-    app = FastAPI(title="Infinite Media Canvas", lifespan=lifespan)
+    app = FastAPI(title="Film Copilot", lifespan=lifespan)
     app.state.settings = settings
     app.state.database = database
     app.state.canvas_repository = repository

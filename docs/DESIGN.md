@@ -1,4 +1,4 @@
-# Infinite Media Canvas 设计规范
+# Film Copilot 设计规范
 
 > 用途：统一画布的界面和交互。新增或修改界面前先读这份；改了规范就同步更新这里。
 > 样式都在 `web/src/styles.css`，颜色和尺寸尽量用下面的变量，不要写死数值。
