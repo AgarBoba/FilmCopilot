@@ -122,7 +122,7 @@ python3 scripts/doctor.py --json     # 机器可读，ready=true 表示可以用
 
 - `data/`：用户的画布、素材和对话记录。不要删，不要重置。
 - `.env` 里的值：只由用户自己改。唯一的例外见铁律第 4 条。
-- 没有用户明确要求时，不要 `git push`，不要改 git 远端，不要公开仓库（这是私有仓库）。
+- 没有用户明确要求时，不要 `git push`，不要改 git 远端。同事一般只需要拉取更新（`git pull`）。
 - `scripts/claude-login.sh` 和 `AGENT_AUTH=subscription` 是维护者个人用 Claude 订阅的方式。同事一律用 `ANTHROPIC_API_KEY`，因为订阅额度不能给别人的产品用。
 
 ## 目录速览
