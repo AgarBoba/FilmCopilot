@@ -1938,7 +1938,7 @@ h1 {
 .canvas-toast.canvas-notice button.canvas-notice-undo:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
 /* ---------- Chat list (all chats on this canvas) ---------- */
-.session-list { display: flex; flex: 1; flex-direction: column; min-height: 0; border-top: 1px solid var(--chrome-border); }
+.session-list { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .session-list-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px; }
 .session-back, .session-new {
   display: inline-flex;
@@ -2053,3 +2053,30 @@ h1 {
 }
 .session-archived .session-actions { display: flex; }
 .session-archived .session-time { display: none; }
+
+/* Review setting under the input: plain muted text with a small caret, no box. */
+.agent-composer-meta { display: flex; align-items: center; margin-top: 6px; padding-left: 4px; }
+.agent-mode {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.agent-mode:hover { color: var(--text-primary); }
+.agent-mode select {
+  appearance: none;
+  padding: 2px 14px 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.agent-mode select:hover, .agent-mode select:focus-visible { background: var(--chrome-hover); }
+.agent-mode-caret { position: absolute; right: 4px; font-size: 9px; pointer-events: none; }
+
+.agent-header { padding-bottom: 10px; border-bottom: 1px solid var(--chrome-border); }

@@ -252,17 +252,6 @@ export function AgentPanel({
         />
       ) : (
       <>
-      <div className="agent-toolbar">
-        <select
-          aria-label="权限档位"
-          value={settings?.permissionMode ?? 'confirm_generation'}
-          onChange={(event) => void changeMode(event.target.value as PermissionMode)}
-          data-tooltip="Agent 做哪些操作前要先问你（视频生成总是会问）"
-        >
-          {MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </div>
-
       <div
         ref={listRef}
         className="agent-messages"
@@ -343,6 +332,19 @@ export function AgentPanel({
               <SendIcon width={15} height={15} />
             </button>
           )}
+        </div>
+        {/* Quiet setting under the input: what the agent must ask before doing. */}
+        <div className="agent-composer-meta">
+          <label className="agent-mode" data-tooltip="Agent 做哪些操作前要先问你（视频生成总是会问）" data-tooltip-side="top">
+            <select
+              aria-label="审核设置"
+              value={settings?.permissionMode ?? 'confirm_generation'}
+              onChange={(event) => void changeMode(event.target.value as PermissionMode)}
+            >
+              {MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <span className="agent-mode-caret" aria-hidden="true">▾</span>
+          </label>
         </div>
       </footer>
       </>
