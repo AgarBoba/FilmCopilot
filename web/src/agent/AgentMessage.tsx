@@ -1,7 +1,8 @@
 import { useState } from 'react';
 
 import { CheckIcon, CopyIcon } from '../canvas/icons';
-import type { AgentEvent } from './agentApi';
+import { ApiError } from '../api/client';
+import { agentApi, type AgentEvent } from './agentApi';
 import { Markdown } from './Markdown';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
@@ -67,11 +68,14 @@ export function AgentMessage({ event, focusTitles, focusPreviews = {}, onFocusNo
     case 'run_finished':
       if (event.status === 'completed') return null;
       return <div className="agent-note">{event.status === 'stopped' ? '已停止' : '这一轮没有完成'}</div>;
+    case 'memory_change':
+      return <MemoryLine event={event} />;
     case 'run_undone': {
       const skipped = event.skipped ?? [];
       return (
         <div className="agent-note">
           已撤销这一轮的改动
+          {(event.memoriesReverted ?? 0) > 0 && `，收回了 ${event.memoriesReverted} 条记忆`}
           {skipped.length > 0 && `；${skipped.length} 处你之后改过，保留了你的版本`}
         </div>
       );
@@ -132,6 +136,47 @@ function ConfirmCard({ event, pending, onConfirm }: {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+
+const LAYER_LABELS = { project: '项目记忆', preference: '我的偏好' } as const;
+
+/** "记下了（项目记忆 · 角色）：主角是…   撤销" — memory changes show in the chat and can be undone. */
+function MemoryLine({ event }: { event: AgentEvent }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'undone' | 'failed'>('idle');
+  const verb = event.action === 'updated' ? '更新了记忆' : event.action === 'removed' ? '忘掉了' : '记下了';
+  const where = [event.layer ? LAYER_LABELS[event.layer] : '', event.categoryLabel].filter(Boolean).join(' · ');
+  return (
+    <div className={`agent-memory-line ${state === 'undone' ? 'is-undone' : ''}`}>
+      <span className="agent-memory-icon" aria-hidden="true">✦</span>
+      <span className="agent-memory-text">
+        {verb}{where && <span className="agent-memory-where">（{where}）</span>}：
+        {event.action === 'updated' && event.previous && <s className="agent-memory-previous">{event.previous}</s>}
+        {event.action === 'updated' && event.previous && ' → '}
+        {event.content}
+      </span>
+      {event.memoryId !== undefined && state !== 'undone' && (
+        <button
+          type="button"
+          className="agent-memory-undo"
+          disabled={state === 'busy'}
+          onClick={async () => {
+            setState('busy');
+            try {
+              await agentApi.revertMemory(event.memoryId!);
+              setState('undone');
+            } catch (error) {
+              // Already undone earlier (e.g. before a reload): nothing left to take back.
+              setState(error instanceof ApiError && error.status === 404 ? 'undone' : 'failed');
+            }
+          }}
+        >
+          {state === 'failed' ? '撤销失败，再试' : '撤销'}
+        </button>
+      )}
+      {state === 'undone' && <span className="agent-memory-undone">已撤销</span>}
     </div>
   );
 }

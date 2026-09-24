@@ -166,6 +166,27 @@ class Database:
                     FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
                 );
                 CREATE INDEX IF NOT EXISTS agent_run_changes_run ON agent_run_changes (run_id, seq);
+
+                -- Layered memory (agent/memory.py).
+                CREATE TABLE IF NOT EXISTS memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    layer TEXT NOT NULL CHECK (layer IN ('project', 'preference', 'episode')),
+                    project_id TEXT,
+                    canvas_id TEXT,
+                    session_id TEXT,
+                    run_id TEXT,
+                    category TEXT NOT NULL DEFAULT 'other',
+                    content TEXT NOT NULL,
+                    source TEXT NOT NULL CHECK (source IN ('user_stated', 'agent_inferred', 'user_edited')),
+                    status TEXT NOT NULL CHECK (status IN ('active', 'pending', 'superseded', 'rejected', 'removed')),
+                    evidence_json TEXT,
+                    superseded_by INTEGER,
+                    removed_run_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS memories_scope ON memories (layer, project_id, status);
                 '''
             )
             columns = {

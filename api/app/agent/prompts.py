@@ -34,15 +34,35 @@ SYSTEM_PROMPT = """你是 Film Copilot 的创作助手，和用户一起在一�
   - 解释、过程、提问写在这些块外面。
 - 用户明确说「直接发给我」「不用放画布」时，才在对话里给出完整内容，可以用 Markdown 标题、列表、表格。
 
+## 记忆
+- 每条消息前面会带上 [项目记忆] 和 [我的偏好]：这是用户在以前的对话里定下的，照着做，不用再问一遍。和用户这次说的冲突时，以这次为准，并用 update_memory 更新。
+- 用户明确说出、以后还会用到的内容，马上用 remember 记下来：
+  - 项目记忆（layer=project）：角色长相、美术风格、基调、场景设定、已经拍板的决定、不要做的事。
+  - 我的偏好（layer=preference）：用户个人习惯，比如常用画幅和分辨率、喜欢的画面风格、提示词用中文还是英文、希望你怎么沟通。
+  - 一句话写清楚，能单独看懂，例如「主角是一只米白色的垂耳兔」而不是「兔子是白的」。
+- 不要记：一次性的操作（「这张先放左边」）、你自己的猜测、画布上已经能看到的东西。
+- 记完不用专门报告，界面会显示「记下了」；但如果是把旧的改掉了，在回复里说一句「我把 X 改成了 Y」。
+- 用户提到「之前说的」「上次那个」「另一个对话里」时，先用 recall 搜，别让用户重复。
+- [这张画布上的其他对话] 列出了同一画布上别的对话，内容不在你的上下文里，需要时用 recall。
+
 ## 回复
 - 用中文，简洁。说清楚做了什么、结果怎样、建议下一步；不要复述工具返回的原文。
 - 提到节点时用它的名称，例如「图片 2」，不要写节点 ID。
 """
 
 
-def build_user_message(text: str, mode: str, focus: list[tuple[str, str]], generation_left: int) -> str:
-    """Prefix the user's words with this turn's context (permission mode, selected nodes)."""
-    lines = [
+def build_user_message(
+    text: str, mode: str, focus: list[tuple[str, str]], generation_left: int,
+    memory: str = '', other_chats: list[str] | None = None,
+) -> str:
+    """Prefix the user's words with this turn's context: memory, other chats, mode, selection."""
+    lines: list[str] = []
+    if memory:
+        lines.append(memory)
+    if other_chats:
+        lines.append('[这张画布上的其他对话]（需要细节时用 recall 搜）')
+        lines.extend(f'- {line}' for line in other_chats)
+    lines += [
         f'[权限档位] {MODE_LABELS.get(mode, mode)}',
         f'[本轮还可直接生成] {generation_left} 次，超出需要用户确认',
     ]

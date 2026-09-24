@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { ChatsIcon, CloseIcon, PlusIcon, SendIcon, StopIcon, UndoIcon } from '../canvas/icons';
+import { ChatsIcon, CloseIcon, MemoryIcon, PlusIcon, SendIcon, StopIcon, UndoIcon } from '../canvas/icons';
 import { agentApi, type AgentEvent, type PermissionMode } from './agentApi';
 import { AgentMessage } from './AgentMessage';
 import { pendingConfirmations, undoableRuns, useAgentStore } from './agentStore';
 import { Markdown } from './Markdown';
 import { SessionList } from './SessionList';
+import { MemoryView } from './MemoryView';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
 const MODE_OPTIONS: { value: PermissionMode; label: string }[] = [
@@ -67,7 +68,7 @@ export function AgentPanel({
   }
 
   /** 'list' shows every chat on this canvas; 'chat' the open one. */
-  const [view, setView] = useState<'chat' | 'list'>('chat');
+  const [view, setView] = useState<'chat' | 'list' | 'memory'>('chat');
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -228,6 +229,7 @@ export function AgentPanel({
   const undoable = undoableRuns(events);
   const lastFinishedRun = [...events].reverse().find((event) => event.kind === 'run_finished')?.runId ?? null;
   const focusTitles = { ...nodeTitles };
+  const memoryVersion = events.filter((event) => event.kind === 'memory_change' || event.kind === 'run_undone').length;
   const currentTitle = sessions.find((item) => item.id === sessionId)?.title || '新对话';
   // Another chat on this canvas needs attention (waiting beats running).
   const others = sessions.filter((item) => item.id !== sessionId && !item.archived_at);
@@ -267,6 +269,16 @@ export function AgentPanel({
           <span className="agent-title-text">{currentTitle}</span>
           {store.model && <span className="agent-model">{store.model}</span>}
         </button>
+        <button
+          type="button"
+          className={`agent-icon ${view === 'memory' ? 'is-active' : ''}`}
+          aria-label="记忆"
+          data-tooltip="Agent 记住的设定和你的偏好"
+          data-tooltip-side="bottom"
+          onClick={() => setView(view === 'memory' ? 'chat' : 'memory')}
+        >
+          <MemoryIcon width={16} height={16} />
+        </button>
         <button type="button" className="agent-icon" aria-label="新对话" data-tooltip="新对话" data-tooltip-side="bottom"
           onClick={newSession}>
           <PlusIcon width={16} height={16} />
@@ -277,7 +289,9 @@ export function AgentPanel({
         </button>
       </header>
 
-      {view === 'list' ? (
+      {view === 'memory' ? (
+        <MemoryView projectId={projectId} version={memoryVersion} onBack={() => setView('chat')} />
+      ) : view === 'list' ? (
         <SessionList
           sessions={sessions}
           currentId={sessionId}

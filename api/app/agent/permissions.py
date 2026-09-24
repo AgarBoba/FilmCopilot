@@ -17,6 +17,7 @@ WRITE_TOOLS = {
     'duplicate_nodes', 'delete_nodes', 'generate',
 }
 ASK_IN_DEFAULT_MODE = {'generate', 'delete_nodes'}
+MEMORY_TOOLS = {'remember', 'update_memory', 'forget', 'recall'}
 
 
 @dataclass
@@ -30,7 +31,7 @@ class RunState:
 def decide(tool_name: str, args: dict[str, Any], mode: str, run: RunState) -> tuple[Decision, str]:
     """(decision, reason). `reason` is shown to the user when confirmation is needed."""
     name = tool_name.split('__')[-1]  # accept "mcp__canvas__generate" as well as "generate"
-    if name in READ_ONLY_TOOLS:
+    if name in READ_ONLY_TOOLS or name in MEMORY_TOOLS:
         return 'allow', ''
     if name not in WRITE_TOOLS:
         return 'deny', f'未知工具 {name}'

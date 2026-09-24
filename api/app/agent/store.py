@@ -113,6 +113,42 @@ class AgentStore:
                 return line[:80]
         return ''
 
+    def search_messages(
+        self, project_id: str, query: str, exclude_session: str | None = None, limit: int = 6,
+    ) -> list[dict[str, Any]]:
+        """What the user and the agent said in other chats of this project, by keyword."""
+        from .memory import keywords
+        words = keywords(query)
+        if not words:
+            return []
+        clause = ' OR '.join('m.content_json LIKE ?' for _ in words)
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                f'''SELECT m.id, m.session_id, m.role, m.content_json, m.created_at, s.title, s.canvas_id
+                    FROM agent_messages m JOIN agent_sessions s ON s.id = m.session_id
+                    WHERE s.project_id = ? AND m.role IN ('user', 'assistant') AND ({clause})
+                    ORDER BY m.id DESC LIMIT 200''',
+                (project_id, *[f'%{word}%' for word in words]),
+            ).fetchall()
+        hits = []
+        for row in rows:
+            if row['session_id'] == exclude_session:
+                continue
+            text = str(json.loads(row['content_json']).get('text') or '')
+            lowered = text.lower()
+            score = sum(1 for word in words if word in lowered)
+            if not score:
+                continue  # matched a JSON key, not the words
+            first = min(lowered.find(word) for word in words if word in lowered)
+            start = max(0, first - 80)
+            snippet = ('…' if start else '') + ' '.join(text[start:first + 220].split()) + ('…' if first + 220 < len(text) else '')
+            hits.append({
+                'messageId': row['id'], 'sessionId': row['session_id'], 'sessionTitle': row['title'] or '未命名对话',
+                'role': row['role'], 'createdAt': row['created_at'], 'score': score, 'snippet': snippet,
+            })
+        hits.sort(key=lambda hit: (-hit['score'], -hit['messageId']))
+        return hits[:limit]
+
     def update_session(self, session_id: str, title: str | None = None, archived: bool | None = None) -> dict[str, Any]:
         self.get_session(session_id)
         with self.database.transaction() as connection:

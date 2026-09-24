@@ -18,7 +18,9 @@ from ..repositories import CanvasRepository
 from ..schemas import CommandEnvelope
 from .canvas_tools import CanvasTools, ToolResult
 from .config import AgentConfig
-from .mcp_server import READ_ONLY, build_handlers, build_server, qualified
+from .mcp_server import MEMORY_TOOLS, READ_ONLY, build_handlers, build_server, qualified
+from .memory import MemoryStore
+from .memory_tools import MemoryTools
 from .permissions import ConfirmationBroker, RunState, decide, describe_request, request_node_ids
 from .prompts import SYSTEM_PROMPT, build_user_message
 from .store import AgentStore
@@ -64,6 +66,7 @@ class AgentService:
         self.broker = ConfirmationBroker(self.config.confirmation_timeout_seconds)
         self.sessions: dict[str, SessionRuntime] = {}
         self.subscribers: dict[str, set[asyncio.Queue]] = {}
+        self.memory = MemoryStore(repository.database)
 
     # --------------------------------------------------------------- public
 
@@ -86,12 +89,20 @@ class AgentService:
         runtime.tools = CanvasTools(
             self.repository, self.command_service, self.store, runtime.canvas_id, run['id'], self.config
         )
+        runtime.tools.memory = MemoryTools(
+            self.memory, self.store, project_id=runtime.project_id, canvas_id=runtime.canvas_id,
+            session_id=session_id, run_id=run['id'],
+        )
 
         snapshot = self.repository.get_snapshot(runtime.canvas_id)
         titles = {node.id: node.data.get('title', '') for node in snapshot.nodes}
         focus = [(node_id, titles[node_id]) for node_id in (focus_node_ids or []) if node_id in titles]
         self._emit(session_id, run['id'], 'user_message', {'text': text, 'focus': [i for i, _ in focus]}, role='user')
-        prompt = build_user_message(text, settings['permissionMode'], focus, settings['generationCap'])
+        prompt = build_user_message(
+            text, settings['permissionMode'], focus, settings['generationCap'],
+            memory=self.memory.context_block(runtime.project_id),
+            other_chats=self._other_chats(runtime),
+        )
         runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt))
         return run
 
@@ -121,8 +132,21 @@ class AgentService:
             command='undo_agent_run', baseRevision=revision, idempotencyKey=f'undo:{run_id}',
             payload={'runId': run_id}, actor='agent',
         ))
-        self._emit(session['id'], run_id, 'run_undone', result.payload, role='system_event')
-        return result.payload
+        payload = {**result.payload, 'memoriesReverted': self.memory.undo_run(run_id)}
+        self._emit(session['id'], run_id, 'run_undone', payload, role='system_event')
+        return payload
+
+    def _other_chats(self, runtime: SessionRuntime, limit: int = 5) -> list[str]:
+        """Other chats on this canvas, newest first, one line each (shared context between chats)."""
+        lines = []
+        for chat in self.store.list_sessions(runtime.project_id, runtime.canvas_id):
+            if chat['id'] == runtime.session_id or chat.get('archived_at') or not chat.get('message_count'):
+                continue
+            last = chat.get('preview') or ''
+            lines.append(f"「{chat.get('title') or '未命名对话'}」{str(chat.get('last_active_at') or '')[:10]}，最后一句：{last[:60]}")
+            if len(lines) >= limit:
+                break
+        return lines
 
     def subscribe(self, session_id: str) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
@@ -174,6 +198,10 @@ class AgentService:
         from claude_agent_sdk import ClaudeAgentOptions
 
         async def on_step(name: str, args: dict[str, Any], result: ToolResult) -> None:
+            if result.memory and not result.is_error:
+                # Shown as "记下了：…  撤销" in the chat rather than as a canvas step.
+                self._emit(runtime.session_id, runtime.run_id, 'memory_change', result.memory, role='system_event')
+                return
             self._emit(runtime.session_id, runtime.run_id, 'tool_step', {
                 'tool': name,
                 'summary': result.summary or name,
@@ -195,7 +223,7 @@ class AgentService:
             mcp_servers={'canvas': build_server(runtime.handlers)},
             # Read-only tools run freely; write tools must NOT be listed here, or they would
             # skip can_use_tool (see Task 0 notes).
-            allowed_tools=[qualified(name) for name in READ_ONLY],
+            allowed_tools=[qualified(name) for name in (*READ_ONLY, *MEMORY_TOOLS)],
             can_use_tool=can_use_tool,
             include_partial_messages=True,
             setting_sources=[],

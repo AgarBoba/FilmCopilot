@@ -111,3 +111,23 @@ def test_sessions_are_per_canvas_with_preview_status_rename_and_archive(tmp_path
         assert client.get('/api/agent/sessions', params={'canvasId': 'c1'}).json()[0]['archived_at']
         assert client.get(f"/api/agent/sessions/{first['id']}/messages").json()
         assert client.patch(f"/api/agent/sessions/{first['id']}", json={'archived': False}).json()['archived_at'] is None
+
+
+def test_memory_endpoints(tmp_path, monkeypatch):
+    app = make_client(tmp_path, monkeypatch, FakeFactory())
+    with TestClient(app) as client:
+        added = client.post('/api/memories', json={'layer': 'project', 'category': 'style', 'content': '暖色调，电影感'})
+        assert added.status_code == 201 and added.json()['source'] == 'user_stated'
+        memory_id = added.json()['id']
+        client.post('/api/memories', json={'layer': 'preference', 'content': '图片默认 16:9', 'category': 'params'})
+        listed = client.get('/api/memories').json()
+        assert [m['content'] for m in listed['project']] == ['暖色调，电影感']
+        assert listed['preference'][0]['categoryLabel'] == '常用参数'
+        assert listed['categories']['project']['style'] == '风格'
+
+        edited = client.patch(f'/api/memories/{memory_id}', json={'content': '暖色调，胶片感'}).json()
+        assert edited['content'] == '暖色调，胶片感' and edited['source'] == 'user_edited'
+        assert client.post('/api/memories', json={'layer': 'project', 'content': '  '}).status_code in (400, 422)
+        assert client.delete(f'/api/memories/{memory_id}').status_code == 204
+        assert client.get('/api/memories').json()['project'] == []
+        assert client.patch(f'/api/memories/{memory_id}', json={'content': 'x'}).status_code == 404

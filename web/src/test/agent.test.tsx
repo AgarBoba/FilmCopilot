@@ -325,3 +325,72 @@ describe('focus thumbnails', () => {
     expect(screen.getByText('已删除的节点')).toBeInTheDocument();
   });
 });
+
+describe('memory', () => {
+  it('shows what was remembered and can take it back', async () => {
+    const { agentApi } = await import('../agent/agentApi');
+    const revert = vi.spyOn(agentApi, 'revertMemory').mockResolvedValue({ action: 'reverted' });
+    render(
+      <AgentMessage
+        event={event({ kind: 'memory_change', action: 'added', memoryId: 7, layer: 'project', categoryLabel: '角色', content: '主角是一只米白色的垂耳兔' })}
+        focusTitles={{}} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} onConfirm={vi.fn()} pending={false}
+      />,
+    );
+    expect(screen.getByText(/记下了/)).toBeInTheDocument();
+    expect(screen.getByText('（项目记忆 · 角色）')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }));
+    expect(revert).toHaveBeenCalledWith(7);
+    expect(await screen.findByText('已撤销')).toBeInTheDocument();
+    revert.mockRestore();
+  });
+
+  it('a turn that only remembered something can still be undone', () => {
+    const events = [
+      event({ id: 1, kind: 'memory_change', action: 'added', memoryId: 1, content: 'x' }),
+      event({ id: 2, kind: 'run_finished', status: 'completed' }),
+    ];
+    expect([...undoableRuns(events)]).toEqual(['r1']);
+  });
+
+  it('memory view groups by category, adds, edits and deletes', async () => {
+    const { agentApi } = await import('../agent/agentApi');
+    const { MemoryView } = await import('../agent/MemoryView');
+    const base = { project_id: 'default', source: 'user_stated' as const, status: 'active' as const, superseded_by: null,
+      session_id: null, created_at: '2026-09-24 03:00:00', updated_at: '2026-09-24 03:00:00' };
+    const data = {
+      project: [
+        { ...base, id: 1, layer: 'project' as const, category: 'character', categoryLabel: '角色', content: '主角是一只米白色的垂耳兔' },
+        { ...base, id: 2, layer: 'project' as const, category: 'style', categoryLabel: '风格', content: '暖色调，电影感' },
+        { ...base, id: 3, layer: 'project' as const, category: 'character', categoryLabel: '角色', content: '主角是白兔', status: 'superseded' as const, superseded_by: 1 },
+      ],
+      preference: [],
+      categories: {
+        project: { character: '角色', style: '风格', other: '其他' },
+        preference: { params: '常用参数', other: '其他' },
+      },
+    };
+    const list = vi.spyOn(agentApi, 'listMemories').mockResolvedValue(data);
+    const add = vi.spyOn(agentApi, 'addMemory').mockResolvedValue(data.project[0]);
+    const remove = vi.spyOn(agentApi, 'deleteMemory').mockResolvedValue(undefined);
+    render(<MemoryView projectId="default" version={0} onBack={vi.fn()} />);
+    expect(await screen.findByText('主角是一只米白色的垂耳兔')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '角色' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '风格' })).toBeInTheDocument();
+    expect(screen.queryByText('主角是白兔')).toBeNull(); // history folded
+    fireEvent.click(screen.getByText(/旧版本（1）/));
+    expect(screen.getByText('主角是白兔')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /添加/ }));
+    fireEvent.change(screen.getByLabelText('记忆内容'), { target: { value: '不要出现文字' } });
+    fireEvent.change(screen.getByLabelText('分类'), { target: { value: 'style' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '添加' }).at(-1)!);
+    expect(add).toHaveBeenCalledWith('default', 'project', '不要出现文字', 'style');
+
+    fireEvent.click(screen.getAllByRole('button', { name: '删除' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    expect(remove).toHaveBeenCalledWith(1);
+    fireEvent.click(screen.getByRole('tab', { name: /我的偏好/ }));
+    expect(screen.getByText(/还没有偏好/)).toBeInTheDocument();
+    list.mockRestore(); add.mockRestore(); remove.mockRestore();
+  });
+});

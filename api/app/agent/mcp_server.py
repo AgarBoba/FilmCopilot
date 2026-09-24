@@ -12,6 +12,12 @@ from .canvas_tools import CanvasTools, ToolResult
 
 SERVER_NAME = 'canvas'
 READ_ONLY = ('get_canvas', 'get_node', 'view_asset', 'wait_for_generation')
+# Memory tools never touch the canvas and never need confirmation (changes show in the chat with undo).
+MEMORY_TOOLS = ('remember', 'update_memory', 'forget', 'recall')
+MEMORY_CATEGORY_HELP = (
+    '项目记忆 category：character 角色 / style 风格 / setting 场景与设定 / decision 已定的决定 / taboo 不要做的 / other；'
+    '我的偏好 category：params 常用参数 / aesthetic 审美 / prompt_style 提示词写法 / workflow 做事方式 / communication 沟通 / other'
+)
 
 ID_LIST = {'type': 'array', 'items': {'type': 'string'}, 'minItems': 1}
 IMAGE_PARAMS = {
@@ -75,6 +81,24 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
      {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
     ('wait_for_generation', '等待这些节点的生成完成，返回结果图片（视频为关键帧）或失败原因。',
      {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
+    ('remember',
+     '记住用户明确说过、以后还用得上的内容。layer=project：本项目的设定（所有对话共享）；'
+     'layer=preference：用户个人的习惯和偏好（所有项目通用）。content 写成一句完整的话。' + MEMORY_CATEGORY_HELP,
+     {'type': 'object', 'properties': {
+         'layer': {'type': 'string', 'enum': ['project', 'preference']},
+         'category': {'type': 'string'},
+         'content': {'type': 'string'},
+     }, 'required': ['layer', 'content']}),
+    ('update_memory', '用户改了某条已记住的内容时用：旧的会保留为历史，新的生效。memory_id 是记忆前面的 # 号数字。',
+     {'type': 'object', 'properties': {
+         'memory_id': {'type': 'integer'}, 'content': {'type': 'string'}, 'category': {'type': 'string'},
+     }, 'required': ['memory_id', 'content']}),
+    ('forget', '用户要你忘掉某条记忆时用。',
+     {'type': 'object', 'properties': {'memory_id': {'type': 'integer'}}, 'required': ['memory_id']}),
+    ('recall',
+     '按关键词搜记忆和这个项目里以前的对话（包括同一画布上的其他对话）。用户提到「之前说的」「上次那个」时先用它。',
+     {'type': 'object', 'properties': {'query': {'type': 'string', 'description': '几个关键词，用空格分开'}},
+      'required': ['query']}),
 ]
 
 
@@ -104,6 +128,19 @@ async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> Tool
         return tools.generate(args['node_ids'])
     if name == 'wait_for_generation':
         return await tools.wait_for_generation(args['node_ids'])
+    if name in MEMORY_TOOLS:
+        memory = tools.memory
+        if memory is None:
+            return ToolResult('记忆功能暂时不可用。', is_error=True)
+        if tools.stopped and name != 'recall':
+            return ToolResult('已停止：用户中止了这一轮任务。', is_error=True)
+        if name == 'remember':
+            return memory.remember(args['layer'], args['content'], args.get('category') or 'other')
+        if name == 'update_memory':
+            return memory.update_memory(args['memory_id'], args['content'], args.get('category'))
+        if name == 'forget':
+            return memory.forget(args['memory_id'])
+        return memory.recall(args['query'])
     return ToolResult(f'未知工具 {name}', is_error=True)
 
 
@@ -148,7 +185,7 @@ def build_handlers(
 def build_server(handlers: dict[str, Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]]):
     sdk_tools = []
     for name, description, schema in TOOL_SPECS:
-        annotations = ToolAnnotations(readOnlyHint=True) if name in READ_ONLY else None
+        annotations = ToolAnnotations(readOnlyHint=True) if name in READ_ONLY or name == 'recall' else None
         sdk_tools.append(tool(name, description, schema, annotations=annotations)(handlers[name]))
     return create_sdk_mcp_server(name=SERVER_NAME, version='1.0.0', tools=sdk_tools)
 

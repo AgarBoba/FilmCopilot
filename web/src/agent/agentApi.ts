@@ -24,6 +24,29 @@ export interface AgentSession {
   archived_at?: string | null;
 }
 
+export type MemoryLayer = 'project' | 'preference';
+
+export interface Memory {
+  id: number;
+  layer: MemoryLayer;
+  project_id: string | null;
+  category: string;
+  categoryLabel: string;
+  content: string;
+  source: 'user_stated' | 'agent_inferred' | 'user_edited';
+  status: 'active' | 'pending' | 'superseded' | 'rejected' | 'removed';
+  superseded_by: number | null;
+  session_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemoryList {
+  project: Memory[];
+  preference: Memory[];
+  categories: Record<MemoryLayer, Record<string, string>>;
+}
+
 /** One entry of the agent stream. Persisted entries have an `id`; text deltas do not. */
 export interface AgentEvent {
   id: number | null;
@@ -37,7 +60,8 @@ export interface AgentEvent {
     | 'confirm_resolved'
     | 'error'
     | 'run_finished'
-    | 'run_undone';
+    | 'run_undone'
+    | 'memory_change';
   createdAt?: string;
   text?: string;
   focus?: string[];
@@ -57,6 +81,14 @@ export interface AgentEvent {
   skipped?: { type: string; id: string; reason: string }[];
   deletedNodes?: string[];
   restoredNodes?: string[];
+  memoriesReverted?: number;
+  /** memory_change */
+  memoryId?: number;
+  action?: 'added' | 'updated' | 'removed';
+  content?: string;
+  previous?: string;
+  layer?: MemoryLayer;
+  categoryLabel?: string;
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -77,6 +109,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
     );
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -102,6 +135,13 @@ export const agentApi = {
     }),
   stop: (runId: string) => call<{ stopping: boolean }>(`/agent/runs/${runId}/stop`, { method: 'POST' }),
   undo: (runId: string) => call<AgentEvent>(`/agent/runs/${runId}/undo`, { method: 'POST' }),
+  listMemories: (projectId: string) => call<MemoryList>(`/memories?projectId=${encodeURIComponent(projectId)}`),
+  addMemory: (projectId: string, layer: MemoryLayer, content: string, category: string) =>
+    call<Memory>('/memories', { method: 'POST', body: JSON.stringify({ projectId, layer, content, category }) }),
+  editMemory: (id: number, changes: { content?: string; category?: string }) =>
+    call<Memory>(`/memories/${id}`, { method: 'PATCH', body: JSON.stringify(changes) }),
+  deleteMemory: (id: number) => call<void>(`/memories/${id}`, { method: 'DELETE' }),
+  revertMemory: (id: number) => call<{ action: string }>(`/memories/${id}/revert`, { method: 'POST' }),
   getSettings: (projectId: string) => call<AgentSettings>(`/projects/${projectId}/agent-settings`),
   updateSettings: (projectId: string, changes: Partial<AgentSettings>) =>
     call<AgentSettings>(`/projects/${projectId}/agent-settings`, {
@@ -116,7 +156,7 @@ export const agentApi = {
     let retry: ReturnType<typeof setTimeout> | null = null;
     const kinds: AgentEvent['kind'][] = [
       'user_message', 'text_delta', 'assistant_text', 'tool_step', 'confirm_request',
-      'confirm_resolved', 'error', 'run_finished', 'run_undone',
+      'confirm_resolved', 'error', 'run_finished', 'run_undone', 'memory_change',
     ];
     const open = () => {
       if (closed) return;

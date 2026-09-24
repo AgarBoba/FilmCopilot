@@ -72,7 +72,9 @@ def test_options_lock_down_tools_and_permissions(repository):
     asyncio.run(scenario())
     options = factory.clients[0].options
     assert options.tools == [] and options.model == 'claude-opus-5-5'
-    assert all('get_' in name or 'view_' in name or 'wait_' in name for name in options.allowed_tools)
+    memory_tools = ('remember', 'update_memory', 'forget', 'recall')
+    assert all('get_' in name or 'view_' in name or 'wait_' in name or name.endswith(memory_tools)
+               for name in options.allowed_tools)
     assert not any(name.endswith(('generate', 'update_node', 'delete_nodes')) for name in options.allowed_tools)
     assert '[权限档位]' in factory.clients[0].prompts[0]
 
@@ -200,3 +202,42 @@ def test_confirmation_notes_reach_the_model(repository):
         assert len(repository.get_snapshot(canvas_id).nodes) == 1
 
     asyncio.run(run_all())
+
+
+def test_memory_is_shared_across_chats_and_undone_with_the_turn(repository):
+    factory = FakeFactory(
+        [('tool', 'remember', {'layer': 'project', 'category': 'character', 'content': '主角是一只米白色的垂耳兔'}),
+         ('tool', 'remember', {'layer': 'preference', 'category': 'params', 'content': '图片默认用 16:9'}),
+         ('text', '记好了')],
+        [('tool', 'recall', {'query': '菜板 广告'}), ('text', '找到了')],
+    )
+    service, store, canvas_id, first = make_service(repository, factory)
+
+    async def scenario():
+        queue = service.subscribe(first)
+        run = await service.send_message(first, '我们在做一个菜板广告，主角是米白色垂耳兔，图片都用 16:9')
+        await finish(service, first)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        changes = [event for event in events if event['kind'] == 'memory_change']
+        assert [c['content'] for c in changes] == ['主角是一只米白色的垂耳兔', '图片默认用 16:9']
+        assert all(c['action'] == 'added' and c['memoryId'] for c in changes)
+        assert not [e for e in events if e['kind'] == 'tool_step']  # memory writes are not canvas steps
+
+        # A second chat on the same canvas sees the memory and the first chat, and can search it.
+        second = store.create_session(canvas_id)['id']
+        await service.send_message(second, '之前那个广告的主角是什么来着？')
+        await finish(service, second)
+        prompt = factory.clients[-1].prompts[-1]
+        assert '主角是一只米白色的垂耳兔' in prompt and '图片默认用 16:9' in prompt
+        assert '[这张画布上的其他对话]' in prompt and '我们在做一个菜板广告' in prompt
+        recalled = factory.clients[-1].tool_results[-1]['content'][0]['text']
+        assert '菜板广告' in recalled
+
+        # Undoing the first turn takes its memories back.
+        undone = service.undo(run['id'])
+        assert undone['memoriesReverted'] == 2
+        assert service.memory.context_block('default') == ''
+
+    asyncio.run(scenario())

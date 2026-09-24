@@ -2131,3 +2131,112 @@ body.is-resizing-panel .agent-panel { transition: none; }
 /* Hand tool: the whole canvas pans, so everything shows the hand. */
 .canvas-page.mode-hand .react-flow__node .nodrag,
 .canvas-page.mode-hand .react-flow__node .nodrag * { cursor: grab; }
+
+/* ---------- Memory: chat line + memory view ---------- */
+.agent-icon.is-active { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.agent-memory-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.agent-memory-line.is-undone { opacity: 0.55; }
+.agent-memory-line.is-undone .agent-memory-text { text-decoration: line-through; }
+.agent-memory-icon { flex: none; color: var(--accent); font-size: 11px; }
+.agent-memory-text { flex: 1; min-width: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+.agent-memory-where { color: var(--text-muted); }
+.agent-memory-previous { color: var(--text-muted); }
+.agent-memory-undo {
+  flex: none;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--accent);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.agent-memory-undo:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.agent-memory-undone { flex: none; font-size: 11px; }
+
+.memory-view { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.memory-tabs { display: flex; gap: 4px; margin: 0 12px; padding: 3px; border-radius: 10px; background: var(--chrome-hover); }
+.memory-tabs button {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.memory-tabs button.is-active { color: var(--text-primary); background: var(--node-bg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); }
+.memory-count { color: var(--text-muted); font-size: 11px; font-weight: 500; }
+.memory-hint { margin: 8px 16px 4px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.memory-error { margin: 6px 12px; padding: 6px 10px; border-radius: 8px; color: #ef4444; background: color-mix(in srgb, #ef4444 10%, transparent); font-size: 12px; }
+.memory-list { margin: 0; padding: 0; list-style: none; }
+.memory-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+.memory-item:hover { background: var(--chrome-hover); }
+.memory-content { padding-right: 56px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.memory-meta { color: var(--text-muted); font-size: 11px; }
+.memory-actions { position: absolute; top: 6px; right: 4px; }
+.memory-item:hover .memory-actions, .memory-item:focus-within .memory-actions { display: flex; }
+.memory-confirm-delete { padding: 0 8px; color: #ef4444 !important; font-size: 12px; font-weight: 600; }
+.memory-item.is-history { opacity: 0.7; }
+.memory-item.is-history .memory-content { padding-right: 0; text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--text-muted) 60%, transparent); }
+.memory-item.is-editing { padding: 4px 0; }
+.memory-editor { margin: 6px 4px 10px; padding: 8px; border: 1px solid var(--accent); border-radius: 10px; background: var(--node-bg); }
+.memory-editor textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+}
+.memory-editor-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.memory-editor-row select {
+  padding: 4px 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 12px;
+}
+.memory-editor-spacer { flex: 1; }
+.memory-editor-row .session-restore { border: 0; background: transparent; color: var(--text-muted); font-size: 12px; cursor: pointer; }
+.memory-submit {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.memory-submit:disabled { opacity: 0.4; cursor: not-allowed; }

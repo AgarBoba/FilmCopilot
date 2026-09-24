@@ -63,6 +63,7 @@ class ToolResult:
     is_error: bool = False
     touched: list[str] = field(default_factory=list)  # node ids, for UI highlight / step list
     summary: str = ''  # one-line step description shown in the agent panel
+    memory: dict | None = None  # set by memory tools: what changed, for the "记下了…" line
 
 
 class CanvasTools:
@@ -85,6 +86,8 @@ class CanvasTools:
         self.stopped = False
         # Notes the user typed when approving a call; attached to that call's result.
         self.confirmation_notes: list[str] = []
+        # Memory tools for this run (set by AgentService; tests may leave it empty).
+        self.memory: Any = None
         self.last_seen_revision = repository.get_snapshot(canvas_id).revision
         # The canvas as the agent knows it: what it last looked at plus its own changes.
         self.seen = repository.canvas_state(canvas_id)

@@ -104,8 +104,9 @@ export function pendingConfirmations(events: AgentEvent[]): AgentEvent[] {
 export function undoableRuns(events: AgentEvent[]): Set<string> {
   const changed = new Set(
     events
-      .filter((event) => event.kind === 'tool_step' && !event.isError && (event.tool ?? '') !== ''
-        && !['get_canvas', 'get_node', 'view_asset', 'wait_for_generation'].includes(event.tool ?? ''))
+      .filter((event) => event.kind === 'memory_change' || (event.kind === 'tool_step' && !event.isError
+        && (event.tool ?? '') !== ''
+        && !['get_canvas', 'get_node', 'view_asset', 'wait_for_generation', 'recall'].includes(event.tool ?? '')))
       .map((event) => event.runId),
   );
   const undone = new Set(events.filter((event) => event.kind === 'run_undone').map((event) => event.runId));

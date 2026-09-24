@@ -101,3 +101,6 @@ export const PencilIcon = (p: IconProps) => <Icon {...p}><path d="M4 20h4L19 9a2
 export const ArchiveIcon = (p: IconProps) => (
   <Icon {...p}><rect x="3.5" y="4.5" width="17" height="4" rx="1" /><path d="M5 8.5V18a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V8.5M10 12.5h4" /></Icon>
 );
+export const MemoryIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-3.5L6 20V5a1 1 0 0 1 1-1z" /><path d="M10 9.5h4" /></Icon>
+);

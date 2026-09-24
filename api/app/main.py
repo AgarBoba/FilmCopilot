@@ -13,7 +13,7 @@ from .repositories import CanvasRepository
 from .agent.config import AgentConfig
 from .agent.runtime import AgentService
 from .agent.store import AgentStore
-from .routes import agent, assets, canvases, events
+from .routes import agent, assets, canvases, events, memories
 
 
 @asynccontextmanager
@@ -69,6 +69,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
     app.include_router(events.router)
     app.include_router(assets.router)
     app.include_router(agent.router)
+    app.include_router(memories.router)
 
     return app
 
