@@ -2245,6 +2245,7 @@ body.is-resizing-panel .agent-panel { transition: none; }
 
 /* Model menu spans the row; parameters below come from the model's definition. */
 .prompt-options .prompt-model { grid-column: 1 / -1; }
+.prompt-options select.is-single { appearance: none; padding-left: 8px; opacity: 1; color: var(--text-primary); cursor: default; }
 .prompt-options input[type='number'],
 .prompt-options input[type='text'] {
   box-sizing: border-box;

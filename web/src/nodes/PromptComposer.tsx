@@ -73,11 +73,12 @@ export function PromptComposer({
         </p>
       )}
       <div className="prompt-options">
-        {/* Only one model of this kind: nothing to choose, so no menu. */}
-        {choices.length > 1 && <label className="prompt-model">
+        <label className="prompt-model">
           model
+          {/* Only one model of this kind: still show its name, just without the menu arrow. */}
           <select
-            disabled={disabled}
+            className={choices.length < 2 ? 'is-single' : undefined}
+            disabled={disabled || choices.length < 2}
             aria-label="model"
             value={model?.id ?? ''}
             onChange={(event) => {
@@ -87,7 +88,7 @@ export function PromptComposer({
           >
             {choices.map((choice) => <option key={choice.id} value={choice.id}>{choice.label}</option>)}
           </select>
-        </label>}
+        </label>
         {model?.parameters.map((parameter) => (
           <ParameterControl
             key={`${model.id}-${parameter.key}`}

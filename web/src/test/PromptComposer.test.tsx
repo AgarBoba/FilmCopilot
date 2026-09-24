@@ -87,12 +87,15 @@ describe('PromptComposer with a model registry', () => {
     useModelStore.setState({ models: FALLBACK_MODELS });
   });
 
-  it('hides the model menu when only one model of that kind exists', async () => {
+  it('shows the only model without a menu arrow', async () => {
     const { useModelStore, FALLBACK_MODELS } = await import('../models/modelStore');
     useModelStore.setState({ models: FALLBACK_MODELS });
     render(<PromptComposer kind="video" prompt="" parameters={{}} onPromptChange={vi.fn()}
       onParametersChange={vi.fn()} onGenerate={vi.fn()} />);
-    expect(screen.queryByLabelText('model')).toBeNull();
+    const select = screen.getByLabelText('model') as HTMLSelectElement;
+    expect(select.value).toBe('seedance-2.0-mini');
+    expect(select.disabled).toBe(true);
+    expect(select.className).toContain('is-single');
     expect(screen.getByLabelText('duration')).toBeTruthy();
   });
 });
