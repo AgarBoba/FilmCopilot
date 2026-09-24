@@ -10,6 +10,7 @@ import { MediaNodeActions } from './MediaNodeActions';
 import { ReferenceStrip, normalizeReferences, type NodeReference } from './ReferenceStrip';
 import { GenerationOverlay, isGenerationBusy } from './GenerationOverlay';
 import { PromptComposer } from './PromptComposer';
+import { NodeTag } from './NodeTag';
 import { VideoPlayer } from './VideoPlayer';
 
 
@@ -42,10 +43,12 @@ export interface VideoNodeData {
 
 interface VideoNodeProps {
   data: VideoNodeData;
+  /** From React Flow: the node's x on the canvas, used to swing the name tag while dragging. */
+  positionAbsoluteX?: number;
 }
 
 
-export function VideoNode({ data }: VideoNodeProps) {
+export function VideoNode({ data, positionAbsoluteX }: VideoNodeProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const manualRef = useRef(false);
   const busy = isGenerationBusy(data.generationStatus);
@@ -87,17 +90,21 @@ export function VideoNode({ data }: VideoNodeProps) {
       {!busy && <UpstreamBadge changes={data.upstreamChanges} />}
       <NodeHandle type="target" position={Position.Left} id="target" />
       <NodeHandle type="source" position={Position.Right} id="source" />
-      <div className="node-heading">
-        <span className="node-kind">VIDEO</span>
-        <NodeTitle title={data.title} fallback="视频节点" onChange={data.onTitleChange} />
-        <MediaNodeActions
-          kind="video"
-          assetUrl={data.assetUrl}
-          title={data.title?.trim() || '视频节点'}
-          busy={busy}
-          onUpload={data.onUpload}
-          onDuplicate={data.onDuplicate}
-        />
+      <NodeTag title={data.title?.trim() || '视频节点'} x={positionAbsoluteX} />
+      {/* Name bar: pops up out of the top of the frame when the node is selected. */}
+      <div className="node-topbar">
+        <div className="node-heading">
+          <span className="node-kind">VIDEO</span>
+          <NodeTitle title={data.title} fallback="视频节点" onChange={data.onTitleChange} />
+          <MediaNodeActions
+            kind="video"
+            assetUrl={data.assetUrl}
+            title={data.title?.trim() || '视频节点'}
+            busy={busy}
+            onUpload={data.onUpload}
+            onDuplicate={data.onDuplicate}
+          />
+        </div>
       </div>
       <div className="media-preview video-preview">
         <GenerationOverlay status={data.generationStatus} error={data.generationError} />
@@ -107,19 +114,24 @@ export function VideoNode({ data }: VideoNodeProps) {
           <EmptyPreview kind="video" busy={busy} onUpload={data.onUpload} />
         )}
       </div>
-      <ReferenceStrip references={references} onRemove={busy ? undefined : data.onRemoveReference} />
-      <PromptComposer
-        kind="video"
-        prompt={data.prompt ?? ''}
-        parameters={data.parameters}
-        onPromptChange={(prompt) => data.onPromptChange?.(prompt)}
-        onParametersChange={(parameters) => data.onParametersChange?.(parameters as VideoGenerationParameters)}
-        onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: VideoGenerationParameters; model?: string })}
-        modelId={data.model}
-        onModelChange={(model, parameters) => data.onModelChange?.(model, parameters)}
-        disabled={busy}
-        noteCount={noteCount}
-      />
+      {/* Slides out from under the media when the node is selected (like a slider phone). */}
+      <div className="node-drawer">
+        <div className="node-drawer-inner">
+          <ReferenceStrip references={references} onRemove={busy ? undefined : data.onRemoveReference} />
+          <PromptComposer
+            kind="video"
+            prompt={data.prompt ?? ''}
+            parameters={data.parameters}
+            onPromptChange={(prompt) => data.onPromptChange?.(prompt)}
+            onParametersChange={(parameters) => data.onParametersChange?.(parameters as VideoGenerationParameters)}
+            onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: VideoGenerationParameters; model?: string })}
+            modelId={data.model}
+            onModelChange={(model, parameters) => data.onModelChange?.(model, parameters)}
+            disabled={busy}
+            noteCount={noteCount}
+          />
+        </div>
+      </div>
     </div>
   );
 }

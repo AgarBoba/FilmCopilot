@@ -832,6 +832,8 @@ export function CanvasShell() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onBeforeDelete={onBeforeDelete}
+          // Dragging moves a node without selecting it; only a click selects (and opens it).
+          selectNodesOnDrag={false}
           onNodeDragStart={onNodeDragStart}
           onNodeDragStop={onNodeDragStop}
           onNodeClick={onNodeClick}

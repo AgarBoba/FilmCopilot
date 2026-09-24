@@ -2244,8 +2244,6 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .agent-msg-model { margin-top: 4px; color: var(--text-muted); font-size: 10.5px; opacity: 0.75; }
 
 /* Model menu spans the row; parameters below come from the model's definition. */
-.prompt-options .prompt-model { grid-column: 1 / -1; }
-.prompt-options select.is-single { appearance: none; padding-left: 8px; opacity: 1; color: var(--text-primary); cursor: default; }
 .prompt-options input[type='number'],
 .prompt-options input[type='text'] {
   box-sizing: border-box;
@@ -2266,3 +2264,591 @@ body.is-resizing-panel .agent-panel { transition: none; }
   font-size: 11px;
   line-height: 1.5;
 }
+
+/* ---------- Prompt box: compact bottom row ----------
+   The text area gets the space. Below it: the model menu, one capsule summarising the
+   parameters (opens a small panel), and a small generate button. */
+.prompt-composer textarea { min-height: 96px; }
+.prompt-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.prompt-option-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.prompt-bar .prompt-model { display: flex; flex: none; min-width: 0; max-width: 55%; }
+/* The three items share one size: same height, font and line box. Form controls don't
+   inherit the page font by default, which made them look different. */
+.prompt-bar .prompt-model select,
+.prompt-params,
+.prompt-composer .prompt-generate {
+  box-sizing: border-box;
+  height: 24px;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 22px;
+  cursor: pointer;
+}
+.prompt-bar .prompt-model select,
+.prompt-params {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 18px 0 9px;
+  color: var(--text-primary);
+  background-color: var(--node-bg);
+  /* Small caret of our own; the native one is wide. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%239a9cb0' stroke-width='1.3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  appearance: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prompt-bar .prompt-model select.is-single {
+  padding-right: 9px;
+  background-image: none;
+  opacity: 1;
+  cursor: default;
+}
+.prompt-params { flex: 1 1 0; display: flex; align-items: center; text-align: left; }
+.prompt-params-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-bar .prompt-model select:not(.is-single):hover,
+.prompt-params:hover:not(:disabled),
+.prompt-params.is-open { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.prompt-params:disabled { opacity: 0.55; cursor: not-allowed; }
+.prompt-composer .prompt-generate {
+  flex: none;
+  width: auto;
+  padding: 0 12px;
+  border-color: var(--accent);
+  color: white;
+  background: var(--accent);
+}
+.prompt-composer .prompt-generate:disabled { opacity: 0.5; cursor: not-allowed; }
+/* The parameter panel floats over whatever is below the node instead of making it taller. */
+.prompt-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  background: var(--node-bg);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.prompt-popover .prompt-options { margin-top: 0; }
+
+/* Note hint: a clearly bounded box with a close button. */
+.prompt-composer .prompt-note-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 6px 6px 6px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--node-bg));
+  font-size: 11px;
+  line-height: 1.45;
+}
+.prompt-note-hint span { flex: 1; }
+.prompt-note-hint-close {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--accent);
+  background: transparent;
+  font-size: 14px;
+  line-height: 18px;
+  cursor: pointer;
+}
+.prompt-note-hint-close:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* ======================================================================
+   Node skin (2026-09-24): soft neutral card, media inset at the top with
+   its own rounded corners, title and prompt below, white "light" when selected.
+   Overrides the earlier node rules above.
+   ====================================================================== */
+.canvas-page {
+  --card-bg: #ffffff;
+  --card-bg-2: #fafafa;
+  --card-edge: rgba(15, 18, 25, 0.07);
+  --card-edge-hover: rgba(15, 18, 25, 0.16);
+  --card-inset: #f1f1f3;
+  --card-highlight: rgba(255, 255, 255, 0.9);
+  --card-shadow: 0 1px 2px rgba(15, 18, 25, 0.05), 0 14px 32px rgba(15, 18, 25, 0.09);
+  --pill-bg: rgba(15, 18, 25, 0.05);
+  --pill-edge: rgba(15, 18, 25, 0.08);
+  --cta-bg: #17181c;
+  --cta-text: #ffffff;
+  /* Selected: a light rim, brighter at the top like light falling on the edge. */
+  --sel-rim: rgba(15, 18, 25, 0.55);
+  --sel-rim-top: rgba(15, 18, 25, 0.85);
+  --sel-glow: rgba(15, 18, 25, 0.10);
+  --port: #17181c;
+}
+.canvas-page.theme-dark {
+  --canvas-bg: #131315;
+  --node-bg: #202023;
+  --text-muted: #9a9aa3;
+  --card-bg: #242427;
+  --card-bg-2: #1d1d20;
+  --card-edge: rgba(255, 255, 255, 0.06);
+  --card-edge-hover: rgba(255, 255, 255, 0.16);
+  --card-inset: #2c2c30;
+  --card-highlight: rgba(255, 255, 255, 0.07);
+  --card-shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 18px 40px rgba(0, 0, 0, 0.45);
+  --pill-bg: rgba(255, 255, 255, 0.06);
+  --pill-edge: rgba(255, 255, 255, 0.08);
+  --cta-bg: #f2f2f4;
+  --cta-text: #141416;
+  --sel-rim: rgba(255, 255, 255, 0.38);
+  --sel-rim-top: rgba(255, 255, 255, 0.8);
+  --sel-glow: rgba(255, 255, 255, 0.10);
+  --port: #ececf0;
+}
+
+.media-node {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--card-edge);
+  border-radius: 26px;
+  background: linear-gradient(180deg, var(--card-bg), var(--card-bg-2));
+  box-shadow: inset 0 1px 0 var(--card-highlight), var(--card-shadow);
+  transition: border-color 160ms ease, box-shadow 200ms ease;
+}
+.media-node:hover { border-color: var(--card-edge-hover); }
+
+/* Selected: white light instead of the purple border. The ::before layer draws a
+   rim that fades from bright at the top to faint at the bottom. */
+.react-flow__node.selected .media-node {
+  border-width: 1px;
+  border-color: transparent;
+  box-shadow:
+    inset 0 1px 0 var(--card-highlight),
+    0 0 0 1px var(--sel-rim),
+    0 0 22px var(--sel-glow),
+    0 0 60px color-mix(in srgb, var(--sel-glow) 60%, transparent),
+    var(--card-shadow);
+}
+.react-flow__node.selected .media-node::before {
+  z-index: 2;
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 28px;
+  padding: 1.5px;
+  background: linear-gradient(180deg, var(--sel-rim-top), transparent 55%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+
+.node-kind { display: none; }
+.node-heading {
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 8px 0 10px;
+}
+.node-title {
+  margin: -3px 0 -3px -6px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: left;
+}
+.note-node .node-heading { padding: 8px 4px 6px 8px; }
+.note-node { padding: 8px 14px 14px; }
+
+.media-node .prompt-composer {
+  margin: 0;
+  padding: 6px 8px 8px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.media-node .prompt-composer textarea { min-height: 84px; font-size: 13px; }
+.media-node .prompt-composer textarea::placeholder { color: color-mix(in srgb, var(--text-muted) 80%, transparent); }
+
+/* Bottom row pills: neutral glass instead of outlined boxes; generate is the light button. */
+.media-node .prompt-bar .prompt-model select,
+.media-node .prompt-params {
+  height: 28px;
+  line-height: 26px;
+  border-color: var(--pill-edge);
+  background-color: var(--pill-bg);
+}
+.media-node .prompt-composer .prompt-generate {
+  height: 28px;
+  line-height: 26px;
+  padding: 0 14px;
+  border-color: var(--cta-bg);
+  color: var(--cta-text);
+  background: var(--cta-bg);
+  font-weight: 600;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset, 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.media-node .prompt-params.is-open,
+.media-node .prompt-params:hover:not(:disabled),
+.media-node .prompt-bar .prompt-model select:not(.is-single):hover { border-color: var(--card-edge-hover); }
+.media-node .prompt-popover { border-radius: 14px; border-color: var(--card-edge-hover); background: var(--card-bg); }
+
+/* Empty preview: quiet text and a glass upload button. */
+.media-node .empty-preview-upload {
+  border-color: var(--pill-edge);
+  background: var(--pill-bg);
+}
+.media-node .empty-preview-upload:hover:not([aria-disabled="true"]) {
+  border-color: var(--card-edge-hover);
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+/* Ports: small light dots that match the selection light. */
+.react-flow__handle.node-handle::after {
+  --handle-dot: 12px;
+  border: 2.5px solid var(--card-bg);
+  background-color: var(--port);
+  box-shadow: 0 0 0 1px var(--card-edge-hover), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.media-preview .generation-overlay { z-index: 2; }
+
+
+/* ---------- Image / video card: a light frame around the media ----------
+   Like a phone in a light case: the media sits inside a light frame (6px all round).
+   Selected, the frame grows both ways: a name bar pops up out of the top, and the prompt
+   area slides down out of the bottom. Not selected, the name hangs on a tag (.node-tag).
+   It opens only when it is the one selected node and isn't being dragged: while dragged it
+   stays compact so the tag can swing, and in a multi-selection nodes just glow. */
+.media-node:not(.note-node) {
+  /* Everything inside the frame uses light-surface colours, in both themes. */
+  --frame: #e9e9ec;
+  --frame-2: #e2e2e6;
+  --text-primary: #17181c;
+  --text-muted: #6b6c75;
+  --node-bg: #f6f6f8;
+  --card-bg: #f6f6f8;
+  --card-edge: rgba(15, 18, 25, 0.08);
+  --card-edge-hover: rgba(15, 18, 25, 0.18);
+  --card-inset: #d5d5da;
+  --pill-bg: rgba(15, 18, 25, 0.06);
+  --pill-edge: rgba(15, 18, 25, 0.1);
+  --cta-bg: #17181c;
+  --cta-text: #ffffff;
+  --chrome-border: rgba(15, 18, 25, 0.12);
+  --chrome-hover: rgba(15, 18, 25, 0.08);
+  --drawer-ease: cubic-bezier(0.22, 0.8, 0.22, 1);
+  --drawer-time: 340ms;
+  --topbar-h: 40px;
+  --port: #17181c;
+  --frame-edge: rgba(255, 255, 255, 0.5);
+  --frame-edge-on: #fff;
+  --frame-highlight: rgba(255, 255, 255, 0.8);
+  --tag-bg: #f4f4f6;
+  --tag-text: #17181c;
+  --tag-edge: rgba(255, 255, 255, 0.9);
+  --tag-hole: #cfcfd4;
+  padding: 6px;
+  transition: border-radius var(--drawer-time) var(--drawer-ease), box-shadow 200ms ease, border-color 160ms ease;
+  border: 1px solid var(--frame-edge);
+  border-radius: 26px;
+  color: var(--text-primary);
+  background: var(--frame);
+  box-shadow: inset 0 1px 0 var(--frame-highlight), 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+.media-node:not(.note-node):hover { border-color: var(--frame-edge-on); }
+.media-node:not(.note-node) .media-preview {
+  z-index: 1; /* the drawer slides out from under it */
+  min-height: 200px;
+  border-radius: 20px;
+  background: var(--card-inset);
+}
+.media-node:not(.note-node) .media-preview img,
+.media-node:not(.note-node) .media-preview video { min-height: 200px; }
+
+/* Selected (also as part of a multi-selection): soft white light around the frame. */
+.react-flow__node.selected .media-node:not(.note-node) {
+  border-color: var(--frame-edge-on);
+  box-shadow:
+    0 0 24px rgba(255, 255, 255, 0.16),
+    0 0 64px rgba(255, 255, 255, 0.08);
+  /* No dark drop shadow here: it would spill up onto the name bar, which sits behind. */
+}
+/* Opened, the glow must wrap frame and name bar as one shape. A glow on the frame itself
+   would spill onto the bar (which sits behind it), so it moves to a layer behind both that
+   covers frame + bar. */
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .media-node:not(.note-node) { box-shadow: none; }
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .media-node:not(.note-node)::after {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--topbar-h) - 1px) -1px -1px;
+  z-index: -2;
+  border-radius: 26px;
+  box-shadow: 0 0 24px rgba(255, 255, 255, 0.16), 0 0 64px rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+.react-flow__node.selected .media-node:not(.note-node)::before { content: none; }
+/* Opened (one node selected, not being dragged): square top corners and no top edge, so the
+   name bar continues the frame upward seamlessly. */
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .media-node:not(.note-node) {
+  border-top-color: transparent;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Name bar: sits behind the frame's top edge and rises out of it when selected. It overlaps
+   the frame by the corner radius, so the two read as one piece. */
+.node-topbar {
+  position: absolute;
+  right: -1px;
+  bottom: calc(100% - 26px);
+  left: -1px;
+  z-index: -1;
+  box-sizing: border-box;
+  height: calc(var(--topbar-h) + 26px);
+  padding: 0 8px 26px 12px;
+  border: 1px solid var(--frame-edge-on);
+  border-bottom: 0;
+  border-radius: 26px 26px 0 0;
+  background: var(--frame);
+  transform: translateY(var(--topbar-h));
+  opacity: 0;
+  transition: transform var(--drawer-time) var(--drawer-ease), opacity 160ms ease;
+}
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .node-topbar {
+  transform: none;
+  opacity: 1;
+  transition: transform var(--drawer-time) var(--drawer-ease), opacity 120ms ease;
+}
+.node-topbar .node-heading {
+  height: var(--topbar-h);
+  padding: 0;
+  align-items: center;
+}
+.node-topbar .node-title { font-size: 14px; }
+/* The "upstream changed" badge sits above the node; lift it over the name bar. */
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .upstream-badge { transform: translateY(calc(-1 * var(--topbar-h))); }
+.upstream-badge { transition: transform var(--drawer-time) var(--drawer-ease); }
+
+/* Prompt area: slides down out of the bottom of the frame. */
+.node-drawer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* never wider than the card */
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--drawer-time) var(--drawer-ease);
+}
+.node-drawer-inner {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.node-drawer-inner > * {
+  opacity: 0;
+  transform: translateY(-24px);
+  transition: opacity 180ms ease, transform var(--drawer-time) var(--drawer-ease);
+}
+.node-drawer .reference-strip-frame { margin: 8px 4px 0; }
+.node-drawer .prompt-composer { padding: 8px 4px 2px 6px; }
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .node-drawer { grid-template-rows: 1fr; }
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .node-drawer-inner > * {
+  opacity: 1;
+  transform: none;
+  transition: opacity 220ms ease 80ms, transform var(--drawer-time) var(--drawer-ease);
+}
+/* Once fully open, stop clipping so the parameter panel and menus can overflow the card. */
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .node-drawer-inner { animation: drawer-unclip 0s linear var(--drawer-time) forwards; }
+@keyframes drawer-unclip { to { overflow: visible; } }
+
+/* Pills on the light frame. */
+.media-node:not(.note-node) .prompt-generate { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18); }
+.media-node:not(.note-node) .prompt-missing-key { color: #9a5b00; background: rgba(245, 158, 11, 0.16); }
+
+/* Hang tag with the node's name, hanging below the bottom-left of the frame (outside it, so
+   it never covers the media). It hangs from a short string and swings around the top of the
+   string (NodeTag.tsx sets --tag-swing while the node is dragged). When the node opens, the
+   name bar takes over and the tag tucks away. */
+.node-tag {
+  --tag-swing: 0deg;
+  position: absolute;
+  top: calc(100% - 3px);
+  left: 22px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 60%;
+  transform: rotate(var(--tag-swing));
+  transform-origin: 50% 0;
+  pointer-events: none;
+  transition: opacity 180ms ease, translate var(--drawer-time) var(--drawer-ease);
+}
+.node-tag-string {
+  width: 1.5px;
+  height: 12px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(220, 220, 226, 0.9));
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.4);
+}
+/* The string's knot, sitting on the frame. */
+.node-tag::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(15, 18, 25, 0.18), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.node-tag-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-top: -3px;
+  padding: 5px 10px 5px 8px;
+  border: 1px solid var(--tag-edge);
+  border-radius: 7px;
+  color: var(--tag-text);
+  background: var(--tag-bg);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.28), 0 1px 2px rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.node-tag-hole {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--tag-hole);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.35);
+}
+.node-tag-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.react-flow__nodes:not(:has(> .react-flow__node.selected ~ .react-flow__node.selected)) > .react-flow__node.selected:not(.dragging) .node-tag { opacity: 0; translate: 0 -10px; }
+
+.empty-preview { transition: padding var(--drawer-time) var(--drawer-ease); }
+/* Video controls only once selected; hover preview still plays. */
+.react-flow__node:not(.selected) .media-node .video-controls { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .node-drawer, .node-drawer-inner > *, .node-tag, .node-topbar, .upstream-badge { transition: none; }
+}
+
+/* Dark theme: a graphite frame that sits with the dark canvas (and the dark rail and notes)
+   instead of a light one. Same structure, light text; the selection light stays white. */
+.canvas-page.theme-dark .media-node:not(.note-node) {
+  --frame: #232326;
+  --frame-edge: rgba(255, 255, 255, 0.09);
+  --frame-edge-on: rgba(255, 255, 255, 0.55);
+  --frame-highlight: rgba(255, 255, 255, 0.08);
+  --text-primary: #f4f4f6;
+  --text-muted: #9a9aa3;
+  --node-bg: #1c1c1f;
+  --card-bg: #26262a;
+  --card-edge: rgba(255, 255, 255, 0.08);
+  --card-edge-hover: rgba(255, 255, 255, 0.18);
+  --card-inset: #2e2e33;
+  --pill-bg: rgba(255, 255, 255, 0.06);
+  --pill-edge: rgba(255, 255, 255, 0.1);
+  --cta-bg: #f2f2f4;
+  --cta-text: #141416;
+  --chrome-border: rgba(255, 255, 255, 0.12);
+  --chrome-hover: rgba(255, 255, 255, 0.08);
+  --port: #ececf0;
+  --tag-bg: #2a2a2e;
+  --tag-text: #f1f1f3;
+  --tag-edge: rgba(255, 255, 255, 0.14);
+  --tag-hole: #151517;
+}
+.canvas-page.theme-dark .media-node:not(.note-node) .prompt-missing-key { color: #f5b041; background: rgba(245, 158, 11, 0.12); }
+
+/* ---------- Left rail: a tall capsule with round buttons ----------
+   Dark theme: glossy dark capsule; light theme: frosted glass. Both sit in a faint outer ring.
+   Buttons are circles; the one that is on (menu open, Agent open) becomes a solid light
+   circle with a dark icon. */
+.canvas-rail {
+  --rail-ring: rgba(255, 255, 255, 0.07);
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.55));
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 6px rgba(15, 18, 25, 0.03),
+    0 0 0 7px rgba(15, 18, 25, 0.06),
+    0 18px 40px rgba(15, 18, 25, 0.14);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  backdrop-filter: blur(20px) saturate(1.3);
+}
+.canvas-page.theme-dark .canvas-rail {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, #2a2a2e 0%, #17171a 55%, #0f0f11 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 6px rgba(255, 255, 255, 0.03),
+    0 0 0 7px var(--rail-ring),
+    0 18px 40px rgba(0, 0, 0, 0.5);
+}
+.rail-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: #3a3b42;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.canvas-page.theme-dark .rail-button { color: rgba(255, 255, 255, 0.62); }
+.rail-button:hover { color: #17181c; background: rgba(15, 18, 25, 0.07); }
+.canvas-page.theme-dark .rail-button:hover { color: #fff; background: rgba(255, 255, 255, 0.09); }
+.rail-button:active { transform: scale(0.94); }
+
+/* "+" is the main action: a soft filled circle, like the top button in the reference. */
+.rail-button.rail-primary,
+.rail-button.rail-primary:hover {
+  color: #17181c;
+  background: rgba(15, 18, 25, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+.canvas-page.theme-dark .rail-button.rail-primary,
+.canvas-page.theme-dark .rail-button.rail-primary:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* On: solid light circle, dark icon. */
+.rail-button.is-active,
+.rail-button.rail-primary.is-open,
+.canvas-page.theme-dark .rail-button.is-active,
+.canvas-page.theme-dark .rail-button.rail-primary.is-open {
+  color: #17181c;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22), inset 0 -1px 0 rgba(15, 18, 25, 0.08);
+}
+.canvas-rail .rail-menu { border-radius: 18px; }

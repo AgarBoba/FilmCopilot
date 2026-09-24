@@ -22,6 +22,8 @@ describe('PromptComposer', () => {
         onGenerate={vi.fn()}
       />,
     );
+    expect(screen.getByRole('button', { name: '参数' })).toHaveTextContent('2K');
+    await userEvent.click(screen.getByRole('button', { name: '参数' }));
     expect(screen.getByTestId('prompt-composer-image')).toContainElement(screen.getByLabelText('size'));
     expect(screen.getByTestId('prompt-composer-image')).toContainElement(screen.getByLabelText('aspect-ratio'));
     await userEvent.selectOptions(screen.getByLabelText('size'), '1K');
@@ -79,6 +81,8 @@ describe('PromptComposer with a model registry', () => {
       <PromptComposer kind="image" prompt="兔子" modelId="flux-dev" parameters={{ steps: 40, aspectRatio: '16:9', safety: false }}
         onPromptChange={vi.fn()} onParametersChange={vi.fn()} onModelChange={onModelChange} onGenerate={onGenerate} />,
     );
+    expect(screen.getByRole('button', { name: '参数' })).toHaveTextContent(/Steps 40\s·\s16:9/);
+    await userEvent.click(screen.getByRole('button', { name: '参数' }));
     expect(screen.getByLabelText('steps')).toHaveValue(40);
     expect(screen.getByLabelText('safety')).not.toBeChecked();
     expect(screen.getByText(/还缺 FAL_KEY/)).toBeInTheDocument();
@@ -96,6 +100,19 @@ describe('PromptComposer with a model registry', () => {
     expect(select.value).toBe('seedance-2.0-mini');
     expect(select.disabled).toBe(true);
     expect(select.className).toContain('is-single');
+    const capsule = screen.getByRole('button', { name: '参数' });
+    expect(capsule).toHaveTextContent(/5s\s·.*·\sAudio/);
+    await userEvent.click(capsule);
     expect(screen.getByLabelText('duration')).toBeTruthy();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByLabelText('duration')).toBeNull();
+  });
+
+  it('lets the note hint be closed', async () => {
+    render(<PromptComposer kind="image" prompt="" parameters={{}} noteCount={1} onPromptChange={vi.fn()}
+      onParametersChange={vi.fn()} onGenerate={vi.fn()} />);
+    expect(screen.getByText(/上游 1 条便签/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '关闭提示' }));
+    expect(screen.queryByText(/上游 1 条便签/)).toBeNull();
   });
 });

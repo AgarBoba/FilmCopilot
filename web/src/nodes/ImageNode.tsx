@@ -9,6 +9,7 @@ import { MediaNodeActions } from './MediaNodeActions';
 import { ReferenceStrip, normalizeReferences, type NodeReference } from './ReferenceStrip';
 import { GenerationOverlay, isGenerationBusy } from './GenerationOverlay';
 import { PromptComposer } from './PromptComposer';
+import { NodeTag } from './NodeTag';
 
 
 export interface ImageNodeData {
@@ -37,10 +38,12 @@ export interface ImageNodeData {
 
 interface ImageNodeProps {
   data: ImageNodeData;
+  /** From React Flow: the node's x on the canvas, used to swing the name tag while dragging. */
+  positionAbsoluteX?: number;
 }
 
 
-export function ImageNode({ data }: ImageNodeProps) {
+export function ImageNode({ data, positionAbsoluteX }: ImageNodeProps) {
   const references = normalizeReferences(data.references);
   const busy = isGenerationBusy(data.generationStatus);
   const noteCount = references.filter((reference) => reference.kind === 'note' && reference.text?.trim()).length;
@@ -49,17 +52,21 @@ export function ImageNode({ data }: ImageNodeProps) {
       {!busy && <UpstreamBadge changes={data.upstreamChanges} />}
       <NodeHandle type="target" position={Position.Left} id="target" />
       <NodeHandle type="source" position={Position.Right} id="source" />
-      <div className="node-heading">
-        <span className="node-kind">IMAGE</span>
-        <NodeTitle title={data.title} fallback="图片节点" onChange={data.onTitleChange} />
-        <MediaNodeActions
-          kind="image"
-          assetUrl={data.assetUrl}
-          title={data.title?.trim() || '图片节点'}
-          busy={busy}
-          onUpload={data.onUpload}
-          onDuplicate={data.onDuplicate}
-        />
+      <NodeTag title={data.title?.trim() || '图片节点'} x={positionAbsoluteX} />
+      {/* Name bar: pops up out of the top of the frame when the node is selected. */}
+      <div className="node-topbar">
+        <div className="node-heading">
+          <span className="node-kind">IMAGE</span>
+          <NodeTitle title={data.title} fallback="图片节点" onChange={data.onTitleChange} />
+          <MediaNodeActions
+            kind="image"
+            assetUrl={data.assetUrl}
+            title={data.title?.trim() || '图片节点'}
+            busy={busy}
+            onUpload={data.onUpload}
+            onDuplicate={data.onDuplicate}
+          />
+        </div>
       </div>
       <div className="media-preview image-preview">
         <GenerationOverlay status={data.generationStatus} error={data.generationError} />
@@ -69,19 +76,24 @@ export function ImageNode({ data }: ImageNodeProps) {
           <EmptyPreview kind="image" busy={busy} onUpload={data.onUpload} />
         )}
       </div>
-      <ReferenceStrip references={references} onRemove={busy ? undefined : data.onRemoveReference} />
-      <PromptComposer
-        kind="image"
-        prompt={data.prompt ?? ''}
-        parameters={data.parameters}
-        onPromptChange={(prompt) => data.onPromptChange?.(prompt)}
-        onParametersChange={(parameters) => data.onParametersChange?.(parameters as ImageGenerationParameters)}
-        onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: ImageGenerationParameters; model?: string })}
-        modelId={data.model}
-        onModelChange={(model, parameters) => data.onModelChange?.(model, parameters)}
-        disabled={busy}
-        noteCount={noteCount}
-      />
+      {/* Slides out from under the media when the node is selected (like a slider phone). */}
+      <div className="node-drawer">
+        <div className="node-drawer-inner">
+          <ReferenceStrip references={references} onRemove={busy ? undefined : data.onRemoveReference} />
+          <PromptComposer
+            kind="image"
+            prompt={data.prompt ?? ''}
+            parameters={data.parameters}
+            onPromptChange={(prompt) => data.onPromptChange?.(prompt)}
+            onParametersChange={(parameters) => data.onParametersChange?.(parameters as ImageGenerationParameters)}
+            onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: ImageGenerationParameters; model?: string })}
+            modelId={data.model}
+            onModelChange={(model, parameters) => data.onModelChange?.(model, parameters)}
+            disabled={busy}
+            noteCount={noteCount}
+          />
+        </div>
+      </div>
     </div>
   );
 }
