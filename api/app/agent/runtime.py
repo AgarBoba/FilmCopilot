@@ -9,6 +9,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 import logging
+import os
 from typing import Any
 
 from ..commands import CanvasCommandService
@@ -17,7 +18,7 @@ from ..domain import DomainError
 from ..repositories import CanvasRepository
 from ..schemas import CommandEnvelope
 from .canvas_tools import CanvasTools, ToolResult
-from .config import AgentConfig
+from .config import AgentConfig, explain_error
 from .mcp_server import MEMORY_TOOLS, READ_ONLY, build_handlers, build_server, qualified
 from .memory import MemoryStore
 from .memory_tools import MemoryTools
@@ -47,6 +48,7 @@ class SessionRuntime:
     run_id: str | None = None
     task: asyncio.Task | None = None
     handlers: dict[str, Any] = field(default_factory=dict)
+    model: str | None = None  # model the live client is using
 
 
 class AgentService:
@@ -74,8 +76,11 @@ class AgentService:
         text = (text or '').strip()
         if not text:
             raise DomainError('INVALID_PAYLOAD', '消息不能为空')
-        if not self.config.api_key_present:
-            raise DomainError('AGENT_NOT_CONFIGURED', '没有配置 ANTHROPIC_API_KEY，请在 .env 里填写后重启')
+        if not self.config.configured:
+            raise DomainError(
+                'AGENT_NOT_CONFIGURED',
+                '没有配置 Agent 的模型登录：在 .env 里填 ANTHROPIC_API_KEY，或设 AGENT_AUTH=subscription 用 Claude 订阅，然后重启',
+            )
         runtime = self._runtime(session_id)
         if runtime.task is not None and not runtime.task.done():
             raise DomainError('RUN_ACTIVE', 'Agent 还在处理上一条消息，等它结束或先停止')
@@ -103,7 +108,8 @@ class AgentService:
             memory=self.memory.context_block(runtime.project_id),
             other_chats=self._other_chats(runtime),
         )
-        runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt))
+        model = settings.get('model') or self.config.model
+        runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt, model))
         return run
 
     async def stop(self, run_id: str) -> None:
@@ -192,10 +198,18 @@ class AgentService:
     def _runtime_for_run(self, run_id: str) -> SessionRuntime | None:
         return next((item for item in self.sessions.values() if item.run_id == run_id), None)
 
-    async def _client(self, runtime: SessionRuntime) -> Any:
+    async def _client(self, runtime: SessionRuntime, model: str) -> Any:
         if runtime.client is not None:
+            if runtime.model != model:
+                # Switching models keeps the conversation; it applies from this message on.
+                await runtime.client.set_model(model)
+                runtime.model = model
             return runtime.client
         from claude_agent_sdk import ClaudeAgentOptions
+
+        if self.config.auth == 'subscription':
+            # An API key in the environment would win over the subscription login.
+            os.environ.pop('ANTHROPIC_API_KEY', None)
 
         async def on_step(name: str, args: dict[str, Any], result: ToolResult) -> None:
             if result.memory and not result.is_error:
@@ -217,7 +231,7 @@ class AgentService:
             return await self._permission(runtime, name, tool_input)
 
         options = ClaudeAgentOptions(
-            model=self.config.model,
+            model=model,
             system_prompt=SYSTEM_PROMPT,
             tools=[],  # no built-in file / shell / web tools
             mcp_servers={'canvas': build_server(runtime.handlers)},
@@ -233,6 +247,7 @@ class AgentService:
         client = self.client_factory(options, runtime.handlers)
         await client.connect()
         runtime.client = client
+        runtime.model = model
         return client
 
     async def _permission(self, runtime: SessionRuntime, name: str, tool_input: dict[str, Any]):
@@ -283,12 +298,14 @@ class AgentService:
             ))
         return PermissionResultDeny(message=f'用户拒绝了：{summary}。不要重试或换个方式再做，先问用户想怎么调整。')
 
-    async def _run(self, runtime: SessionRuntime, run_id: str, prompt: str) -> None:
+    async def _run(self, runtime: SessionRuntime, run_id: str, prompt: str, model: str | None = None) -> None:
+        model = model or self.config.model
+        auth = self.config.auth
         from claude_agent_sdk import AssistantMessage, ResultMessage, StreamEvent, SystemMessage, TextBlock
 
         status, cost, error_text = 'completed', None, None
         try:
-            client = await self._client(runtime)
+            client = await self._client(runtime, model)
             await client.query(prompt)
             async for message in client.receive_response():
                 if isinstance(message, StreamEvent):
@@ -300,26 +317,26 @@ class AgentService:
                     if message.subtype == 'init' and message.data.get('session_id'):
                         self._remember_sdk_session(runtime, message.data['session_id'])
                     elif message.subtype == 'api_retry' and message.data.get('error_status') in (401, 403):
-                        error_text = 'Anthropic API 认证失败：检查 .env 里的 ANTHROPIC_API_KEY 和网络代理。'
+                        error_text = explain_error('401 authentication', auth)
                         await client.interrupt()
                 elif isinstance(message, AssistantMessage):
                     if message.error:
-                        error_text = f'模型调用出错：{message.error}'
+                        error_text = explain_error(f'模型调用出错：{message.error}', auth)
                     text = ''.join(block.text for block in message.content if isinstance(block, TextBlock))
                     if text.strip():
-                        self._emit(runtime.session_id, run_id, 'assistant_text', {'text': text}, role='assistant')
+                        self._emit(runtime.session_id, run_id, 'assistant_text', {'text': text, 'model': model}, role='assistant')
                 elif isinstance(message, ResultMessage):
                     cost = message.total_cost_usd
                     if message.session_id:
                         self._remember_sdk_session(runtime, message.session_id)
                     if message.is_error and not error_text:
-                        error_text = '; '.join(message.errors or []) or message.result or '模型返回错误'
+                        error_text = explain_error('; '.join(message.errors or []) or message.result or '模型返回错误', auth)
         except asyncio.CancelledError:
             status = 'stopped'
             raise
         except Exception as error:  # surface to the panel instead of dying silently
             log.exception('agent run failed')
-            error_text = error_text or f'Agent 出错：{error}'
+            error_text = error_text or explain_error(f'Agent 出错：{error}', auth)
             runtime.client = None  # rebuild the client next time
         finally:
             if runtime.tools is not None and runtime.tools.stopped:
@@ -331,7 +348,7 @@ class AgentService:
             self.broker.cancel_run(run_id)
             self.store.set_run_status(run_id, status)
             self._emit(runtime.session_id, run_id, 'run_finished', {
-                'status': status, 'costUsd': cost,
+                'status': status, 'costUsd': cost, 'model': model, 'auth': auth,
             }, role='system_event')
             runtime.tools = None
             runtime.run_id = None

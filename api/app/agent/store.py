@@ -40,6 +40,11 @@ class AgentStore:
             if changes['permissionMode'] not in PERMISSION_MODES:
                 raise DomainError('INVALID_PAYLOAD', f"permissionMode must be one of {', '.join(PERMISSION_MODES)}")
             settings['permissionMode'] = changes['permissionMode']
+        if 'model' in changes:
+            from .config import MODEL_IDS
+            if changes['model'] is not None and changes['model'] not in MODEL_IDS:
+                raise DomainError('INVALID_PAYLOAD', f"model must be one of {', '.join(MODEL_IDS)}")
+            settings['model'] = changes['model']
         if 'generationCap' in changes:
             cap = changes['generationCap']
             if type(cap) is not int or not 1 <= cap <= 50:

@@ -83,7 +83,8 @@ export function AgentPanel({
         ]);
         if (cancelled) return;
         useAgentStore.setState({
-          configured: status.configured, model: status.model, settings: projectSettings, sessions: list,
+          configured: status.configured, model: status.model, auth: status.auth, models: status.models,
+          settings: projectSettings, sessions: list,
         });
         const recent = list.find((item) => !item.archived_at && (item.message_count ?? 0) > 0);
         if (!useAgentStore.getState().sessionId && recent) await openSession(recent.id);
@@ -220,6 +221,16 @@ export function AgentPanel({
     }
   }
 
+  /** Takes effect from the next message; the conversation so far is kept. */
+  async function changeModel(model: string) {
+    try {
+      const next = await agentApi.updateSettings(projectId, { model });
+      useAgentStore.setState({ settings: next });
+    } catch (error) {
+      useAgentStore.setState({ error: error instanceof Error ? error.message : '切换模型失败' });
+    }
+  }
+
   async function changeMode(mode: PermissionMode) {
     const next = await agentApi.updateSettings(projectId, { permissionMode: mode });
     useAgentStore.setState({ settings: next });
@@ -229,6 +240,8 @@ export function AgentPanel({
   const undoable = undoableRuns(events);
   const lastFinishedRun = [...events].reverse().find((event) => event.kind === 'run_finished')?.runId ?? null;
   const focusTitles = { ...nodeTitles };
+  const currentModel = settings?.model || store.model;
+  const modelLabel = store.models.find((item) => item.id === currentModel)?.label ?? currentModel;
   const memoryVersion = events.filter((event) => event.kind === 'memory_change' || event.kind === 'run_undone').length;
   const currentTitle = sessions.find((item) => item.id === sessionId)?.title || '新对话';
   // Another chat on this canvas needs attention (waiting beats running).
@@ -267,7 +280,11 @@ export function AgentPanel({
         </button>
         <button type="button" className="agent-title" onClick={() => setView('list')} data-tooltip="切换对话" data-tooltip-side="bottom">
           <span className="agent-title-text">{currentTitle}</span>
-          {store.model && <span className="agent-model">{store.model}</span>}
+          {modelLabel && (
+            <span className="agent-model">
+              {modelLabel}{store.auth && <> · {store.auth === 'subscription' ? '订阅额度' : 'API'}</>}
+            </span>
+          )}
         </button>
         <button
           type="button"
@@ -312,7 +329,10 @@ export function AgentPanel({
         }}
       >
         {configured === false && (
-          <div className="agent-empty">后端没有读到 ANTHROPIC_API_KEY。在 .env 里填好后重启 dev.sh。</div>
+          <div className="agent-empty">
+            Agent 还没配置模型登录。在 .env 里设 AGENT_AUTH=subscription 用 Claude 订阅（先运行 claude setup-token，
+            把令牌填进 CLAUDE_CODE_OAUTH_TOKEN），或填 ANTHROPIC_API_KEY 用 API，然后重启 dev.sh。
+          </div>
         )}
         {configured !== false && events.length === 0 && (
           <div className="agent-empty">
@@ -393,6 +413,18 @@ export function AgentPanel({
         </div>
         {/* Quiet setting under the input: what the agent must ask before doing. */}
         <div className="agent-composer-meta">
+          {store.models.length > 0 && (
+            <label className="agent-mode">
+              <select
+                aria-label="模型"
+                value={currentModel}
+                onChange={(event) => void changeModel(event.target.value)}
+              >
+                {store.models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+              <span className="agent-mode-caret" aria-hidden="true">▾</span>
+            </label>
+          )}
           <label className="agent-mode">
             <select
               aria-label="审核设置"

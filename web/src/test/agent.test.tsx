@@ -394,3 +394,14 @@ describe('memory', () => {
     list.mockRestore(); add.mockRestore(); remove.mockRestore();
   });
 });
+
+describe('models', () => {
+  it('each reply says which model answered', () => {
+    useAgentStore.setState({ models: [{ id: 'claude-sonnet-5', label: 'Sonnet 5' }] });
+    render(
+      <AgentMessage event={event({ kind: 'assistant_text', text: '好的', model: 'claude-sonnet-5' })}
+        focusTitles={{}} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} onConfirm={vi.fn()} pending={false} />,
+    );
+    expect(screen.getByText('Sonnet 5')).toBeInTheDocument();
+  });
+});

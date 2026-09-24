@@ -37,6 +37,13 @@ for port in "$API_PORT" "$WEB_PORT"; do
   fi
 done
 [[ -n "${REPLICATE_API_TOKEN:-}" ]] || echo "dev.sh: 警告：没有 REPLICATE_API_TOKEN，真实生成会失败。" >&2
+# Agent login: API key or Claude subscription (never print the values).
+if [[ "${AGENT_AUTH:-}" == "subscription" ]]; then
+  [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] || echo "dev.sh: 提示：AGENT_AUTH=subscription 但没有 CLAUDE_CODE_OAUTH_TOKEN，将尝试已有的 claude 登录；不行就运行 ./scripts/claude-login.sh。" >&2
+  echo "dev.sh: Agent 使用 Claude 订阅额度。" >&2
+elif [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+  echo "dev.sh: 警告：Agent 没有配置登录（ANTHROPIC_API_KEY 或 CLAUDE_CODE_OAUTH_TOKEN），对话会失败。" >&2
+fi
 
 PIDS=()
 cleanup() {

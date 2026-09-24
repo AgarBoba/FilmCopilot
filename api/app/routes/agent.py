@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from ..agent.config import MODELS
 from ..agent.runtime import AgentService
 from ..agent.store import AgentStore
 from ..repositories import CanvasRepository
@@ -50,7 +51,12 @@ def _event_from_message(message: dict) -> dict:
 @router.get('/agent/status')
 def agent_status(request: Request) -> dict:
     config = _service(request).config
-    return {'configured': config.api_key_present, 'model': config.model}
+    return {
+        'configured': config.configured,
+        'model': config.model,  # default when the project hasn't picked one
+        'auth': config.auth,
+        'models': [{'id': model_id, 'label': label} for model_id, label in MODELS],
+    }
 
 
 @router.post('/agent/sessions', status_code=201)

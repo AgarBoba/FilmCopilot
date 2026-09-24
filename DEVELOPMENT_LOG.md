@@ -43,6 +43,18 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-09-24 Agent 用 Claude 订阅额度 + 模型切换
+
+- 用户需求：用 Claude 订阅额度代替 API 按量计费；面板里能切换模型。
+- 依据：Claude 帮助中心「Use the Claude Agent SDK with your Claude plan」——Pro / Max / Team / Enterprise 可在自己的项目里用订阅额度跑 Agent SDK（原计划的月度额度改动已暂停，目前直接计入订阅用量）；「Use Claude Code with your Pro or Max plan」——环境里有 ANTHROPIC_API_KEY 时会优先用 Key。SDK 文档：未经批准不得用订阅登录 / 额度支撑给他人的产品。本工具是个人本地使用。
+- 改动：
+  - `AGENT_AUTH=subscription|api`（`api/app/agent/config.py`）。订阅模式下建立 Agent 客户端前从进程环境里去掉 ANTHROPIC_API_KEY；令牌放 CLAUDE_CODE_OAUTH_TOKEN（`claude setup-token` 获得），也可沿用已有 claude 登录。只检查是否设置，不读取、不记录值。
+  - 额度用完 / 限速 / 登录失效 / 服务繁忙的报错改成可操作的一句话（`explain_error`）。
+  - 模型：项目设置 `model`（只能是列表里的三个）；已有对话用 SDK 的 `set_model` 从下一条生效，不重开对话；回复和 run_finished 事件带 model。
+  - 前端：输入框下方模型选择，标题显示「模型 · 订阅额度 / API」，回复下标模型。
+  - `scripts/claude-login.sh`：优先用已安装的 claude，否则用 SDK 自带的，运行 setup-token 并提示填到 .env；`dev.sh` 启动时提示当前登录方式；`.env.example` 写明两种方式；已在用户 `.env` 末尾追加 AGENT_AUTH=subscription 和空的 CLAUDE_CODE_OAUTH_TOKEN（未读取原有内容）。
+- 验证：后端 109、前端 61 个测试通过（后端在用户 Mac 上也跑过）；浏览器里切模型、刷新后保留、标题显示订阅额度都正常。未验证：真实订阅令牌的登录和额度扣减，需要用户运行 claude-login.sh 后实跑。
+
 ### 2026-09-24 第二阶段：项目记忆、用户偏好、对话间共享（轻量）
 
 - 用户决定：直接记可撤销；管理界面放 Agent 面板；对话间共享做轻量版（其他对话列表 + 搜原话，不做自动摘要）。详见 `docs/superpowers/plans/2026-09-24-agent-phase2.md`。

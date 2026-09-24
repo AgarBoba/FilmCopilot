@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { CheckIcon, CopyIcon } from '../canvas/icons';
 import { ApiError } from '../api/client';
 import { agentApi, type AgentEvent } from './agentApi';
+import { useAgentStore } from './agentStore';
 import { Markdown } from './Markdown';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
@@ -36,7 +37,7 @@ export function AgentMessage({ event, focusTitles, focusPreviews = {}, onFocusNo
         </div>
       );
     case 'assistant_text':
-      return <AssistantText text={event.text ?? ''} onSaveToCanvas={onSaveToCanvas} />;
+      return <AssistantText text={event.text ?? ''} model={event.model} onSaveToCanvas={onSaveToCanvas} />;
     case 'tool_step': {
       const clickable = (event.touched ?? []).length > 0;
       return (
@@ -182,12 +183,18 @@ function MemoryLine({ event }: { event: AgentEvent }) {
 }
 
 
-function AssistantText({ text, onSaveToCanvas }: { text: string; onSaveToCanvas: (text: string, title?: string) => void }) {
+function AssistantText({ text, model, onSaveToCanvas }: {
+  text: string;
+  model?: string;
+  onSaveToCanvas: (text: string, title?: string) => void;
+}) {
+  const modelLabel = useAgentStore((state) => state.models.find((item) => item.id === model)?.label ?? model);
   const [copied, setCopied] = useState(false);
   // Only special blocks (tables, code, prompts, quotes) can be saved, each on its own.
   return (
     <div className="agent-msg is-assistant">
       <Markdown text={text} onSaveNote={(content, title) => onSaveToCanvas(content, title)} />
+      {modelLabel && <div className="agent-msg-model">{modelLabel}</div>}
       <div className="agent-msg-actions">
         <button
           type="button"

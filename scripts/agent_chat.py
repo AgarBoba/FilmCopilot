@@ -21,7 +21,7 @@ def main() -> None:
     client = httpx.Client(timeout=30)
     status = client.get(f'{API}/agent/status').json()
     if not status['configured']:
-        sys.exit('后端没有读到 ANTHROPIC_API_KEY：检查 .env，然后重启 dev.sh')
+        sys.exit('Agent 还没配置模型登录：在 .env 里设 AGENT_AUTH=subscription（先运行 ./scripts/claude-login.sh）或填 ANTHROPIC_API_KEY，然后重启 dev.sh')
     session = client.post(f'{API}/agent/sessions', json={'canvasId': CANVAS}).json()
     print(f"已连接 {status['model']}，会话 {session['id'][:8]}。在浏览器里看画布，这里打字。/quit 退出\n")
 

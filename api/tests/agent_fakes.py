@@ -30,6 +30,7 @@ class FakeClient:
         self.prompts: list[str] = []
         self.denials: list[str] = []
         self.tool_results: list[dict] = []
+        self.models: list[str] = []
         self.interrupted = False
         self.connected = False
 
@@ -41,6 +42,9 @@ class FakeClient:
 
     async def interrupt(self):
         self.interrupted = True
+
+    async def set_model(self, model):
+        self.models.append(model)
 
     async def query(self, prompt: str):
         self.prompts.append(prompt)

@@ -8,7 +8,10 @@ export const RECENT_MARK_MS = 4000;
 export interface AgentState {
   open: boolean;
   configured: boolean | null;
+  /** Default model id from the server. */
   model: string;
+  auth: 'api' | 'subscription' | null;
+  models: { id: string; label: string }[];
   sessions: AgentSession[];
   sessionId: string | null;
   events: AgentEvent[];
@@ -29,6 +32,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   open: false,
   configured: null,
   model: '',
+  auth: null,
+  models: [],
   sessions: [],
   sessionId: null,
   events: [],

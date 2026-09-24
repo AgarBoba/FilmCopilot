@@ -40,7 +40,10 @@ def test_session_message_undo_and_settings_flow(tmp_path, monkeypatch):
     app = make_client(tmp_path, monkeypatch, factory)
     with TestClient(app) as client:
         canvas = client.post('/api/canvases', json={'name': 'A', 'canvasId': 'c1'}).json()
-        assert client.get('/api/agent/status').json() == {'configured': True, 'model': 'claude-opus-5-5'}
+        status = client.get('/api/agent/status').json()
+        assert status['configured'] is True and status['model'] == 'claude-opus-5-5' and status['auth'] == 'api'
+        assert [m['label'] for m in status['models']] == ['Opus 5.5', 'Sonnet 5', 'Haiku 4.5']
+        assert SECRET not in str(status)
 
         session = client.post('/api/agent/sessions', json={'canvasId': canvas['canvasId']}).json()
         sent = client.post(f"/api/agent/sessions/{session['id']}/messages", json={'text': '建便签'})
@@ -55,6 +58,8 @@ def test_session_message_undo_and_settings_flow(tmp_path, monkeypatch):
 
         assert client.patch('/api/projects/default/agent-settings', json={'permissionMode': 'auto'}).json()['permissionMode'] == 'auto'
         assert client.patch('/api/projects/default/agent-settings', json={'permissionMode': 'x'}).status_code == 422
+        assert client.patch('/api/projects/default/agent-settings', json={'model': 'claude-sonnet-5'}).json()['model'] == 'claude-sonnet-5'
+        assert client.patch('/api/projects/default/agent-settings', json={'model': 'gpt-5'}).status_code == 422
 
 
 def test_not_configured_returns_a_clear_error(tmp_path, monkeypatch):

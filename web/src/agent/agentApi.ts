@@ -7,6 +7,18 @@ export type PermissionMode = 'confirm_all' | 'confirm_generation' | 'auto';
 export interface AgentSettings {
   permissionMode: PermissionMode;
   generationCap: number;
+  /** Chosen model id; missing / null means the server default. */
+  model?: string | null;
+}
+
+export type AgentAuth = 'api' | 'subscription';
+
+export interface AgentStatus {
+  configured: boolean;
+  /** Default model id. */
+  model: string;
+  auth: AgentAuth;
+  models: { id: string; label: string }[];
 }
 
 export interface AgentSession {
@@ -82,6 +94,8 @@ export interface AgentEvent {
   deletedNodes?: string[];
   restoredNodes?: string[];
   memoriesReverted?: number;
+  /** assistant_text / run_finished: which model answered. */
+  model?: string;
   /** memory_change */
   memoryId?: number;
   action?: 'added' | 'updated' | 'removed';
@@ -114,7 +128,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const agentApi = {
-  status: () => call<{ configured: boolean; model: string }>('/agent/status'),
+  status: () => call<AgentStatus>('/agent/status'),
   createSession: (canvasId: string) =>
     call<AgentSession>('/agent/sessions', { method: 'POST', body: JSON.stringify({ canvasId }) }),
   listSessions: (canvasId: string) =>

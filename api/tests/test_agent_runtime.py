@@ -1,4 +1,5 @@
 import asyncio
+import os
 
 import pytest
 
@@ -241,3 +242,43 @@ def test_memory_is_shared_across_chats_and_undone_with_the_turn(repository):
         assert service.memory.context_block('default') == ''
 
     asyncio.run(scenario())
+
+
+def test_switching_models_keeps_the_conversation(repository, monkeypatch):
+    factory = FakeFactory([('text', '一')], [('text', '二')], [('text', '三')])
+    service, store, _, session_id = make_service(repository, factory)
+
+    async def scenario():
+        queue = service.subscribe(session_id)
+        await service.send_message(session_id, 'a')
+        await finish(service, session_id)
+        store.update_settings('default', {'model': 'claude-sonnet-5'})
+        await service.send_message(session_id, 'b')
+        await finish(service, session_id)
+        await service.send_message(session_id, 'c')
+        await finish(service, session_id)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        return events
+
+    events = asyncio.run(scenario())
+    assert len(factory.clients) == 1  # same client, same conversation
+    assert factory.clients[0].options.model == 'claude-opus-5-5'
+    assert factory.clients[0].models == ['claude-sonnet-5']  # switched once, before the 2nd message
+    replies = [e['model'] for e in events if e['kind'] == 'assistant_text']
+    assert replies == ['claude-opus-5-5', 'claude-sonnet-5', 'claude-sonnet-5']
+
+
+def test_subscription_mode_keeps_the_api_key_away_from_the_agent(repository, monkeypatch):
+    monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-should-not-be-used')
+    factory = FakeFactory([('text', 'hi')])
+    config = AgentConfig(auth='subscription', poll_seconds=0.01)
+    service, _, _, session_id = make_service(repository, factory, config)
+
+    async def scenario():
+        await service.send_message(session_id, 'hi')
+        await finish(service, session_id)
+
+    asyncio.run(scenario())
+    assert 'ANTHROPIC_API_KEY' not in os.environ
