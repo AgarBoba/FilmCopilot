@@ -1457,7 +1457,7 @@ h1 {
   overflow: hidden;
 }
 
-.canvas-page.agent-open .react-flow__panel.react-flow__minimap { margin-right: 432px; }
+.canvas-page.agent-open .react-flow__panel.react-flow__minimap { margin-right: calc(var(--agent-panel-width, 480px) + 32px); }
 
 .agent-header {
   display: flex;
@@ -1545,7 +1545,8 @@ h1 {
   line-height: 1.55;
   white-space: pre-wrap;
 }
-.agent-focus-line { margin-bottom: 4px; color: var(--text-muted); font-size: 11px; text-align: right; }
+.agent-focus-line { display: flex; justify-content: flex-end; max-width: 85%; margin-bottom: 4px; }
+.agent-focus-line .reference-strip-frame { max-width: 100%; }
 
 .agent-msg.is-assistant { position: relative; padding-right: 4px; }
 .agent-msg.is-streaming .markdown > :last-child::after {
@@ -2080,3 +2081,41 @@ h1 {
 .agent-mode-caret { position: absolute; right: 4px; font-size: 9px; pointer-events: none; }
 
 .agent-header { padding-bottom: 10px; border-bottom: 1px solid var(--chrome-border); }
+
+/* ---------- Agent panel: width handle, focus strip ---------- */
+.agent-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  width: 8px;
+  cursor: col-resize;
+}
+.agent-resize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 3px;
+  height: 40px;
+  border-radius: 2px;
+  background: transparent;
+  translate: 0 -50%;
+  transition: background 0.15s ease, height 0.15s ease;
+}
+.agent-resize:hover::after, body.is-resizing-panel .agent-resize::after { height: 72px; background: var(--accent); }
+body.is-resizing-panel { cursor: col-resize; user-select: none; }
+body.is-resizing-panel .agent-panel { transition: none; }
+
+.agent-focus { margin-bottom: 8px; }
+.agent-focus-label { margin: 0 2px 6px; overflow: hidden; color: var(--text-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-focus .reference-thumb { flex-basis: 56px; height: 56px; }
+.agent-focus .reference-note { height: 56px; }
+
+.reference-strip-frame.is-compact .reference-thumb { flex-basis: 36px; height: 36px; border-radius: 6px; }
+.reference-strip-frame.is-compact .reference-note { flex-basis: 108px; height: 36px; padding: 3px 8px; }
+.reference-strip-frame.is-compact .reference-note-text { display: none; }
+.reference-strip-frame.is-compact .reference-badge { display: none; }
+
+.agent-mode select { field-sizing: content; }

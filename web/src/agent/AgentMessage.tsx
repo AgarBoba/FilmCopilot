@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { CheckIcon, CopyIcon } from '../canvas/icons';
 import type { AgentEvent } from './agentApi';
 import { Markdown } from './Markdown';
+import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
 interface AgentMessageProps {
   event: AgentEvent;
   focusTitles: Record<string, string>;
+  focusPreviews?: Record<string, NodeReference>;
   onFocusNodes: (nodeIds: string[]) => void;
   onSaveToCanvas: (text: string, title?: string) => void;
   onConfirm: (event: AgentEvent, approved: boolean, note: string) => Promise<boolean> | void;
@@ -14,14 +16,19 @@ interface AgentMessageProps {
 }
 
 
-export function AgentMessage({ event, focusTitles, onFocusNodes, onSaveToCanvas, onConfirm, pending }: AgentMessageProps) {
+export function AgentMessage({ event, focusTitles, focusPreviews = {}, onFocusNodes, onSaveToCanvas, onConfirm, pending }: AgentMessageProps) {
   switch (event.kind) {
     case 'user_message':
       return (
         <div className="agent-msg is-user">
           {event.focus && event.focus.length > 0 && (
             <div className="agent-focus-line">
-              关注：{event.focus.map((id) => focusTitles[id] ?? '已删除的节点').join('、')}
+              <ReferenceStrip
+                compact
+                label="这条消息关注的节点"
+                references={event.focus.map((id) => focusPreviews[id]
+                  ?? { nodeId: id, kind: 'note' as const, title: focusTitles[id] ?? '已删除的节点' })}
+              />
             </div>
           )}
           <div className="agent-bubble">{event.text}</div>

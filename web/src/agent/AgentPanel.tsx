@@ -6,6 +6,7 @@ import { AgentMessage } from './AgentMessage';
 import { pendingConfirmations, undoableRuns, useAgentStore } from './agentStore';
 import { Markdown } from './Markdown';
 import { SessionList } from './SessionList';
+import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
 const MODE_OPTIONS: { value: PermissionMode; label: string }[] = [
   { value: 'confirm_all', label: '每步确认' },
@@ -18,6 +19,10 @@ interface AgentPanelProps {
   projectId?: string;
   selectedNodeIds: string[];
   nodeTitles: Record<string, string>;
+  /** Thumbnail data per node, for the focus strip above the input. */
+  nodePreviews?: Record<string, NodeReference>;
+  /** Drop a node from the focus (deselects it on the canvas). */
+  onUnfocus?: (nodeId: string) => void;
   onFocusNodes: (nodeIds: string[]) => void;
   onSaveToCanvas: (text: string, title?: string) => void;
   onClose: () => void;
@@ -29,6 +34,8 @@ export function AgentPanel({
   projectId = 'default',
   selectedNodeIds,
   nodeTitles,
+  nodePreviews = {},
+  onUnfocus,
   onFocusNodes,
   onSaveToCanvas,
   onClose,
@@ -37,6 +44,28 @@ export function AgentPanel({
   const { sessionId, events, streaming, activeRunId, settings, configured, sessions } = store;
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [width, setWidth] = useState(readPanelWidth);
+  // The canvas keeps its minimap clear of the panel through this variable.
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty('--agent-panel-width', `${width}px`);
+  }, [width]);
+
+  function startResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const onMove = (move: PointerEvent) => setWidth(clampPanelWidth(startWidth + (startX - move.clientX)));
+    const onUp = (up: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.classList.remove('is-resizing-panel');
+      savePanelWidth(clampPanelWidth(startWidth + (startX - up.clientX)));
+    };
+    document.body.classList.add('is-resizing-panel');
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
   /** 'list' shows every chat on this canvas; 'chat' the open one. */
   const [view, setView] = useState<'chat' | 'list'>('chat');
   const listRef = useRef<HTMLDivElement>(null);
@@ -206,7 +235,7 @@ export function AgentPanel({
     : others.some((item) => item.status === 'running') ? 'running' : null;
 
   return (
-    <aside className="agent-panel nowheel" aria-label="Agent 对话" onKeyDown={(event) => {
+    <aside className="agent-panel nowheel" aria-label="Agent 对话" style={{ width: `min(${width}px, calc(100vw - 32px))` }} onKeyDown={(event) => {
       // Keep canvas shortcuts (Delete, V, H, Space…) out of the panel; ⌘J still closes it.
       event.stopPropagation();
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'j') {
@@ -214,6 +243,14 @@ export function AgentPanel({
         onClose();
       }
     }}>
+      <div
+        className="agent-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="拖动调整面板宽度"
+        onPointerDown={startResize}
+        onDoubleClick={() => { setWidth(DEFAULT_PANEL_WIDTH); savePanelWidth(DEFAULT_PANEL_WIDTH); }}
+      />
       <header className="agent-header">
         <button
           type="button"
@@ -273,6 +310,7 @@ export function AgentPanel({
             key={event.id ?? `live-${index}`}
             event={event}
             focusTitles={focusTitles}
+            focusPreviews={nodePreviews}
             onFocusNodes={onFocusNodes}
             onSaveToCanvas={onSaveToCanvas}
             onConfirm={(target, approved, note) => confirm(target, approved, note)}
@@ -303,8 +341,14 @@ export function AgentPanel({
 
       <footer className="agent-composer">
         {selectedNodeIds.length > 0 && (
-          <div className="agent-focus-chips" aria-label="选中的节点">
-            关注：{selectedNodeIds.map((id) => nodeTitles[id] ?? id).join('、')}
+          <div className="agent-focus">
+            <div className="agent-focus-label">关注 {selectedNodeIds.length} 个节点 · 在画布上选中的会随消息一起发给 Agent</div>
+            <ReferenceStrip
+              label="关注的节点"
+              references={selectedNodeIds.map((id) => nodePreviews[id] ?? { nodeId: id, kind: 'note', title: nodeTitles[id] ?? id })}
+              removeTooltip="不关注这个（在画布上取消选中）"
+              onRemove={onUnfocus ? (reference) => reference.nodeId && onUnfocus(reference.nodeId) : undefined}
+            />
           </div>
         )}
         <div className="agent-input-row">
@@ -351,4 +395,31 @@ export function AgentPanel({
       )}
     </aside>
   );
+}
+
+
+const DEFAULT_PANEL_WIDTH = 480;
+const PANEL_WIDTH_KEY = 'film-copilot.agent-panel-width';
+
+function clampPanelWidth(value: number): number {
+  const max = Math.max(360, Math.min(820, window.innerWidth - 160));
+  return Math.round(Math.min(max, Math.max(360, value)));
+}
+
+/** Remembered per browser; falls back to the default when storage is unavailable. */
+function readPanelWidth(): number {
+  try {
+    const saved = Number(window.localStorage.getItem(PANEL_WIDTH_KEY));
+    return saved ? clampPanelWidth(saved) : DEFAULT_PANEL_WIDTH;
+  } catch {
+    return DEFAULT_PANEL_WIDTH;
+  }
+}
+
+function savePanelWidth(value: number) {
+  try {
+    window.localStorage.setItem(PANEL_WIDTH_KEY, String(value));
+  } catch {
+    /* private mode: width just isn't remembered */
+  }
 }

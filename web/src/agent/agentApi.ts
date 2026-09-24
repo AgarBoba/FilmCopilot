@@ -121,7 +121,11 @@ export const agentApi = {
     const open = () => {
       if (closed) return;
       source = new EventSource(`${apiBase}/agent/sessions/${sessionId}/stream?after=${after()}`);
-      const handle = (message: MessageEvent) => onEvent(JSON.parse(message.data) as AgentEvent);
+      const handle = (message: MessageEvent) => {
+        // The browser's own connection-error event is also named "error" and carries no data.
+        if (typeof message.data !== 'string' || !message.data) return;
+        onEvent(JSON.parse(message.data) as AgentEvent);
+      };
       kinds.forEach((kind) => source?.addEventListener(kind, handle as EventListener));
       source.onerror = () => {
         source?.close();

@@ -5,6 +5,8 @@ import { ChevronLeftIcon, ChevronRightIcon } from '../canvas/icons';
 export interface NodeReference {
   /** Edge that brings this reference in; used to disconnect it. */
   edgeId?: string;
+  /** The node itself, when the strip lists nodes rather than connections (agent focus). */
+  nodeId?: string;
   /** Asset URL, or undefined when the upstream node has no content yet. */
   url?: string;
   kind: 'image' | 'video' | 'note';
@@ -24,6 +26,11 @@ export function normalizeReferences(references: ReadonlyArray<NodeReference | st
 interface ReferenceStripProps {
   references: NodeReference[];
   onRemove?: (reference: NodeReference) => void;
+  /** Tooltip on the × button; the default suits references wired into a node. */
+  removeTooltip?: string;
+  /** Accessible name of the strip. */
+  label?: string;
+  compact?: boolean;
 }
 
 const KIND_LABELS = { image: '图片', video: '视频', note: '便签' } as const;
@@ -31,11 +38,11 @@ const SNIPPET_LENGTH = 24;
 
 
 /** Thumbnails of the upstream nodes connected into this one. */
-export function ReferenceStrip({ references, onRemove }: ReferenceStripProps) {
+export function ReferenceStrip({ references, onRemove, removeTooltip, label = '参考素材', compact = false }: ReferenceStripProps) {
   const { scrollRef, canLeft, canRight, scrollByPage } = useHorizontalScroll(references.length);
   if (!references.length) return null;
   return (
-    <div className={`reference-strip-frame ${canLeft ? 'can-left' : ''} ${canRight ? 'can-right' : ''}`}>
+    <div className={`reference-strip-frame ${compact ? 'is-compact' : ''} ${canLeft ? 'can-left' : ''} ${canRight ? 'can-right' : ''}`}>
       {canLeft && (
         <button
           type="button"
@@ -58,10 +65,13 @@ export function ReferenceStrip({ references, onRemove }: ReferenceStripProps) {
           <ChevronRightIcon width={14} height={14} />
         </button>
       )}
-    <div ref={scrollRef} className="reference-strip nowheel" aria-label="参考素材">
+    <div ref={scrollRef} className="reference-strip nowheel" aria-label={label}>
       {references.map((reference, index) => {
         if (reference.kind === 'note') {
-          return <NoteChip key={reference.edgeId ?? `note-${index}`} reference={reference} index={index} onRemove={onRemove} />;
+          return (
+            <NoteChip key={reference.edgeId ?? reference.nodeId ?? `note-${index}`} reference={reference} index={index}
+              onRemove={onRemove} removeTooltip={removeTooltip} />
+          );
         }
         const name = reference.title ?? `参考${KIND_LABELS[reference.kind]} ${index + 1}`;
         const tooltip = reference.url
@@ -70,7 +80,7 @@ export function ReferenceStrip({ references, onRemove }: ReferenceStripProps) {
         return (
           <div
             className={`reference-thumb ${reference.url ? '' : 'is-empty'}`}
-            key={reference.edgeId ?? `${reference.url}-${index}`}
+            key={reference.edgeId ?? reference.nodeId ?? `${reference.url}-${index}`}
             data-tooltip={tooltip}
             data-tooltip-side="bottom"
           >
@@ -87,7 +97,7 @@ export function ReferenceStrip({ references, onRemove }: ReferenceStripProps) {
                 type="button"
                 className="nodrag"
                 aria-label={`删除参考素材 ${index + 1}`}
-                data-tooltip="移除这个参考（会断开连线）"
+                data-tooltip={removeTooltip ?? '移除这个参考（会断开连线）'}
                 onClick={(event) => {
                   event.stopPropagation();
                   onRemove(reference);
@@ -160,11 +170,12 @@ interface NoteChipProps {
   reference: NodeReference;
   index: number;
   onRemove?: (reference: NodeReference) => void;
+  removeTooltip?: string;
 }
 
 
 /** A connected note: its name and the start of its text. The full text is in the tooltip. */
-function NoteChip({ reference, index, onRemove }: NoteChipProps) {
+function NoteChip({ reference, index, onRemove, removeTooltip }: NoteChipProps) {
   const text = reference.text?.trim() ?? '';
   const name = reference.title?.trim() || `便签 ${index + 1}`;
   const snippet = text.length > SNIPPET_LENGTH ? `${text.slice(0, SNIPPET_LENGTH)}…` : text;
@@ -181,7 +192,7 @@ function NoteChip({ reference, index, onRemove }: NoteChipProps) {
           type="button"
           className="nodrag"
           aria-label={`删除参考便签 ${index + 1}`}
-          data-tooltip="移除这个便签（会断开连线）"
+          data-tooltip={removeTooltip ?? '移除这个便签（会断开连线）'}
           onClick={(event) => {
             event.stopPropagation();
             onRemove(reference);

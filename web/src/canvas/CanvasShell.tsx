@@ -310,6 +310,26 @@ export function CanvasShell() {
     });
   }, [nodes, agentMarks, dropTarget]);
 
+  /** What each node looks like as a thumbnail (agent panel focus strip and message history). */
+  const nodePreviews = useMemo(() => Object.fromEntries(nodes.map((node): [string, NodeReference] => {
+    const kind = node.type === 'note' ? 'note' : node.type === 'video' ? 'video' : 'image';
+    const content = node.data.content ?? node.data.prompt;
+    return [node.id, {
+      nodeId: node.id,
+      kind,
+      title: String(node.data.title ?? ''),
+      url: kind === 'note' ? undefined : (node.data.assetUrl as string | undefined),
+      text: kind === 'note' && typeof content === 'string' ? content : undefined,
+    }];
+  })), [nodes]);
+
+  /** × on a focus thumbnail: the node is simply deselected on the canvas. */
+  function unfocusNode(nodeId: string) {
+    const remaining = useCanvasStore.getState().selectedNodeIds.filter((id) => id !== nodeId);
+    selectNodes(remaining);
+    setNodes((current) => current.map((node) => (node.id === nodeId ? { ...node, selected: false } : node)));
+  }
+
   function showNotice(text: string, undo?: () => void) {
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
     setNotice({ text, undo });
@@ -886,6 +906,8 @@ export function CanvasShell() {
           canvasId={canvasId}
           selectedNodeIds={selectedNodeIds}
           nodeTitles={Object.fromEntries((snapshot?.nodes ?? []).map((node) => [node.id, String(node.data?.title ?? '')]))}
+          nodePreviews={nodePreviews}
+          onUnfocus={unfocusNode}
           onFocusNodes={focusNodes}
           onSaveToCanvas={(text, title) => void saveTextAsNote(text, title)}
           onClose={() => useAgentStore.getState().setOpen(false)}

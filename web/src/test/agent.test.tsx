@@ -309,3 +309,19 @@ describe('chat list', () => {
     expect(onArchive).toHaveBeenCalledWith('d', false);
   });
 });
+
+describe('focus thumbnails', () => {
+  it('sent messages show the focused nodes as small thumbnails', () => {
+    render(
+      <AgentMessage
+        event={event({ kind: 'user_message', text: '看看这两个', focus: ['img', 'gone'] })}
+        focusTitles={{ img: '一个兔子' }}
+        focusPreviews={{ img: { nodeId: 'img', kind: 'image', title: '一个兔子', url: '/api/assets/a/file' } }}
+        onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} onConfirm={vi.fn()} pending={false}
+      />,
+    );
+    const strip = screen.getByLabelText('这条消息关注的节点');
+    expect(strip.querySelector('img')?.getAttribute('src')).toBe('/api/assets/a/file');
+    expect(screen.getByText('已删除的节点')).toBeInTheDocument();
+  });
+});
