@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NodeResizer, Position } from '@xyflow/react';
+import { NodeResizeControl, Position } from '@xyflow/react';
 
 import { Markdown } from '../agent/Markdown';
 import { NodeHandle } from './NodeHandles';
@@ -55,7 +55,18 @@ export function NoteNode({ data }: NoteNodeProps) {
 
   return (
     <div className="media-node note-node">
-      <NodeResizer minWidth={180} minHeight={120} onResizeEnd={(_, params) => data.onResize?.({ width: params.width, height: params.height })} />
+      {/* Resize from the bottom-right corner only; the grip shows on hover or when selected. */}
+      <NodeResizeControl
+        className="note-resize nodrag"
+        position="bottom-right"
+        minWidth={240}
+        minHeight={180}
+        onResizeEnd={(_, params) => data.onResize?.({ width: params.width, height: params.height })}
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path d="M13 4v4.5A4.5 4.5 0 0 1 8.5 13H4" />
+        </svg>
+      </NodeResizeControl>
       <NodeHandle type="source" position={Position.Right} id="source" />
       <div className="node-heading">
         <span className="node-kind">NOTE</span>

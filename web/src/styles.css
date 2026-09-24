@@ -1779,3 +1779,33 @@ h1 {
 }
 .agent-note-save:hover { color: #fff; background: var(--accent); }
 .agent-note-block-body { padding: 8px 12px 10px; }
+
+/* ---------- Note resize grip (bottom-right corner, follows the rounded corner) ---------- */
+.react-flow__node .react-flow__resize-control.handle.bottom.right.note-resize {
+  left: auto;
+  top: auto;
+  right: 3px;
+  bottom: 3px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  transform: none;
+  translate: none;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.react-flow__resize-control.handle.note-resize svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.react-flow__node-note:hover .react-flow__resize-control.handle.bottom.right.note-resize,
+.react-flow__node-note.selected .react-flow__resize-control.handle.bottom.right.note-resize { opacity: 1; }
+.react-flow__node .react-flow__resize-control.handle.bottom.right.note-resize:hover { color: var(--accent); }
