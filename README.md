@@ -10,7 +10,7 @@
 
 如果你在用 Claude Code、Codex 这类编码 Agent，把下面这段话发给它就行，不用自己碰终端：
 
-> 帮我装好 Film Copilot：把 https://github.com/AgarBoba/FilmCopilot 克隆到本地，然后按仓库里 AGENTS.md 的说明安装、检查并启动。需要密钥时告诉我填在哪，不要让我把密钥发给你。
+> 帮我装好 Film Copilot：把 https://github.com/AgarBoba/FilmCopilot 克隆到本地，然后按仓库里 AGENTS.md 的说明安装、检查并启动。
 
 之后同样用一句话就能：
 - 启动：「启动 Film Copilot」
