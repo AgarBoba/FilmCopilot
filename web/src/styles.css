@@ -1092,9 +1092,7 @@ h1 {
   height: 100%;
 }
 
-.video-player video {
-  cursor: default;
-}
+/* The picture drags the node, so it keeps the node's grab cursor. */
 
 .video-controls {
   position: absolute;
@@ -2119,3 +2117,17 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .reference-strip-frame.is-compact .reference-badge { display: none; }
 
 .agent-mode select { field-sizing: content; }
+
+/*
+ * Cursors inside nodes: draggable areas show the grab hand (from React Flow); anything
+ * marked nodrag (control bars, prompt area, note controls) must not, so it gets an arrow,
+ * with the usual cursor for what's inside it.
+ */
+.react-flow__node .nodrag { cursor: default; }
+.react-flow__node .nodrag :is(button, select, input[type='range'], input[type='checkbox'], label:has(input[type='checkbox'])) { cursor: pointer; }
+.react-flow__node .nodrag:is(button, select, input[type='range']) { cursor: pointer; }
+.react-flow__node :is(textarea, input[type='text'], input:not([type])) { cursor: text; }
+.react-flow__node :is(button, select):disabled { cursor: not-allowed; }
+/* Hand tool: the whole canvas pans, so everything shows the hand. */
+.canvas-page.mode-hand .react-flow__node .nodrag,
+.canvas-page.mode-hand .react-flow__node .nodrag * { cursor: grab; }
