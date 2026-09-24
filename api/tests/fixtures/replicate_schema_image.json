@@ -1,0 +1,13 @@
+{"openapi":"3.0.2","components":{"schemas":{
+"Input":{"type":"object","required":["prompt"],"properties":{
+ "prompt":{"type":"string","title":"Prompt","x-order":0},
+ "input_image":{"type":"string","format":"uri","title":"Input Image","x-order":1},
+ "aspect_ratio":{"allOf":[{"$ref":"#/components/schemas/aspect_ratio"}],"default":"match_input_image","x-order":2},
+ "seed":{"type":"integer","title":"Seed","x-order":3},
+ "output_format":{"allOf":[{"$ref":"#/components/schemas/output_format"}],"default":"png","x-order":4},
+ "safety_tolerance":{"type":"integer","default":2,"maximum":6,"minimum":0,"x-order":5},
+ "prompt_upsampling":{"type":"boolean","default":false,"x-order":6},
+ "guidance":{"type":"number","default":3.5,"minimum":1,"maximum":10,"x-order":7}}},
+"aspect_ratio":{"enum":["match_input_image","1:1","16:9","9:16"],"type":"string","title":"aspect_ratio"},
+"output_format":{"enum":["jpg","png"],"type":"string","title":"output_format"},
+"Output":{"type":"string","format":"uri"}}}}

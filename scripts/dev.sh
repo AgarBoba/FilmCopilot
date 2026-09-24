@@ -20,13 +20,13 @@ fi
 
 fail() { echo "dev.sh: $*" >&2; exit 1; }
 
-command -v "$PYTHON" >/dev/null 2>&1 || fail "找不到 Python。请先按 README 创建 .venv。"
+command -v "$PYTHON" >/dev/null 2>&1 || fail "找不到 Python。先运行：python3 scripts/setup.py"
 "$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' \
-  || fail "需要 Python 3.11+，当前是 $("$PYTHON" --version 2>&1)。请按 README 创建 .venv。"
+  || fail "需要 Python 3.11+，当前是 $("$PYTHON" --version 2>&1)。先运行：python3 scripts/setup.py"
 "$PYTHON" -c 'import fastapi, uvicorn, replicate' 2>/dev/null \
-  || fail "API 依赖没装。运行：$PYTHON -m pip install -e 'api[dev]'（或 uv pip install -e 'api[dev]'）"
+  || fail "API 依赖没装。先运行：python3 scripts/setup.py"
 command -v node >/dev/null 2>&1 || fail "找不到 Node.js。请先安装（例如 brew install node）。"
-[[ -d "$ROOT_DIR/web/node_modules" ]] || fail "Web 依赖没装。运行：npm install --prefix web"
+[[ -d "$ROOT_DIR/web/node_modules" ]] || fail "Web 依赖没装。先运行：python3 scripts/setup.py"
 # Fail early if a port is taken (usually a previous dev.sh still running).
 for port in "$API_PORT" "$WEB_PORT"; do
   if command -v lsof >/dev/null 2>&1; then
@@ -36,13 +36,13 @@ for port in "$API_PORT" "$WEB_PORT"; do
     fi
   fi
 done
-[[ -n "${REPLICATE_API_TOKEN:-}" ]] || echo "dev.sh: 警告：没有 REPLICATE_API_TOKEN，真实生成会失败。" >&2
+[[ -n "${REPLICATE_API_TOKEN:-}" ]] || echo "dev.sh: 警告：没有 REPLICATE_API_TOKEN，默认模型生成会失败（python3 scripts/doctor.py 看完整检查）。" >&2
 # Agent login: API key or Claude subscription (never print the values).
 if [[ "${AGENT_AUTH:-}" == "subscription" ]]; then
   [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] || echo "dev.sh: 提示：AGENT_AUTH=subscription 但没有 CLAUDE_CODE_OAUTH_TOKEN，将尝试已有的 claude 登录；不行就运行 ./scripts/claude-login.sh。" >&2
   echo "dev.sh: Agent 使用 Claude 订阅额度。" >&2
 elif [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-  echo "dev.sh: 警告：Agent 没有配置登录（ANTHROPIC_API_KEY 或 CLAUDE_CODE_OAUTH_TOKEN），对话会失败。" >&2
+  echo "dev.sh: 警告：没有 ANTHROPIC_API_KEY，画布 Agent 对话会失败（填在 .env 里）。" >&2
 fi
 
 PIDS=()

@@ -22,3 +22,6 @@ web/vite.config.d.ts
 
 # package manager cache
 .pnpm-store/
+.venv.old-*/
+data/model-checks/
+__pycache__/

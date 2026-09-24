@@ -20,8 +20,8 @@
 - 图片节点只接受图片参考；视频节点可接受图片或视频参考。后端校验连接合法性并阻止自连接、重复连接和循环。
 - 上传素材和生成结果保存在本地。节点内容、连接关系、视口、生成任务通过本地服务和 SQLite 持久化。
 - 模型参数直接放在图片或视频节点的 Prompt 输入区内编辑。
-- 图片模型：Replicate `bytedance/seedream-5-pro`。
-- 视频模型：Replicate `bytedance/seedance-2.0-mini`。
+- 生成模型登记在 `models/*.json`，可以接多家 provider（见 docs/ADDING_MODELS.md）。默认：图片用 Replicate `bytedance/seedream-5-pro`，视频用 `bytedance/seedance-2.0-mini`。
+- 分发给同事：只用 Anthropic API Key；安装和接入模型由同事自己的编码 Agent 按 AGENTS.md 完成。
 - 后续 Agent 应调用与前端相同的结构化画布命令 API；不直接操作前端 DOM 或绕过领域服务写数据库。
 - 第一版不包含多人协作、权限、评论、模型自动路由和复杂模型参数面板。
 
@@ -42,6 +42,42 @@
 API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.sh](scripts/dev.sh)。本地运行不等于已验证真实模型调用；没有 `REPLICATE_API_TOKEN` 时，自动化测试和 fake Provider 测试不能证明线上模型生成成功。
 
 ## 开发与修复记录
+
+### 2026-09-24 分发给同事：模型可插拔 + 给编码 Agent 的安装包
+
+- 用户需求：
+  - 分发给同事。同事一律用 Claude API Key。
+  - 生成模型不限于 Replicate，可以接别家、接多个。
+  - 同事都有自己的编码 Agent（Claude Code / Codex），安装、排错、接模型都交给他们的 Agent，同事本人不碰终端。
+- 模型登记（第 1 个提交）：
+  - `models/*.json` 一个模型一个文件。`api/app/models_registry.py` 负责校验（报错写明是哪个文件、怎么改）、按文件修改时间自动重载、每个 kind 选出默认模型。
+  - provider 对接代码放在 `api/app/providers/<name>.py`，约定 `ENV_KEYS` / `from_env()` / 三个方法。`build_inputs` 按模型文件映射字段。`replicate.py` 改成通用实现。
+  - Worker 按每个模型的 provider 取对接代码；参考图超出模型上限时截断并提示。
+  - 节点上新增 Model 菜单，参数控件按登记内容生成。缺对接代码或缺 key 时，在节点上提示，并告诉用户让 Agent 按 AGENTS.md 处理。
+  - `GET /api/models`；画布 Agent 新增只读工具 `list_models`，`create_nodes` / `update_node` 可以指定 `model`。
+- 同事安装包（第 2 个提交）：
+  - `AGENTS.md` 是给编码 Agent 的说明（`CLAUDE.md` 引用它），核心是密钥铁律：
+    - 不让用户在对话里发密钥；
+    - 不读出密钥；
+    - 由用户自己打开 `.env` 填写。
+  - `scripts/setup.py`：非交互、可重复运行。找 Python 3.11+（没有就用 uv 下载），建 `.venv`，装依赖，生成 `.env`（权限 600）并补上 `.env.example` 里的新设置。
+  - `scripts/doctor.py`：检查清单，每项附带修复方法。`--online` 调免费接口验证 Anthropic 和 Replicate 的 key，`--json` 给 Agent 读。能发现被折成两行的密钥。
+  - `scripts/add_model.py`：从 Replicate 的输入 schema 起草模型文件，并列出需要人工核对的地方。
+  - `scripts/check_model.py`：免费校验，并预览会发给 provider 的参数；`--run` 做真实生成。
+  - `api/app/providers/_template.py` 和 `docs/ADDING_MODELS.md`。
+  - `.env.example`、README 改成只用 API Key 的写法。订阅登录保留给维护者本人（代码没变）。
+- 顺手修复：
+  - 确认的根因：Worker 正式运行时沿用了测试用的轮询参数（0.2 秒 × 300 次），超过 60 秒就判定超时，视频基本会失败。改为每 2 秒一次，最长 30 分钟。
+- 验证：
+  - 后端 122 个、前端 62 个测试通过，build 通过。
+  - 浏览器里检查了节点的模型菜单、按登记生成的控件、缺 key 和缺对接代码两种提示（后者用一个临时的 fal 测试模型，已删除）。
+  - 模拟全新 clone：`setup.py` 从零装好（uv + pnpm），重复运行时只补缺的设置；填入假 key 后 `dev.sh` 正常启动，`/api/models` 显示就绪。
+  - `add_model.py` 用离线 schema 测过；`check_model.py --run` 用临时的假 provider 测过提交和轮询流程。
+- 未验证：
+  - 真实生成（容器里连不上 Replicate）；
+  - `add_model.py` 在线拉取 schema；
+  - `doctor.py --online` 的真实响应；
+  - 同事机器上的 Codex / Claude Code 实际按 AGENTS.md 走一遍。
 
 ### 2026-09-24 Agent 用 Claude 订阅额度 + 模型切换
 
