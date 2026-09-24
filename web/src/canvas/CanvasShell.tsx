@@ -43,6 +43,7 @@ import { TooltipLayer } from './TooltipLayer';
 import { AgentPanel } from '../agent/AgentPanel';
 import { splitNoteBlock } from '../agent/Markdown';
 import { agentNodeMarks } from '../agent/agentMarks';
+import { appendText, carriesBlock, readBlock } from '../agent/blockDrag';
 import { useAgentStore } from '../agent/agentStore';
 import { isGenerationBusy } from '../nodes/GenerationOverlay';
 import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM, useTrackpadGestures } from './useTrackpadGestures';
@@ -112,6 +113,10 @@ export function CanvasShell() {
   const agentActiveRun = useAgentStore((state) => state.activeRunId);
   const agentRecentRun = useAgentStore((state) => state.recentRunId);
   const viewportRef = useRef<HTMLDivElement>(null);
+  /** A block dragged from the agent panel is over this node (null: over empty canvas). */
+  const [dropTarget, setDropTarget] = useState<string | null | undefined>(undefined);
+  const [notice, setNotice] = useState<{ text: string; undo?: () => void } | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useTrackpadGestures(viewportRef, flowRef);
   const closeChooser = useCallback(() => setPendingConnection(null), []);
@@ -287,16 +292,91 @@ export function CanvasShell() {
     [agentEvents, agentActiveRun, agentRecentRun],
   );
   const displayNodes = useMemo(() => {
-    if (!agentMarks.size) return nodes;
+    if (!agentMarks.size && !dropTarget) return nodes;
     return nodes.map((node) => {
       const mark = agentMarks.get(node.id);
-      if (!mark) return node;
-      const generating = mark !== 'recent' && isGenerationBusy(node.data.generationStatus as string | undefined);
-      const className = [node.className, `agent-mark is-agent-${mark}`, generating ? 'is-agent-generating' : '']
-        .filter(Boolean).join(' ');
+      const isDropTarget = node.id === dropTarget;
+      if (!mark && !isDropTarget) return node;
+      const busy = isGenerationBusy(node.data.generationStatus as string | undefined);
+      const generating = !!mark && mark !== 'recent' && busy;
+      const className = [
+        node.className,
+        mark ? `agent-mark is-agent-${mark}` : '',
+        generating ? 'is-agent-generating' : '',
+        isDropTarget ? 'is-drop-target' : '',
+        isDropTarget && busy ? 'is-drop-blocked' : '',
+      ].filter(Boolean).join(' ');
       return { ...node, className };
     });
-  }, [nodes, agentMarks]);
+  }, [nodes, agentMarks, dropTarget]);
+
+  function showNotice(text: string, undo?: () => void) {
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    setNotice({ text, undo });
+    noticeTimerRef.current = setTimeout(() => setNotice(null), 6000);
+  }
+
+  /** Which node (if any) is under the pointer while a reply block is dragged over the canvas. */
+  function nodeUnder(clientX: number, clientY: number): string | null {
+    const element = document.elementFromPoint(clientX, clientY);
+    const nodeElement = element?.closest('.react-flow__node');
+    const id = nodeElement?.getAttribute('data-id') ?? null;
+    return id && !id.startsWith(GHOST_PREFIX) ? id : null;
+  }
+
+  function onBlockDragOver(event: React.DragEvent<HTMLDivElement>) {
+    if (!carriesBlock(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    const target = nodeUnder(event.clientX, event.clientY);
+    if (target !== dropTarget) setDropTarget(target);
+    event.currentTarget.style.setProperty('--drop-x', `${event.clientX}px`);
+    event.currentTarget.style.setProperty('--drop-y', `${event.clientY}px`);
+  }
+
+  function onBlockDragLeave(event: React.DragEvent<HTMLDivElement>) {
+    const next = event.relatedTarget as globalThis.Node | null;
+    if (!next || !event.currentTarget.contains(next)) setDropTarget(undefined);
+  }
+
+  /** Dropped on a node: append to its prompt (note: its text). On empty canvas: a new note. */
+  async function onBlockDrop(event: React.DragEvent<HTMLDivElement>) {
+    const block = readBlock(event.dataTransfer);
+    setDropTarget(undefined);
+    document.body.classList.remove('is-dragging-block');
+    if (!block) return;
+    event.preventDefault();
+    const targetId = nodeUnder(event.clientX, event.clientY);
+    if (!targetId) {
+      const position = flowRef.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const title = block.title || '便签';
+      const nodeId = await addNode('note', {
+        title, data: { content: block.content }, size: noteSizeFor(block.content),
+        position: position ? { x: position.x - 20, y: position.y - 20 } : undefined,
+      });
+      if (nodeId) showNotice(`已新建便签「${title}」`);
+      return;
+    }
+    const node = nodes.find((item) => item.id === targetId);
+    if (!node) return;
+    const name = String(node.data.title || '这个节点');
+    if (isGenerationBusy(node.data.generationStatus as string | undefined)) {
+      showNotice(`「${name}」正在生成，提示词锁定中，没有改动`);
+      return;
+    }
+    const field = node.type === 'note' ? 'content' : 'prompt';
+    const before = String((node.type === 'note' ? node.data.content ?? node.data.prompt : node.data.prompt) ?? '');
+    const after = appendText(before, block.content);
+    await persistNodeData(targetId, { [field]: after });
+    showNotice(`已接在「${name}」的${field === 'content' ? '文字' : '提示词'}后面`, () => {
+      const current = useCanvasStore.getState().snapshot?.nodes.find((item) => item.id === targetId);
+      if (!current || String(current.data[field] ?? '') !== after) {
+        showNotice(`「${name}」之后又改过，没有撤销`);
+        return;
+      }
+      void persistNodeData(targetId, { [field]: before }).then(() => showNotice(`已撤销「${name}」的改动`));
+    });
+  }
 
   const visibleEdges = useMemo(() => {
     const visibleIds = getVisibleEdgeIds(edges, selectedNodeIds, showEdges);
@@ -337,7 +417,12 @@ export function CanvasShell() {
 
   async function addNode(
     nodeType: NodeType,
-    extra?: { title?: string; data?: Record<string, unknown>; size?: { width: number; height: number } },
+    extra?: {
+      title?: string;
+      data?: Record<string, unknown>;
+      size?: { width: number; height: number };
+      position?: { x: number; y: number };
+    },
   ) {
     const current = useCanvasStore.getState().snapshot;
     if (!current) return undefined;
@@ -349,7 +434,7 @@ export function CanvasShell() {
         nodeType,
         title: extra?.title || defaultNodeTitle(nodeType),
         ...(extra?.data ? { data: extra.data } : {}),
-        ...nextNodePosition(),
+        ...(extra?.position ?? nextNodePosition()),
         ...(extra?.size ?? {}),
       },
     });
@@ -689,8 +774,11 @@ export function CanvasShell() {
     <div className={`canvas-page theme-${theme} mode-${activeTool} ${altHeld ? 'is-alt-held' : ''} ${agentOpen ? 'agent-open' : ''}`}>
       <div
         ref={viewportRef}
-        className="canvas-viewport"
+        className={`canvas-viewport ${dropTarget === null ? 'is-block-over-blank' : ''}`}
         data-testid="canvas-shell"
+        onDragOver={onBlockDragOver}
+        onDragLeave={onBlockDragLeave}
+        onDrop={(event) => void onBlockDrop(event)}
         onPointerDownCapture={(event) => {
           if ((event.target as Element).closest('.react-flow__node')) {
             selectionBeforePointerRef.current = useCanvasStore.getState().selectedNodeIds;
@@ -762,6 +850,19 @@ export function CanvasShell() {
               onEdgesChange={setShowEdges}
             />
           </Panel>
+          {notice && !error && (
+            <Panel position="top-center" className="canvas-panel">
+              <div className="canvas-toast canvas-notice" role="status">
+                <span>{notice.text}</span>
+                {notice.undo && (
+                  <button type="button" className="canvas-notice-undo" onClick={() => { const undo = notice.undo; setNotice(null); undo?.(); }}>
+                    撤销
+                  </button>
+                )}
+                <button type="button" aria-label="关闭提示" data-tooltip="关闭提示" data-tooltip-side="bottom" onClick={() => setNotice(null)}>×</button>
+              </div>
+            </Panel>
+          )}
           {error && (
             <Panel position="top-center" className="canvas-panel">
               <div className="canvas-toast" role="alert">

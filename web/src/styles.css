@@ -1835,3 +1835,73 @@ h1 {
   line-height: 1.6;
 }
 @media (hover: none) { .savable-block-action { opacity: 1; } }
+
+/* ---------- Dragging reply blocks onto the canvas ---------- */
+.savable-block-action { display: flex; gap: 4px; }
+.agent-block-drag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px 3px 5px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--node-bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: grab;
+  user-select: none;
+}
+.agent-block-drag svg { fill: currentColor; }
+.agent-block-drag:hover { color: var(--text-primary); border-color: var(--accent); }
+.agent-block-drag:active { cursor: grabbing; }
+.agent-note-block-head .agent-block-drag { box-shadow: none; background: transparent; }
+.react-flow__node.is-drop-target .media-node {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 18%, transparent), 0 14px 34px rgba(11, 16, 28, 0.12);
+}
+.react-flow__node.is-drop-target::after {
+  content: '松手：接在后面';
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.react-flow__node.is-drop-target.is-drop-blocked .media-node { outline-color: #f59e0b; }
+.react-flow__node.is-drop-target.is-drop-blocked::after { content: '正在生成，不能改'; background: #f59e0b; }
+.canvas-viewport.is-block-over-blank::after {
+  content: '松手：新建便签';
+  position: fixed;
+  left: var(--drop-x, 50%);
+  top: var(--drop-y, 50%);
+  translate: 12px 12px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 20;
+}
+/* Neutral notice (not an error): e.g. "已接在「镜头1」的提示词后面 · 撤销" */
+.canvas-toast.canvas-notice { border-color: var(--chrome-border); color: var(--text-primary); }
+.canvas-toast.canvas-notice button.canvas-notice-undo {
+  width: auto;
+  padding: 0 10px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.canvas-toast.canvas-notice button.canvas-notice-undo:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }

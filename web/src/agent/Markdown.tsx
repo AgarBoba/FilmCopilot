@@ -3,6 +3,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { CheckIcon, NoteAddIcon } from '../canvas/icons';
+import { writeBlock } from './blockDrag';
 
 interface MarkdownProps {
   text: string;
@@ -107,7 +108,34 @@ function SaveButton({ onSave }: { onSave: () => void }) {
   );
 }
 
-/** A table / code / prompt / quote with a hover "存成便签" button in its top-right corner. */
+/** Drag this onto a node to append it to the prompt, or onto empty canvas for a new note. */
+function DragHandle({ kind, title, content }: { kind: string; title: string; content: string }) {
+  return (
+    <span
+      className="agent-block-drag"
+      draggable
+      role="button"
+      tabIndex={-1}
+      aria-label="拖到画布"
+      data-tooltip="拖到节点上：接在它的提示词后面；拖到空白处：新建便签"
+      onDragStart={(event) => {
+        writeBlock(event.dataTransfer, { content, title, kind });
+        // Show the whole block under the pointer, not just the little handle.
+        const block = event.currentTarget.closest('.savable-block, .agent-note-block');
+        if (block instanceof HTMLElement) event.dataTransfer.setDragImage(block, 24, 16);
+        document.body.classList.add('is-dragging-block');
+      }}
+      onDragEnd={() => document.body.classList.remove('is-dragging-block')}
+    >
+      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+        {[4, 8, 12].flatMap((y) => [6, 10].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3" />))}
+      </svg>
+      拖到画布
+    </span>
+  );
+}
+
+/** A table / code / prompt / quote with hover actions in its top-right corner. */
 function SavableBlock({ kind, title, content, onSave, children }: {
   kind: BlockKind;
   title: string;
@@ -119,6 +147,7 @@ function SavableBlock({ kind, title, content, onSave, children }: {
     <div className={`savable-block is-${kind}`} data-title={title}>
       {children}
       <div className="savable-block-action">
+        <DragHandle kind={kind} title={title} content={content} />
         <SaveButton onSave={() => onSave(content, title)} />
       </div>
     </div>
@@ -130,6 +159,7 @@ function NoteCard({ title, body, onSave }: { title: string; body: string; onSave
     <div className="agent-note-block">
       <div className="agent-note-block-head">
         <span className="agent-note-block-title">{title}</span>
+        {onSave && <DragHandle kind="note" title={title} content={body} />}
         {onSave && <SaveButton onSave={() => onSave(body, title)} />}
       </div>
       <div className="markdown agent-note-block-body">

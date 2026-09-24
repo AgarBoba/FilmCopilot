@@ -224,3 +224,35 @@ describe('agent node marks', () => {
     vi.useRealTimers();
   });
 });
+
+describe('dragging reply blocks', () => {
+  it('appends after a blank line and never duplicates whitespace', async () => {
+    const { appendText } = await import('../agent/blockDrag');
+    expect(appendText('', '  兔子  ')).toBe('兔子');
+    expect(appendText(undefined, '兔子')).toBe('兔子');
+    expect(appendText('原来的提示词\n\n', '新加的')).toBe('原来的提示词\n\n新加的');
+    expect(appendText('原来的', '   ')).toBe('原来的');
+  });
+
+  it('the drag handle carries the block content and title', async () => {
+    const { AGENT_BLOCK_MIME, readBlock } = await import('../agent/blockDrag');
+    const text = '### 镜头 2\n\n**生图提示词**\n\n```prompt\n微距，暖光扫过木纹\n```';
+    render(
+      <AgentMessage event={event({ kind: 'assistant_text', text })} focusTitles={{}} onFocusNodes={vi.fn()}
+        onSaveToCanvas={vi.fn()} onConfirm={vi.fn()} pending={false} />,
+    );
+    const store = new Map<string, string>();
+    const dataTransfer = {
+      setData: (type: string, value: string) => store.set(type, value),
+      getData: (type: string) => store.get(type) ?? '',
+      get types() { return [...store.keys()]; },
+      setDragImage: vi.fn(),
+      effectAllowed: 'none',
+    };
+    fireEvent.dragStart(screen.getByRole('button', { name: '拖到画布' }), { dataTransfer });
+    expect(store.has(AGENT_BLOCK_MIME)).toBe(true);
+    expect(readBlock(dataTransfer as unknown as DataTransfer)).toEqual({
+      content: '微距，暖光扫过木纹', title: '镜头 2 · 生图提示词', kind: 'prompt',
+    });
+  });
+});
