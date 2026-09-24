@@ -110,7 +110,7 @@ export function NoteNode({ data }: NoteNodeProps) {
           {draft.trim() ? <Markdown text={draft} /> : '双击输入文字'}
         </div>
       )}
-      <div className="note-controls">
+      <div className="note-controls nodrag">
         <select
           aria-label="字体"
           value={data.fontFamily ?? 'Inter'}

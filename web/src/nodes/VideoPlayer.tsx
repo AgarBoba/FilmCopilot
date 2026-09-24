@@ -101,7 +101,7 @@ export function VideoPlayer({ src, poster, videoRef, manualRef }: VideoPlayerPro
         </button>
         <input
           type="range"
-          className="video-progress"
+          className="video-progress nodrag"
           aria-label="播放进度"
           min={0}
           max={duration || 0}

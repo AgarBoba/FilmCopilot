@@ -39,8 +39,9 @@ export function PromptComposer({
   const { draft, setDraft, flush } = useDebouncedDraft(prompt, onPromptChange);
 
   return (
-    <div className={`prompt-composer ${disabled ? 'is-locked' : ''}`} data-testid={testId}>
+    <div className={`prompt-composer nodrag ${disabled ? 'is-locked' : ''}`} data-testid={testId}>
       <textarea
+        className="nodrag nowheel"
         aria-label="Prompt"
         value={draft}
         placeholder={noteCount ? '可以留空，会使用上游便签的文字' : '描述你想生成的画面…'}
