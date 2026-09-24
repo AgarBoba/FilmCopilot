@@ -53,7 +53,7 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
   - 模型：项目设置 `model`（只能是列表里的三个）；已有对话用 SDK 的 `set_model` 从下一条生效，不重开对话；回复和 run_finished 事件带 model。
   - 前端：输入框下方模型选择，标题显示「模型 · 订阅额度 / API」，回复下标模型。
   - `scripts/claude-login.sh`：优先用已安装的 claude，否则用 SDK 自带的，运行 setup-token 并提示填到 .env；`dev.sh` 启动时提示当前登录方式；`.env.example` 写明两种方式；已在用户 `.env` 末尾追加 AGENT_AUTH=subscription 和空的 CLAUDE_CODE_OAUTH_TOKEN（未读取原有内容）。
-- 验证：后端 109、前端 61 个测试通过（后端在用户 Mac 上也跑过）；浏览器里切模型、刷新后保留、标题显示订阅额度都正常。未验证：真实订阅令牌的登录和额度扣减，需要用户运行 claude-login.sh 后实跑。
+- 验证：后端 109、前端 61 个测试通过（后端在用户 Mac 上也跑过）；浏览器里切模型、刷新后保留、标题显示订阅额度都正常。真实订阅已验证（2026-09-24 16:06）：用户运行 claude-login.sh 填入令牌后，Agent 正常以订阅额度工作。踩坑：令牌粘贴时被折成两行，.env 第二行被当成命令执行导致 dev.sh 退出，已接回一行。
 
 ### 2026-09-24 第二阶段：项目记忆、用户偏好、对话间共享（轻量）
 
