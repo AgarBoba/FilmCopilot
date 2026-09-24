@@ -18,7 +18,7 @@ interface AgentPanelProps {
   selectedNodeIds: string[];
   nodeTitles: Record<string, string>;
   onFocusNodes: (nodeIds: string[]) => void;
-  onSaveToCanvas: (text: string) => void;
+  onSaveToCanvas: (text: string, title?: string) => void;
   onClose: () => void;
 }
 

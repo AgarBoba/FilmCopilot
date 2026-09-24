@@ -783,20 +783,36 @@ h1 {
 }
 
 .note-node {
-  resize: both;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 180px;
+  box-sizing: border-box;
 }
 
+/*
+ * The preview and the editor are the same box with the same type settings, so
+ * double-clicking to edit never moves the text. Resizing is done by the node's
+ * own resizer, not the browser's textarea grip.
+ */
 .note-node textarea,
 .note-preview {
   display: block;
+  flex: 1 1 auto;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 120px;
-  resize: both;
+  min-height: 60px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  resize: none;
   border: 0;
   outline: 0;
   color: var(--text-primary);
   background: transparent;
+  font-family: inherit;
+  font-size: 16px; /* matches the note's default size in the 字号 menu */
+  line-height: 1.6;
 }
 
 /*
@@ -1728,3 +1744,38 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   .react-flow__node.is-agent-generating .media-node { animation: none; }
 }
+
+/* ---------- ```note blocks in agent replies: the parts worth keeping ---------- */
+.agent-note-block {
+  margin: 4px 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--node-bg));
+  overflow: hidden;
+}
+.agent-note-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.agent-note-block-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-note-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 6px;
+  color: var(--accent);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.agent-note-save:hover { color: #fff; background: var(--accent); }
+.agent-note-block-body { padding: 8px 12px 10px; }

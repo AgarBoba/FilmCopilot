@@ -49,6 +49,8 @@ def test_create_nodes_names_positions_and_marks_agent(repository):
     assert note.data['title'] == '便签 1' and note.data['content'] == '温暖的午后光线'
     assert image.data['parameters']['aspectRatio'] == '16:9' and image.data['parameters']['size'] == '2K'
     assert image.y > note.y  # stacked, not on top of each other
+    long_note = tools.create_nodes([{'type': 'note', 'content': '\n'.join(['一行设定'] * 12)}]).touched[0]
+    assert repository.node_snapshot(canvas_id, long_note)['height'] > 300  # tall enough for its text
     assert repository.agent_run_changes(tools.run_id)  # recorded for undo
 
 

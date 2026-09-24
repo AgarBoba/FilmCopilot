@@ -4,7 +4,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 
 import type { AgentEvent } from '../agent/agentApi';
 import { AgentMessage } from '../agent/AgentMessage';
-import { Markdown, titleFromMarkdown } from '../agent/Markdown';
+import { Markdown, noteBlocks, splitNoteBlock, titleFromMarkdown } from '../agent/Markdown';
 import { pendingConfirmations, undoableRuns, useAgentStore } from '../agent/agentStore';
 import { NoteNode } from '../nodes/NoteNode';
 
@@ -66,6 +66,13 @@ describe('markdown', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 
+  it('finds note blocks and splits their title', () => {
+    const text = 'a\n```note\n# 分镜表\n| 镜头 | 画面 |\n| --- | --- |\n| 1 | 兔子 |\n```\nb\n~~~note\n只有正文\n~~~\n```js\nx\n```';
+    expect(noteBlocks(text)).toHaveLength(2);
+    expect(splitNoteBlock(noteBlocks(text)[0])).toEqual({ title: '分镜表', body: '| 镜头 | 画面 |\n| --- | --- |\n| 1 | 兔子 |' });
+    expect(splitNoteBlock('只有正文', 'x')).toEqual({ title: '只有正文', body: '只有正文' });
+  });
+
   it('picks a title from the first line', () => {
     expect(titleFromMarkdown('# 兔子短片剧本\n\n正文', 'x')).toBe('兔子短片剧本');
     expect(titleFromMarkdown('   ', 'Agent 笔记')).toBe('Agent 笔记');
@@ -123,6 +130,20 @@ describe('agent messages', () => {
     );
     expect(screen.getByText('已确认')).toBeInTheDocument();
     expect(screen.getByText('补充：后面都用暖色调')).toBeInTheDocument();
+  });
+
+  it('note blocks save only the finished part, with its heading as the title', () => {
+    const onSave = vi.fn();
+    const text = '改好了，镜头 2 更暖一些：\n\n```note\n# 镜头 2 Prompt\n\n低角度微距，暖光扫过木纹\n```\n\n要我直接生成吗？';
+    render(
+      <AgentMessage event={event({ kind: 'assistant_text', text })} focusTitles={{}} onFocusNodes={vi.fn()}
+        onSaveToCanvas={onSave} onConfirm={vi.fn()} pending={false} />,
+    );
+    expect(screen.getByText('镜头 2 Prompt')).toBeInTheDocument();
+    // the whole-message button is gone; the card's button saves just the block
+    expect(screen.getAllByRole('button', { name: '存到画布' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: '存到画布' }));
+    expect(onSave).toHaveBeenCalledWith('低角度微距，暖光扫过木纹', '镜头 2 Prompt');
   });
 
   it('tool steps locate their nodes', () => {

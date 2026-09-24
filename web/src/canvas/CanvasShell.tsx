@@ -41,7 +41,7 @@ import { CanvasControls, type CanvasTool } from './CanvasControls';
 import { CanvasRail } from './CanvasRail';
 import { TooltipLayer } from './TooltipLayer';
 import { AgentPanel } from '../agent/AgentPanel';
-import { titleFromMarkdown } from '../agent/Markdown';
+import { splitNoteBlock } from '../agent/Markdown';
 import { agentNodeMarks } from '../agent/agentMarks';
 import { useAgentStore } from '../agent/agentStore';
 import { isGenerationBusy } from '../nodes/GenerationOverlay';
@@ -335,7 +335,10 @@ export function CanvasShell() {
     return { x: Math.round(origin.x), y: Math.round(origin.y) };
   }
 
-  async function addNode(nodeType: NodeType, extra?: { title?: string; data?: Record<string, unknown> }) {
+  async function addNode(
+    nodeType: NodeType,
+    extra?: { title?: string; data?: Record<string, unknown>; size?: { width: number; height: number } },
+  ) {
     const current = useCanvasStore.getState().snapshot;
     if (!current) return undefined;
     const result = await execute({
@@ -347,15 +350,30 @@ export function CanvasShell() {
         title: extra?.title || defaultNodeTitle(nodeType),
         ...(extra?.data ? { data: extra.data } : {}),
         ...nextNodePosition(),
+        ...(extra?.size ?? {}),
       },
     });
     const nodeId = result?.payload.nodeId;
     return typeof nodeId === 'string' ? nodeId : undefined;
   }
 
+  /** Big enough to show the whole text without scrolling, within reason. */
+  function noteSizeFor(text: string) {
+    const lines = text.split('\n');
+    const hasTable = lines.some((line) => /^\s*\|.*\|\s*$/.test(line));
+    const width = hasTable ? 520 : Math.max(280, Math.min(420, 180 + Math.max(...lines.map((l) => l.length)) * 7));
+    const perLine = Math.max(12, Math.floor((width - 24) / 16)); // CJK characters per rendered line
+    const rows = lines.reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / perLine)), 0);
+    return { width, height: Math.max(180, Math.min(600, 110 + rows * 30)) };
+  }
+
   /** Agent panel: "存到画布" turns a reply into a note next to the current view. */
-  async function saveTextAsNote(text: string) {
-    const nodeId = await addNode('note', { title: titleFromMarkdown(text, 'Agent 笔记'), data: { content: text } });
+  async function saveTextAsNote(text: string, title?: string) {
+    // A leading "# 标题" becomes the note title instead of being repeated in the text.
+    const split = title ? { title, body: text } : splitNoteBlock(text, 'Agent 笔记');
+    const nodeId = await addNode('note', {
+      title: split.title, data: { content: split.body }, size: noteSizeFor(split.body),
+    });
     if (nodeId) focusNodes([nodeId]);
   }
 
@@ -768,7 +786,7 @@ export function CanvasShell() {
           selectedNodeIds={selectedNodeIds}
           nodeTitles={Object.fromEntries((snapshot?.nodes ?? []).map((node) => [node.id, String(node.data?.title ?? '')]))}
           onFocusNodes={focusNodes}
-          onSaveToCanvas={(text) => void saveTextAsNote(text)}
+          onSaveToCanvas={(text, title) => void saveTextAsNote(text, title)}
           onClose={() => useAgentStore.getState().setOpen(false)}
         />
       )}

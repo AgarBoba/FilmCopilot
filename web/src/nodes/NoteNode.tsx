@@ -34,13 +34,22 @@ export function NoteNode({ data }: NoteNodeProps) {
   const { draft, setDraft, flush } = useDebouncedDraft(data.content ?? data.prompt ?? '', data.onChange);
   const [editing, setEditing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef(0);
 
+  // Switching to the editor keeps the text where it was: same box, same scroll position.
   useEffect(() => {
-    if (!editing) return;
     const textarea = textareaRef.current;
-    textarea?.focus();
-    textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
+    if (!editing || !textarea) return;
+    textarea.focus({ preventScroll: true });
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    textarea.scrollTop = scrollRef.current;
   }, [editing]);
+
+  function startEditing() {
+    scrollRef.current = previewRef.current?.scrollTop ?? 0;
+    setEditing(true);
+  }
 
   const style = { fontFamily: data.fontFamily, fontSize: data.fontSize };
 
@@ -72,17 +81,18 @@ export function NoteNode({ data }: NoteNodeProps) {
         />
       ) : (
         <div
+          ref={previewRef}
           className={`note-preview nowheel ${draft.trim() ? '' : 'is-empty'}`}
           style={style}
           role="button"
           tabIndex={0}
           aria-label="便签内容，双击编辑"
           data-tooltip={draft.trim() ? '双击编辑' : undefined}
-          onDoubleClick={() => setEditing(true)}
+          onDoubleClick={startEditing}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              setEditing(true);
+              startEditing();
             }
           }}
         >

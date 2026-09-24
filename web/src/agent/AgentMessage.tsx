@@ -2,13 +2,13 @@ import { useState } from 'react';
 
 import { CheckIcon, CopyIcon, NoteAddIcon } from '../canvas/icons';
 import type { AgentEvent } from './agentApi';
-import { Markdown } from './Markdown';
+import { Markdown, noteBlocks } from './Markdown';
 
 interface AgentMessageProps {
   event: AgentEvent;
   focusTitles: Record<string, string>;
   onFocusNodes: (nodeIds: string[]) => void;
-  onSaveToCanvas: (text: string) => void;
+  onSaveToCanvas: (text: string, title?: string) => void;
   onConfirm: (event: AgentEvent, approved: boolean, note: string) => Promise<boolean> | void;
   pending: boolean;
 }
@@ -130,11 +130,13 @@ function ConfirmCard({ event, pending, onConfirm }: {
 }
 
 
-function AssistantText({ text, onSaveToCanvas }: { text: string; onSaveToCanvas: (text: string) => void }) {
+function AssistantText({ text, onSaveToCanvas }: { text: string; onSaveToCanvas: (text: string, title?: string) => void }) {
   const [copied, setCopied] = useState(false);
+  // With note blocks, only those are worth saving (each card has its own button).
+  const hasBlocks = noteBlocks(text).length > 0;
   return (
     <div className="agent-msg is-assistant">
-      <Markdown text={text} />
+      <Markdown text={text} onSaveNote={(content, title) => onSaveToCanvas(content, title)} />
       <div className="agent-msg-actions">
         <button
           type="button"
@@ -148,14 +150,16 @@ function AssistantText({ text, onSaveToCanvas }: { text: string; onSaveToCanvas:
         >
           {copied ? <CheckIcon width={14} height={14} /> : <CopyIcon width={14} height={14} />}
         </button>
-        <button
-          type="button"
-          aria-label="存到画布"
-          data-tooltip="存成便签放到画布上"
-          onClick={() => onSaveToCanvas(text)}
-        >
-          <NoteAddIcon width={14} height={14} />
-        </button>
+        {!hasBlocks && (
+          <button
+            type="button"
+            aria-label="存到画布"
+            data-tooltip="整段存成便签放到画布上"
+            onClick={() => onSaveToCanvas(text)}
+          >
+            <NoteAddIcon width={14} height={14} />
+          </button>
+        )}
       </div>
     </div>
   );

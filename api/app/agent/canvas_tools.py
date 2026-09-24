@@ -49,6 +49,13 @@ ERROR_TEXT = {
 }
 
 
+def note_size(content: str) -> dict[str, float]:
+    """Tall enough to show a note's text without scrolling (width fixed so storyboard rows stay aligned)."""
+    per_line = 17  # CJK characters per rendered line at the default width and size
+    rows = sum(max(1, -(-len(line) // per_line)) for line in content.split('\n'))
+    return {'width': 300.0, 'height': float(max(180, min(440, 110 + rows * 30)))}
+
+
 @dataclass
 class ToolResult:
     text: str
@@ -220,9 +227,10 @@ class CanvasTools:
             if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
                 x, y = positions[index]
             title = str(spec.get('title') or '').strip()[:60] or self._next_title(node_type)
-            result = self._command('create_node', {
-                'nodeType': node_type, 'title': title, 'x': float(x), 'y': float(y), 'data': data,
-            })
+            payload = {'nodeType': node_type, 'title': title, 'x': float(x), 'y': float(y), 'data': data}
+            if node_type == 'note':
+                payload.update(note_size(data['content']))
+            result = self._command('create_node', payload)
             if isinstance(result, ToolResult):
                 return self._partial(created, result.text)
             created.append(result['nodeId'])
