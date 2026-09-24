@@ -13,6 +13,7 @@ from ..config import resolve_project_path
 from ..domain import DomainError
 from ..events import EventStore
 from ..repositories import CanvasRepository
+from ..models_registry import ModelSpec, registry as model_registry
 from ..schemas import CommandEnvelope
 from . import conflicts, media
 from .config import AgentConfig
@@ -23,21 +24,7 @@ KIND_LABELS = {'image': '图片', 'video': '视频', 'note': '便签'}
 PROMPT_PREVIEW = 80
 NODE_WIDTH, NODE_HEIGHT, GAP = 300, 440, 40
 
-IMAGE_PARAMETERS = {
-    'size': ('1K', '2K'),
-    'aspectRatio': ('match_input_image', '1:1', '16:9', '9:16', '4:3'),
-    'outputFormat': ('png', 'jpeg'),
-}
-VIDEO_PARAMETERS = {
-    'duration': (5, 10),
-    'resolution': ('480p', '720p'),
-    'aspectRatio': ('adaptive', '16:9', '9:16', '1:1'),
-    'generateAudio': (True, False),
-}
-DEFAULT_PARAMETERS = {
-    'image': {'size': '2K', 'aspectRatio': 'match_input_image', 'outputFormat': 'png'},
-    'video': {'duration': 5, 'resolution': '720p', 'aspectRatio': 'adaptive', 'generateAudio': True},
-}
+# Models and their parameters come from models/*.json (see app/models_registry.py).
 
 # Readable explanations for domain errors, so the model can correct itself.
 ERROR_TEXT = {
@@ -138,6 +125,37 @@ class CanvasTools:
             lines.append('；'.join(parts))
         return ToolResult('\n'.join(lines), summary='查看画布')
 
+    def list_models(self, kind: str | None = None) -> ToolResult:
+        """Models the canvas can use, with what each is good at and its parameters."""
+        from ..providers import has_adapter, missing_env
+        models = [spec for spec in model_registry().all() if kind in (None, '', spec.kind)]
+        if not models:
+            return ToolResult('没有可用的模型。', summary='查看可用模型')
+        lines = []
+        for spec in models:
+            missing = missing_env(spec.provider)
+            if not has_adapter(spec.provider):
+                state = f'（不可用：还没有 {spec.provider} 的对接代码）'
+            else:
+                state = f'（不可用：缺少 {", ".join(missing)}）' if missing else ''
+            default = '，默认' if spec.default else ''
+            lines.append(f'- [{spec.id}] {spec.label}：{KIND_LABELS[spec.kind]}模型{default}{state}。{spec.description}')
+            refs = [f'最多 {spec.max_images} 张参考图' if spec.max_images else '不接受参考图']
+            if spec.kind == 'video':
+                refs.append(f'最多 {spec.max_videos} 段参考视频' if spec.max_videos else '不接受参考视频')
+            lines.append('  ' + '，'.join(refs))
+            for parameter in spec.parameters:
+                if parameter.options:
+                    allowed = ' | '.join(str(option['value']) for option in parameter.options)
+                elif parameter.type in ('integer', 'number') and (parameter.minimum is not None or parameter.maximum is not None):
+                    low = '' if parameter.minimum is None else parameter.minimum
+                    high = '' if parameter.maximum is None else parameter.maximum
+                    allowed = f'{parameter.type} {low}–{high}'
+                else:
+                    allowed = parameter.type
+                lines.append(f'  · {parameter.key}：{allowed}（默认 {parameter.default}）')
+        return ToolResult('\n'.join(lines), summary='查看可用模型')
+
     def get_node(self, node_id: str) -> ToolResult:
         snapshot = self.repository.get_snapshot(self.canvas_id)
         self.last_seen_revision = snapshot.revision
@@ -153,8 +171,11 @@ class CanvasTools:
             lines.append(f"文字：{data.get('content') or data.get('prompt') or '（空）'}")
         else:
             lines.append(f"Prompt：{data.get('prompt') or '（空）'}")
-            parameters = {**DEFAULT_PARAMETERS[node.nodeType], **(data.get('parameters') or {})}
-            lines.append(f'参数：{parameters}')
+            model = model_registry().for_node(node.nodeType, data.get('model'))
+            if model is not None:
+                parameters, _ = model.resolve_parameters(data.get('parameters'))
+                lines.append(f'模型：{model.label} [{model.id}]')
+                lines.append(f'参数：{parameters}')
             asset = next((item for item in snapshot.assets if item['id'] == data.get('assetId')), None)
             if asset:
                 size = f"{asset.get('width')}×{asset.get('height')}"
@@ -222,10 +243,14 @@ class CanvasTools:
                 data['content'] = str(spec.get('content') or spec.get('prompt') or '')
             else:
                 data['prompt'] = str(spec.get('prompt') or '')
-                problem = self._check_parameters(node_type, spec.get('parameters'))
-                if problem:
-                    return self._partial(created, problem)
-                data['parameters'] = {**DEFAULT_PARAMETERS[node_type], **(spec.get('parameters') or {})}
+                model = self._pick_model(node_type, spec.get('model'))
+                if isinstance(model, str):
+                    return self._partial(created, model)
+                parameters = self._parameters(model, {}, spec.get('parameters'))
+                if isinstance(parameters, str):
+                    return self._partial(created, parameters)
+                data['model'] = model.id
+                data['parameters'] = parameters
             x, y = spec.get('x'), spec.get('y')
             if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
                 x, y = positions[index]
@@ -258,22 +283,26 @@ class CanvasTools:
         if node['nodeType'] == 'note':
             if 'content' in changes or 'prompt' in changes:
                 data['content'] = str(changes.get('content', changes.get('prompt')) or '')
-            if 'parameters' in changes:
-                return self._error('便签没有生成参数。')
+            if 'parameters' in changes or 'model' in changes:
+                return self._error('便签没有模型和生成参数。')
         else:
             if 'prompt' in changes:
                 data['prompt'] = str(changes['prompt'] or '')
-            if 'parameters' in changes:
-                problem = self._check_parameters(node['nodeType'], changes['parameters'])
-                if problem:
-                    return self._error(problem)
-                data['parameters'] = {
-                    **DEFAULT_PARAMETERS[node['nodeType']],
-                    **(node['data'].get('parameters') or {}),
-                    **changes['parameters'],
-                }
+            if 'parameters' in changes or 'model' in changes:
+                current = model_registry().for_node(node['nodeType'], node['data'].get('model'))
+                model = self._pick_model(node['nodeType'], changes.get('model')) if 'model' in changes else current
+                if isinstance(model, str) or model is None:
+                    return self._error(model or '没有可用的模型。')
+                # Switching models keeps whatever settings still make sense for the new one.
+                kept = {key: value for key, value in (node['data'].get('parameters') or {}).items()
+                        if not model.resolve_parameters({key: value})[1]}
+                parameters = self._parameters(model, kept, changes.get('parameters'))
+                if isinstance(parameters, str):
+                    return self._error(parameters)
+                data['model'] = model.id
+                data['parameters'] = parameters
         if not data:
-            return self._error('没有要修改的内容（可改 title、prompt / content、parameters）。')
+            return self._error('没有要修改的内容（可改 title、prompt / content、model、parameters）。')
         aspects = {'gone'} | {conflicts.DATA_ASPECTS[key] for key in data}
         result = self._command('update_node', {'nodeId': node_id, 'data': data}, {node_id: aspects})
         if isinstance(result, ToolResult):
@@ -530,18 +559,35 @@ class CanvasTools:
         return [(right, top + index * (NODE_HEIGHT + GAP)) for index in range(count)]
 
     @staticmethod
-    def _check_parameters(node_type: str, parameters: Any) -> str | None:
-        if parameters is None:
-            return None
-        if not isinstance(parameters, dict):
+    def _pick_model(node_type: str, model_id: Any) -> ModelSpec | str:
+        """The model to use, or an explanation listing what is available."""
+        models = [spec for spec in model_registry().all() if spec.kind == node_type]
+        if not models:
+            return f'没有可用的{KIND_LABELS[node_type]}模型（models/ 目录里没有）。'
+        if model_id in (None, ''):
+            return model_registry().default_for(node_type)
+        spec = model_registry().get(str(model_id))
+        if spec is None or spec.kind != node_type:
+            names = '、'.join(f'{m.id}（{m.label}）' for m in models)
+            return f'没有这个{KIND_LABELS[node_type]}模型：{model_id}。可用：{names}。用 list_models 查看详情。'
+        return spec
+
+    @staticmethod
+    def _parameters(model: ModelSpec, base: dict[str, Any], changes: Any) -> dict[str, Any] | str:
+        """Merged, validated parameters for `model`, or an explanation of what's wrong."""
+        if changes is None:
+            changes = {}
+        if not isinstance(changes, dict):
             return 'parameters 必须是对象。'
-        allowed = IMAGE_PARAMETERS if node_type == 'image' else VIDEO_PARAMETERS
-        for key, value in parameters.items():
-            if key not in allowed:
-                return f"{KIND_LABELS[node_type]}节点没有参数 {key}，可用：{', '.join(allowed)}。"
-            if value not in allowed[key] or isinstance(value, bool) != isinstance(allowed[key][0], bool):
-                return f"{key} 只能是：{', '.join(str(item) for item in allowed[key])}。"
-        return None
+        known = {parameter.key: parameter for parameter in model.parameters}
+        unknown = [key for key in changes if key not in known]
+        if unknown:
+            return f"{model.label} 没有参数 {', '.join(unknown)}，可用：{', '.join(known) or '无'}。"
+        resolved, problems = model.resolve_parameters({**base, **changes})
+        bad = [problem for problem in problems if problem.split(' ')[0] in changes]
+        if bad:
+            return '；'.join(bad) + '。'
+        return resolved
 
     @staticmethod
     def _partial(created: list[str], message: str) -> ToolResult:

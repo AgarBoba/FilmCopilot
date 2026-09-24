@@ -74,7 +74,7 @@ def test_options_lock_down_tools_and_permissions(repository):
     options = factory.clients[0].options
     assert options.tools == [] and options.model == 'claude-opus-5-5'
     memory_tools = ('remember', 'update_memory', 'forget', 'recall')
-    assert all('get_' in name or 'view_' in name or 'wait_' in name or name.endswith(memory_tools)
+    assert all('get_' in name or 'view_' in name or 'wait_' in name or 'list_' in name or name.endswith(memory_tools)
                for name in options.allowed_tools)
     assert not any(name.endswith(('generate', 'update_node', 'delete_nodes')) for name in options.allowed_tools)
     assert '[权限档位]' in factory.clients[0].prompts[0]

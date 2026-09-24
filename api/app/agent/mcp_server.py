@@ -11,7 +11,7 @@ from claude_agent_sdk import ToolAnnotations, create_sdk_mcp_server, tool
 from .canvas_tools import CanvasTools, ToolResult
 
 SERVER_NAME = 'canvas'
-READ_ONLY = ('get_canvas', 'get_node', 'view_asset', 'wait_for_generation')
+READ_ONLY = ('get_canvas', 'get_node', 'view_asset', 'wait_for_generation', 'list_models')
 # Memory tools never touch the canvas and never need confirmation (changes show in the chat with undo).
 MEMORY_TOOLS = ('remember', 'update_memory', 'forget', 'recall')
 MEMORY_CATEGORY_HELP = (
@@ -31,12 +31,10 @@ NODE_SPEC = {
         'title': {'type': 'string', 'description': '节点名称；不填自动编号'},
         'prompt': {'type': 'string', 'description': '图片 / 视频节点的 Prompt'},
         'content': {'type': 'string', 'description': '便签文字（会作为下游节点 Prompt 的前缀）'},
+        'model': {'type': 'string', 'description': '图片 / 视频节点用的模型 id（见 list_models）；不填用默认模型'},
         'parameters': {
             'type': 'object',
-            'description': (
-                '图片：size 1K|2K，aspectRatio match_input_image|1:1|16:9|9:16|4:3，outputFormat png|jpeg；'
-                '视频：duration 5|10，resolution 480p|720p，aspectRatio adaptive|16:9|9:16|1:1，generateAudio true|false'
-            ),
+            'description': '这个模型的参数，只写要改的项；每个模型的参数和可选值见 list_models',
         },
         'x': {'type': 'number'},
         'y': {'type': 'number'},
@@ -47,6 +45,9 @@ NODE_SPEC = {
 StepCallback = Callable[[str, dict[str, Any], ToolResult], Awaitable[None]]
 
 TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
+    ('list_models',
+     '列出可用的图片 / 视频模型：擅长什么、参考图上限、参数和可选值、是否缺少密钥。选模型或设参数前先看。',
+     {'type': 'object', 'properties': {'kind': {'type': 'string', 'enum': ['image', 'video']}}}),
     ('get_canvas',
      '读取画布：节点 ID、类型、名称、位置、Prompt 摘要、生成状态、上游。传 node_ids 只看这些节点及其上下游。',
      {'type': 'object', 'properties': {'node_ids': {'type': 'array', 'items': {'type': 'string'}}}}),
@@ -57,10 +58,11 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
     ('create_nodes', '新建一个或多个节点。不填位置时自动排在画布右侧。',
      {'type': 'object', 'properties': {'nodes': {'type': 'array', 'items': NODE_SPEC, 'minItems': 1}},
       'required': ['nodes']}),
-    ('update_node', '修改节点：title、prompt（便签用 content）、parameters（只写要改的项）。生成中的节点不能改。',
+    ('update_node', '修改节点：title、prompt（便签用 content）、model（换模型）、parameters（只写要改的项）。生成中的节点不能改。',
      {'type': 'object', 'properties': {
          'node_id': {'type': 'string'},
          'title': {'type': 'string'}, 'prompt': {'type': 'string'}, 'content': {'type': 'string'},
+         'model': NODE_SPEC['properties']['model'],
          'parameters': NODE_SPEC['properties']['parameters'],
      }, 'required': ['node_id']}),
     ('connect', '连线：source 作为 target 的参考。图片→图片/视频，视频→视频，便签→图片/视频（文字加到 Prompt 前）。',
@@ -103,6 +105,8 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
 
 
 async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> ToolResult:
+    if name == 'list_models':
+        return tools.list_models(args.get('kind'))
     if name == 'get_canvas':
         return tools.get_canvas(args.get('node_ids'))
     if name == 'get_node':
@@ -112,7 +116,7 @@ async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> Tool
     if name == 'create_nodes':
         return tools.create_nodes(args['nodes'])
     if name == 'update_node':
-        changes = {key: args[key] for key in ('title', 'prompt', 'content', 'parameters') if key in args}
+        changes = {key: args[key] for key in ('title', 'prompt', 'content', 'model', 'parameters') if key in args}
         return tools.update_node(args['node_id'], changes)
     if name == 'connect':
         return tools.connect(args['source_id'], args['target_id'])

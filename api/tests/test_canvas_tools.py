@@ -231,3 +231,17 @@ def test_retrying_the_same_step_is_idempotent(repository):
     )
     tools.service.execute(canvas_id, envelope)
     assert len(repository.get_snapshot(canvas_id).nodes) == 1
+
+
+def test_models_are_chosen_validated_and_switched(repository):
+    tools, _, canvas_id = setup(repository)
+    listed = tools.list_models()
+    assert '[seedream-5-pro] Seedream 5 Pro' in listed.text and 'aspectRatio' in listed.text
+    (node,) = tools.create_nodes([{'type': 'image', 'prompt': '兔子', 'parameters': {'aspectRatio': '16:9'}}]).touched
+    data = repository.node_snapshot(canvas_id, node)['data']
+    assert data['model'] == 'seedream-5-pro' and data['parameters']['aspectRatio'] == '16:9'
+    wrong = tools.create_nodes([{'type': 'image', 'model': 'seedance-2.0-mini'}])
+    assert wrong.is_error and '没有这个图片模型' in wrong.text and 'seedream-5-pro' in wrong.text
+    bad = tools.update_node(node, {'parameters': {'steps': 3}})
+    assert bad.is_error and '没有参数 steps' in bad.text
+    assert '模型：Seedream 5 Pro' in tools.get_node(node).text

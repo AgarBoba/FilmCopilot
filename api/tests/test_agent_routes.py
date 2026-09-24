@@ -136,3 +136,15 @@ def test_memory_endpoints(tmp_path, monkeypatch):
         assert client.delete(f'/api/memories/{memory_id}').status_code == 204
         assert client.get('/api/memories').json()['project'] == []
         assert client.patch(f'/api/memories/{memory_id}', json={'content': 'x'}).status_code == 404
+
+
+def test_models_endpoint_lists_models_and_missing_keys(tmp_path, monkeypatch):
+    monkeypatch.delenv('REPLICATE_API_TOKEN', raising=False)
+    app = make_client(tmp_path, monkeypatch, FakeFactory())
+    with TestClient(app) as client:
+        body = client.get('/api/models').json()
+        ids = [m['id'] for m in body['models']]
+        assert 'seedream-5-pro' in ids and 'seedance-2.0-mini' in ids and body['errors'] == []
+        seedream = next(m for m in body['models'] if m['id'] == 'seedream-5-pro')
+        assert seedream['missingEnv'] == ['REPLICATE_API_TOKEN'] and seedream['maxImages'] == 10
+        assert [p['key'] for p in seedream['parameters']] == ['size', 'aspectRatio', 'outputFormat']

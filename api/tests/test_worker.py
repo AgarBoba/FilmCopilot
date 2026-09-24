@@ -17,8 +17,10 @@ class FakeProvider:
     def fail_with(self, message: str):
         self.failure = message
 
-    def create_prediction(self, input_data):
-        self.received_prompt = input_data.prompt
+    def create_prediction(self, model, request):
+        self.received_prompt = request.prompt
+        self.received_model = model.id
+        self.received_parameters = request.parameters
         return PredictionRef('prediction-1')
 
     def get_prediction(self, prediction_id: str):

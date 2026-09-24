@@ -15,17 +15,23 @@ export interface AssetSummary {
   durationSeconds?: number;
 }
 
+/**
+ * Parameters depend on the node's model (models/*.json), so they are an open record.
+ * The named fields are the bundled Seedream / Seedance ones, kept for readability.
+ */
 export interface ImageGenerationParameters {
-  size: '1K' | '2K';
-  aspectRatio: string;
-  outputFormat: 'png' | 'jpeg';
+  size?: string;
+  aspectRatio?: string;
+  outputFormat?: string;
+  [key: string]: unknown;
 }
 
 export interface VideoGenerationParameters {
-  duration: number;
-  resolution: '480p' | '720p';
-  aspectRatio: string;
-  generateAudio: boolean;
+  duration?: number;
+  resolution?: string;
+  aspectRatio?: string;
+  generateAudio?: boolean;
+  [key: string]: unknown;
 }
 
 export type GenerationParameters =

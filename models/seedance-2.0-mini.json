@@ -1,0 +1,26 @@
+{
+  "id": "seedance-2.0-mini",
+  "label": "Seedance 2.0 Mini",
+  "kind": "video",
+  "provider": "replicate",
+  "providerModel": "bytedance/seedance-2.0-mini",
+  "default": true,
+  "description": "字节跳动的视频模型：图生视频 / 文生视频，可参考最多 9 张图和 3 段视频，5 或 10 秒，可带声音。",
+  "inputs": {
+    "prompt": "prompt",
+    "images": { "field": "reference_images", "max": 9 },
+    "videos": { "field": "reference_videos", "max": 3 }
+  },
+  "parameters": [
+    { "key": "duration", "label": "Duration", "type": "enum", "field": "duration", "default": 5,
+      "options": [{ "value": 5, "label": "5s" }, { "value": 10, "label": "10s" }] },
+    { "key": "resolution", "label": "Resolution", "type": "enum", "field": "resolution", "default": "720p",
+      "options": [{ "value": "480p", "label": "480p" }, { "value": "720p", "label": "720p" }] },
+    { "key": "aspectRatio", "label": "Aspect ratio", "type": "enum", "field": "aspect_ratio", "default": "adaptive",
+      "options": [
+        { "value": "adaptive", "label": "Adaptive" }, { "value": "16:9", "label": "16:9" },
+        { "value": "9:16", "label": "9:16" }, { "value": "1:1", "label": "1:1" }
+      ] },
+    { "key": "generateAudio", "label": "Audio", "type": "boolean", "field": "generate_audio", "default": true }
+  ]
+}

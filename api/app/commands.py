@@ -275,11 +275,15 @@ class CanvasCommandService:
             )
         if 'parameters' in payload:
             snapshot['parameters'] = payload['parameters']
-        provider = (
-            'bytedance/seedream-5-pro'
-            if node_type == 'image'
-            else 'bytedance/seedance-2.0-mini'
-        )
+        if 'model' in payload:
+            snapshot['model'] = payload['model']
+        from .models_registry import registry
+        model = registry().for_node(node_type, snapshot.get('model'))
+        if model is None:
+            raise DomainError('NO_MODEL', f"没有可用的{'图片' if node_type == 'image' else '视频'}模型：检查 models/ 目录")
+        snapshot['model'] = model.id
+        snapshot['parameters'], _ = model.resolve_parameters(snapshot.get('parameters'))
+        provider = f'{model.provider}:{model.provider_model}'
         job_id = self.repository.create_generation_job(
             canvas_id,
             node_id,

@@ -9,7 +9,6 @@ import { EmptyPreview } from './EmptyPreview';
 import { MediaNodeActions } from './MediaNodeActions';
 import { ReferenceStrip, normalizeReferences, type NodeReference } from './ReferenceStrip';
 import { GenerationOverlay, isGenerationBusy } from './GenerationOverlay';
-import { getDefaultVideoParameters } from './generationParameters';
 import { PromptComposer } from './PromptComposer';
 import { VideoPlayer } from './VideoPlayer';
 
@@ -33,7 +32,10 @@ export interface VideoNodeData {
   onRemoveReference?: (reference: NodeReference) => void;
   onPromptChange?: (prompt: string) => void;
   onParametersChange?: (parameters: VideoGenerationParameters) => void;
-  onGenerateRequest?: (request: { prompt: string; parameters: VideoGenerationParameters }) => void;
+  onGenerateRequest?: (request: { prompt: string; parameters: VideoGenerationParameters; model?: string }) => void;
+  /** Model id from models/*.json; missing means the default video model. */
+  model?: string;
+  onModelChange?: (model: string, parameters: Record<string, unknown>) => void;
   [key: string]: unknown;
 }
 
@@ -109,10 +111,12 @@ export function VideoNode({ data }: VideoNodeProps) {
       <PromptComposer
         kind="video"
         prompt={data.prompt ?? ''}
-        parameters={data.parameters ?? getDefaultVideoParameters()}
+        parameters={data.parameters}
         onPromptChange={(prompt) => data.onPromptChange?.(prompt)}
         onParametersChange={(parameters) => data.onParametersChange?.(parameters as VideoGenerationParameters)}
-        onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: VideoGenerationParameters })}
+        onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: VideoGenerationParameters; model?: string })}
+        modelId={data.model}
+        onModelChange={(model, parameters) => data.onModelChange?.(model, parameters)}
         disabled={busy}
         noteCount={noteCount}
       />

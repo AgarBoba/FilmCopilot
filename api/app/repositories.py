@@ -315,6 +315,7 @@ class CanvasRepository:
             'nodePrompt': node_prompt,
             'notePrompts': note_prompts,
             'parameters': node['data'].get('parameters', {}),
+            'model': node['data'].get('model'),
             'references': references,
             'baseCanvasRevision': self.canvas_revision(canvas_id),
         }

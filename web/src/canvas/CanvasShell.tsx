@@ -43,6 +43,7 @@ import { TooltipLayer } from './TooltipLayer';
 import { AgentPanel } from '../agent/AgentPanel';
 import { splitNoteBlock } from '../agent/Markdown';
 import { agentNodeMarks } from '../agent/agentMarks';
+import { useModelStore } from '../models/modelStore';
 import { appendText, carriesBlock, readBlock } from '../agent/blockDrag';
 import { useAgentStore } from '../agent/agentStore';
 import { isGenerationBusy } from '../nodes/GenerationOverlay';
@@ -120,6 +121,14 @@ export function CanvasShell() {
   const viewportSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useTrackpadGestures(viewportRef, flowRef);
   const closeChooser = useCallback(() => setPendingConnection(null), []);
+  // Models come from models/*.json; re-read when the window regains focus, since the
+  // user's own agent may have just added one.
+  useEffect(() => {
+    const loadModels = () => void useModelStore.getState().load();
+    loadModels();
+    window.addEventListener('focus', loadModels);
+    return () => window.removeEventListener('focus', loadModels);
+  }, []);
   const [tool, setTool] = useState<CanvasTool>('select');
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [altHeld, setAltHeld] = useState(false);
@@ -259,8 +268,12 @@ export function CanvasShell() {
         onGenerateRequest: (request: {
           prompt: string;
           parameters: ImageGenerationParameters | VideoGenerationParameters;
+          model?: string;
         }) => {
           void startGeneration(node.id, request);
+        },
+        onModelChange: (model: string, parameters: Record<string, unknown>) => {
+          void persistNodeData(node.id, { model, parameters });
         },
         onRemoveReference: (reference: NodeReference) => {
           if (!reference.edgeId) return;
@@ -524,6 +537,7 @@ export function CanvasShell() {
     request: {
       prompt: string;
       parameters: ImageGenerationParameters | VideoGenerationParameters;
+      model?: string;
     },
   ) {
     const current = useCanvasStore.getState().snapshot;
@@ -532,7 +546,10 @@ export function CanvasShell() {
       command: 'start_generation',
       baseRevision: current.revision,
       idempotencyKey: commandKey('start-generation'),
-      payload: { targetNodeId: nodeId, prompt: request.prompt, parameters: request.parameters },
+      payload: {
+        targetNodeId: nodeId, prompt: request.prompt, parameters: request.parameters,
+        ...(request.model ? { model: request.model } : {}),
+      },
     });
   }
 

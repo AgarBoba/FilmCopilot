@@ -8,7 +8,6 @@ import { EmptyPreview } from './EmptyPreview';
 import { MediaNodeActions } from './MediaNodeActions';
 import { ReferenceStrip, normalizeReferences, type NodeReference } from './ReferenceStrip';
 import { GenerationOverlay, isGenerationBusy } from './GenerationOverlay';
-import { getDefaultImageParameters } from './generationParameters';
 import { PromptComposer } from './PromptComposer';
 
 
@@ -27,7 +26,10 @@ export interface ImageNodeData {
   upstreamChanges?: string[];
   onPromptChange?: (prompt: string) => void;
   onParametersChange?: (parameters: ImageGenerationParameters) => void;
-  onGenerateRequest?: (request: { prompt: string; parameters: ImageGenerationParameters }) => void;
+  onGenerateRequest?: (request: { prompt: string; parameters: ImageGenerationParameters; model?: string }) => void;
+  /** Model id from models/*.json; missing means the default image model. */
+  model?: string;
+  onModelChange?: (model: string, parameters: Record<string, unknown>) => void;
   onRemoveReference?: (reference: NodeReference) => void;
   [key: string]: unknown;
 }
@@ -71,10 +73,12 @@ export function ImageNode({ data }: ImageNodeProps) {
       <PromptComposer
         kind="image"
         prompt={data.prompt ?? ''}
-        parameters={data.parameters ?? getDefaultImageParameters()}
+        parameters={data.parameters}
         onPromptChange={(prompt) => data.onPromptChange?.(prompt)}
         onParametersChange={(parameters) => data.onParametersChange?.(parameters as ImageGenerationParameters)}
-        onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: ImageGenerationParameters })}
+        onGenerate={(request) => data.onGenerateRequest?.(request as { prompt: string; parameters: ImageGenerationParameters; model?: string })}
+        modelId={data.model}
+        onModelChange={(model, parameters) => data.onModelChange?.(model, parameters)}
         disabled={busy}
         noteCount={noteCount}
       />

@@ -2242,3 +2242,26 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .memory-submit:disabled { opacity: 0.4; cursor: not-allowed; }
 .agent-composer-meta { gap: 2px; }
 .agent-msg-model { margin-top: 4px; color: var(--text-muted); font-size: 10.5px; opacity: 0.75; }
+
+/* Model menu spans the row; parameters below come from the model's definition. */
+.prompt-options .prompt-model { grid-column: 1 / -1; }
+.prompt-options input[type='number'],
+.prompt-options input[type='text'] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 24%, transparent);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 12px;
+}
+.prompt-missing-key {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 10%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+}

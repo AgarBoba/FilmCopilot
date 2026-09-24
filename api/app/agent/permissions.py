@@ -11,7 +11,7 @@ from uuid import uuid4
 
 Decision = Literal['allow', 'ask', 'deny']
 
-READ_ONLY_TOOLS = {'get_canvas', 'get_node', 'view_asset', 'wait_for_generation'}
+READ_ONLY_TOOLS = {'get_canvas', 'get_node', 'view_asset', 'wait_for_generation', 'list_models'}
 WRITE_TOOLS = {
     'create_nodes', 'update_node', 'connect', 'disconnect', 'move_nodes',
     'duplicate_nodes', 'delete_nodes', 'generate',
