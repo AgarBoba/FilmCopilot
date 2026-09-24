@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
-import { CheckIcon, CopyIcon, NoteAddIcon } from '../canvas/icons';
+import { CheckIcon, CopyIcon } from '../canvas/icons';
 import type { AgentEvent } from './agentApi';
-import { Markdown, noteBlocks } from './Markdown';
+import { Markdown } from './Markdown';
 
 interface AgentMessageProps {
   event: AgentEvent;
@@ -132,8 +132,7 @@ function ConfirmCard({ event, pending, onConfirm }: {
 
 function AssistantText({ text, onSaveToCanvas }: { text: string; onSaveToCanvas: (text: string, title?: string) => void }) {
   const [copied, setCopied] = useState(false);
-  // With note blocks, only those are worth saving (each card has its own button).
-  const hasBlocks = noteBlocks(text).length > 0;
+  // Only special blocks (tables, code, prompts, quotes) can be saved, each on its own.
   return (
     <div className="agent-msg is-assistant">
       <Markdown text={text} onSaveNote={(content, title) => onSaveToCanvas(content, title)} />
@@ -150,16 +149,6 @@ function AssistantText({ text, onSaveToCanvas }: { text: string; onSaveToCanvas:
         >
           {copied ? <CheckIcon width={14} height={14} /> : <CopyIcon width={14} height={14} />}
         </button>
-        {!hasBlocks && (
-          <button
-            type="button"
-            aria-label="存到画布"
-            data-tooltip="整段存成便签放到画布上"
-            onClick={() => onSaveToCanvas(text)}
-          >
-            <NoteAddIcon width={14} height={14} />
-          </button>
-        )}
       </div>
     </div>
   );

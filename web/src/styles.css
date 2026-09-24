@@ -1809,3 +1809,29 @@ h1 {
 .react-flow__node-note:hover .react-flow__resize-control.handle.bottom.right.note-resize,
 .react-flow__node-note.selected .react-flow__resize-control.handle.bottom.right.note-resize { opacity: 1; }
 .react-flow__node .react-flow__resize-control.handle.bottom.right.note-resize:hover { color: var(--accent); }
+
+/* ---------- Savable blocks in agent replies (table / code / prompt / quote) ---------- */
+.savable-block { position: relative; margin: 0 0 8px; }
+.savable-block > .markdown-table, .savable-block > pre, .savable-block > blockquote { margin-bottom: 0; }
+.savable-block-action {
+  position: absolute;
+  top: -12px;
+  right: 6px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.savable-block:hover > .savable-block-action,
+.savable-block:focus-within > .savable-block-action { opacity: 1; }
+.savable-block-action .agent-note-save { background: var(--node-bg); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
+.savable-block-action .agent-note-save:hover { background: var(--accent); }
+.agent-prompt-block {
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+@media (hover: none) { .savable-block-action { opacity: 1; } }

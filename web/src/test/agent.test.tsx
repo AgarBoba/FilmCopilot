@@ -80,20 +80,44 @@ describe('markdown', () => {
 });
 
 describe('agent messages', () => {
-  it('assistant replies can be saved to the canvas', () => {
+  it('only special blocks can be saved, each named after its section', () => {
     const onSave = vi.fn();
+    const text = [
+      '分镜表如下，每条提示词都写成完整的一段。',
+      '',
+      '## 实木菜板广告分镜表',
+      '',
+      '| 镜号 | 画面 |',
+      '| --- | --- |',
+      '| 1 | 兔子啃胡萝卜 |',
+      '',
+      '### 镜头 1 | 开场',
+      '',
+      '**生图提示词**',
+      '',
+      '```prompt',
+      '商业广告摄影，一只奶油色的小兔子蹲在菜板上',
+      '```',
+      '',
+      '**生视频提示词**',
+      '',
+      '> 兔子低头啃着胡萝卜，镜头慢慢往后拉远',
+      '',
+      '要我直接生成吗？',
+    ].join('\n');
     render(
-      <AgentMessage
-        event={event({ kind: 'assistant_text', text: '# 剧本' })}
-        focusTitles={{}}
-        onFocusNodes={vi.fn()}
-        onSaveToCanvas={onSave}
-        onConfirm={vi.fn()}
-        pending={false}
-      />,
+      <AgentMessage event={event({ kind: 'assistant_text', text })} focusTitles={{}} onFocusNodes={vi.fn()}
+        onSaveToCanvas={onSave} onConfirm={vi.fn()} pending={false} />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '存到画布' }));
-    expect(onSave).toHaveBeenCalledWith('# 剧本');
+    const buttons = screen.getAllByRole('button', { name: '存成便签' });
+    expect(buttons).toHaveLength(3); // table, prompt, quote — plain text has none
+    fireEvent.click(buttons[0]);
+    expect(onSave).toHaveBeenLastCalledWith('| 镜号 | 画面 |\n| --- | --- |\n| 1 | 兔子啃胡萝卜 |', '实木菜板广告分镜表');
+    fireEvent.click(buttons[1]);
+    expect(onSave).toHaveBeenLastCalledWith('商业广告摄影，一只奶油色的小兔子蹲在菜板上', '镜头 1 开场 · 生图提示词');
+    fireEvent.click(buttons[2]);
+    expect(onSave).toHaveBeenLastCalledWith('兔子低头啃着胡萝卜，镜头慢慢往后拉远', '镜头 1 开场 · 生视频提示词');
+    expect(screen.queryByRole('button', { name: '存到画布' })).toBeNull(); // no whole-message save
   });
 
   it('confirmation card answers once', () => {
@@ -132,17 +156,14 @@ describe('agent messages', () => {
     expect(screen.getByText('补充：后面都用暖色调')).toBeInTheDocument();
   });
 
-  it('note blocks save only the finished part, with its heading as the title', () => {
+  it('note cards save their body with the heading as title', () => {
     const onSave = vi.fn();
-    const text = '改好了，镜头 2 更暖一些：\n\n```note\n# 镜头 2 Prompt\n\n低角度微距，暖光扫过木纹\n```\n\n要我直接生成吗？';
+    const text = '改好了：\n\n```note\n# 镜头 2 Prompt\n\n低角度微距，暖光扫过木纹\n```';
     render(
       <AgentMessage event={event({ kind: 'assistant_text', text })} focusTitles={{}} onFocusNodes={vi.fn()}
         onSaveToCanvas={onSave} onConfirm={vi.fn()} pending={false} />,
     );
-    expect(screen.getByText('镜头 2 Prompt')).toBeInTheDocument();
-    // the whole-message button is gone; the card's button saves just the block
-    expect(screen.getAllByRole('button', { name: '存到画布' })).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: '存到画布' }));
+    fireEvent.click(screen.getByRole('button', { name: '存成便签' }));
     expect(onSave).toHaveBeenCalledWith('低角度微距，暖光扫过木纹', '镜头 2 Prompt');
   });
 
