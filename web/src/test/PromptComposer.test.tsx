@@ -86,4 +86,13 @@ describe('PromptComposer with a model registry', () => {
     expect(onGenerate).toHaveBeenCalledWith({ prompt: '兔子', model: 'flux-dev', parameters: { steps: 40, aspectRatio: '16:9', safety: false } });
     useModelStore.setState({ models: FALLBACK_MODELS });
   });
+
+  it('hides the model menu when only one model of that kind exists', async () => {
+    const { useModelStore, FALLBACK_MODELS } = await import('../models/modelStore');
+    useModelStore.setState({ models: FALLBACK_MODELS });
+    render(<PromptComposer kind="video" prompt="" parameters={{}} onPromptChange={vi.fn()}
+      onParametersChange={vi.fn()} onGenerate={vi.fn()} />);
+    expect(screen.queryByLabelText('model')).toBeNull();
+    expect(screen.getByLabelText('duration')).toBeTruthy();
+  });
 });
