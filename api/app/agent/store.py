@@ -70,13 +70,63 @@ class AgentStore:
             raise DomainError('NOT_FOUND', f'Agent session {session_id} was not found')
         return dict(row)
 
-    def list_sessions(self, project_id: str) -> list[dict[str, Any]]:
+    def list_sessions(self, project_id: str, canvas_id: str | None = None) -> list[dict[str, Any]]:
+        """Newest activity first, each with message count, last activity time and a one-line preview."""
+        query = '''
+            SELECT s.*,
+                   (SELECT COUNT(*) FROM agent_messages m WHERE m.session_id = s.id) AS message_count,
+                   COALESCE((SELECT MAX(m.created_at) FROM agent_messages m WHERE m.session_id = s.id),
+                            s.created_at) AS last_active_at
+            FROM agent_sessions s
+            WHERE s.project_id = ?
+        '''
+        params: list[Any] = [project_id]
+        if canvas_id:
+            query += ' AND s.canvas_id = ?'
+            params.append(canvas_id)
+        query += ' ORDER BY last_active_at DESC, s.rowid DESC'
         with self.database.connection() as connection:
-            rows = connection.execute(
-                'SELECT * FROM agent_sessions WHERE project_id = ? ORDER BY created_at DESC, rowid DESC',
-                (project_id,),
-            ).fetchall()
-        return [dict(row) for row in rows]
+            rows = connection.execute(query, params).fetchall()
+            sessions = [dict(row) for row in rows]
+            for session in sessions:
+                session['preview'] = self._preview(connection, session['id'])
+                if not session['title']:
+                    first = connection.execute(
+                        'SELECT content_json FROM agent_messages WHERE session_id = ? AND role = ? ORDER BY id LIMIT 1',
+                        (session['id'], 'user'),
+                    ).fetchone()
+                    text = ' '.join(str(json.loads(first['content_json']).get('text') or '').split()) if first else ''
+                    session['title'] = text[:30] or None
+        return sessions
+
+    @staticmethod
+    def _preview(connection: Any, session_id: str) -> str:
+        rows = connection.execute(
+            'SELECT content_json FROM agent_messages WHERE session_id = ? AND role IN (?, ?) '
+            'ORDER BY id DESC LIMIT 5',
+            (session_id, 'assistant', 'user'),
+        ).fetchall()
+        for row in rows:
+            text = str(json.loads(row['content_json']).get('text') or '')
+            line = ' '.join(text.replace('#', ' ').replace('*', '').replace('|', ' ').replace('`', '').split())
+            if line:
+                return line[:80]
+        return ''
+
+    def update_session(self, session_id: str, title: str | None = None, archived: bool | None = None) -> dict[str, Any]:
+        self.get_session(session_id)
+        with self.database.transaction() as connection:
+            if title is not None:
+                clean = ' '.join(title.split())[:60]
+                if not clean:
+                    raise DomainError('INVALID_PAYLOAD', '对话名称不能为空')
+                connection.execute('UPDATE agent_sessions SET title = ? WHERE id = ?', (clean, session_id))
+            if archived is not None:
+                connection.execute(
+                    'UPDATE agent_sessions SET archived_at = CASE WHEN ? THEN CURRENT_TIMESTAMP END WHERE id = ?',
+                    (1 if archived else 0, session_id),
+                )
+        return self.get_session(session_id)
 
     def set_session_title(self, session_id: str, title: str) -> None:
         with self.database.transaction() as connection:

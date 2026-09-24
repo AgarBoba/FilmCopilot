@@ -16,6 +16,12 @@ export interface AgentSession {
   title: string | null;
   created_at: string;
   activeRunId?: string | null;
+  /** Filled by the list endpoint. */
+  preview?: string;
+  message_count?: number;
+  last_active_at?: string;
+  status?: 'idle' | 'running' | 'waiting';
+  archived_at?: string | null;
 }
 
 /** One entry of the agent stream. Persisted entries have an `id`; text deltas do not. */
@@ -80,6 +86,8 @@ export const agentApi = {
     call<AgentSession>('/agent/sessions', { method: 'POST', body: JSON.stringify({ canvasId }) }),
   listSessions: (canvasId: string) =>
     call<AgentSession[]>(`/agent/sessions?canvasId=${encodeURIComponent(canvasId)}`),
+  updateSession: (sessionId: string, changes: { title?: string; archived?: boolean }) =>
+    call<AgentSession>(`/agent/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
   messages: (sessionId: string, after = 0) =>
     call<AgentEvent[]>(`/agent/sessions/${sessionId}/messages?after=${after}`),
   send: (sessionId: string, text: string, focusNodeIds: string[]) =>

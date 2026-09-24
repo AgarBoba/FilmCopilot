@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { CloseIcon, PlusIcon, SendIcon, StopIcon, UndoIcon } from '../canvas/icons';
+import { ChatsIcon, CloseIcon, PlusIcon, SendIcon, StopIcon, UndoIcon } from '../canvas/icons';
 import { agentApi, type AgentEvent, type PermissionMode } from './agentApi';
 import { AgentMessage } from './AgentMessage';
 import { pendingConfirmations, undoableRuns, useAgentStore } from './agentStore';
 import { Markdown } from './Markdown';
+import { SessionList } from './SessionList';
 
 const MODE_OPTIONS: { value: PermissionMode; label: string }[] = [
   { value: 'confirm_all', label: '每步确认' },
@@ -36,6 +37,8 @@ export function AgentPanel({
   const { sessionId, events, streaming, activeRunId, settings, configured, sessions } = store;
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  /** 'list' shows every chat on this canvas; 'chat' the open one. */
+  const [view, setView] = useState<'chat' | 'list'>('chat');
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -52,7 +55,8 @@ export function AgentPanel({
         useAgentStore.setState({
           configured: status.configured, model: status.model, settings: projectSettings, sessions: list,
         });
-        if (!useAgentStore.getState().sessionId && list.length) await openSession(list[0].id);
+        const recent = list.find((item) => !item.archived_at && (item.message_count ?? 0) > 0);
+        if (!useAgentStore.getState().sessionId && recent) await openSession(recent.id);
       } catch (error) {
         useAgentStore.setState({ error: error instanceof Error ? error.message : '无法连接 Agent' });
       }
@@ -62,6 +66,25 @@ export function AgentPanel({
       cancelled = true;
     };
   }, [canvasId, projectId]);
+
+  // Other chats may be running in the background: keep their status fresh.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const list = await agentApi.listSessions(canvasId);
+        if (!cancelled) useAgentStore.setState({ sessions: list });
+      } catch {
+        /* offline for a moment: keep the last list */
+      }
+    };
+    const timer = setInterval(() => void refresh(), view === 'list' ? 2000 : 5000);
+    if (view === 'list') void refresh();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [canvasId, view]);
 
   // Live stream for the open session.
   useEffect(() => {
@@ -85,17 +108,42 @@ export function AgentPanel({
   }, [events, streaming]);
 
   async function openSession(id: string) {
+    setView('chat');
+    if (id === useAgentStore.getState().sessionId) return;
     const history = await agentApi.messages(id);
     useAgentStore.getState().reset(id, history);
     const listed = useAgentStore.getState().sessions.find((item) => item.id === id);
     if (listed?.activeRunId) useAgentStore.setState({ activeRunId: listed.activeRunId });
   }
 
-  async function newSession() {
-    const session = await agentApi.createSession(canvasId);
-    useAgentStore.setState({ sessions: [session, ...useAgentStore.getState().sessions] });
-    useAgentStore.getState().reset(session.id);
-    inputRef.current?.focus();
+  /** A new chat is only created on the server when its first message is sent. */
+  function newSession() {
+    useAgentStore.getState().reset(null);
+    setView('chat');
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  async function renameSession(id: string, title: string) {
+    try {
+      const updated = await agentApi.updateSession(id, { title });
+      useAgentStore.setState({
+        sessions: useAgentStore.getState().sessions.map((item) => (item.id === id ? { ...item, ...updated, title: updated.title ?? item.title } : item)),
+      });
+    } catch (error) {
+      useAgentStore.setState({ error: error instanceof Error ? error.message : '改名失败' });
+    }
+  }
+
+  async function archiveSession(id: string, archived: boolean) {
+    try {
+      const updated = await agentApi.updateSession(id, { archived });
+      useAgentStore.setState({
+        sessions: useAgentStore.getState().sessions.map((item) => (item.id === id ? { ...item, ...updated, title: updated.title ?? item.title } : item)),
+      });
+      if (archived && id === useAgentStore.getState().sessionId) useAgentStore.getState().reset(null);
+    } catch (error) {
+      useAgentStore.setState({ error: error instanceof Error ? error.message : '归档失败' });
+    }
   }
 
   async function send() {
@@ -106,7 +154,9 @@ export function AgentPanel({
       let id = sessionId;
       if (!id) {
         const session = await agentApi.createSession(canvasId);
-        useAgentStore.setState({ sessions: [session, ...sessions] });
+        useAgentStore.setState({
+          sessions: [{ ...session, title: text.slice(0, 30), message_count: 1, status: 'running' }, ...sessions],
+        });
         useAgentStore.getState().reset(session.id);
         id = session.id;
       }
@@ -149,6 +199,11 @@ export function AgentPanel({
   const undoable = undoableRuns(events);
   const lastFinishedRun = [...events].reverse().find((event) => event.kind === 'run_finished')?.runId ?? null;
   const focusTitles = { ...nodeTitles };
+  const currentTitle = sessions.find((item) => item.id === sessionId)?.title || '新对话';
+  // Another chat on this canvas needs attention (waiting beats running).
+  const others = sessions.filter((item) => item.id !== sessionId && !item.archived_at);
+  const backgroundBusy = others.some((item) => item.status === 'waiting') ? 'waiting'
+    : others.some((item) => item.status === 'running') ? 'running' : null;
 
   return (
     <aside className="agent-panel nowheel" aria-label="Agent 对话" onKeyDown={(event) => {
@@ -160,12 +215,23 @@ export function AgentPanel({
       }
     }}>
       <header className="agent-header">
-        <div className="agent-title">
-          <span>Agent</span>
+        <button
+          type="button"
+          className={`agent-icon agent-chats ${view === 'list' ? 'is-active' : ''}`}
+          aria-label="全部对话"
+          data-tooltip="全部对话"
+          data-tooltip-side="bottom"
+          onClick={() => setView(view === 'list' ? 'chat' : 'list')}
+        >
+          <ChatsIcon width={16} height={16} />
+          {backgroundBusy && <span className={`agent-chats-badge is-${backgroundBusy}`} aria-hidden="true" />}
+        </button>
+        <button type="button" className="agent-title" onClick={() => setView('list')} data-tooltip="切换对话" data-tooltip-side="bottom">
+          <span className="agent-title-text">{currentTitle}</span>
           {store.model && <span className="agent-model">{store.model}</span>}
-        </div>
+        </button>
         <button type="button" className="agent-icon" aria-label="新对话" data-tooltip="新对话" data-tooltip-side="bottom"
-          onClick={() => void newSession()}>
+          onClick={newSession}>
           <PlusIcon width={16} height={16} />
         </button>
         <button type="button" className="agent-icon" aria-label="关闭" data-tooltip="关闭" data-tooltip-shortcut="⌘J"
@@ -174,20 +240,19 @@ export function AgentPanel({
         </button>
       </header>
 
+      {view === 'list' ? (
+        <SessionList
+          sessions={sessions}
+          currentId={sessionId}
+          onOpen={(id) => void openSession(id)}
+          onNew={newSession}
+          onBack={() => setView('chat')}
+          onRename={(id, title) => void renameSession(id, title)}
+          onArchive={(id, archived) => void archiveSession(id, archived)}
+        />
+      ) : (
+      <>
       <div className="agent-toolbar">
-        <select
-          aria-label="历史对话"
-          value={sessionId ?? ''}
-          onChange={(event) => void openSession(event.target.value)}
-          disabled={!sessions.length}
-        >
-          {!sessionId && <option value="">新对话</option>}
-          {sessions.map((session) => (
-            <option key={session.id} value={session.id}>
-              {session.title || '未命名对话'}
-            </option>
-          ))}
-        </select>
         <select
           aria-label="权限档位"
           value={settings?.permissionMode ?? 'confirm_generation'}
@@ -280,6 +345,8 @@ export function AgentPanel({
           )}
         </div>
       </footer>
+      </>
+      )}
     </aside>
   );
 }

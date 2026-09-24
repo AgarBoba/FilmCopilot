@@ -19,6 +19,11 @@ class CreateSessionRequest(BaseModel):
     canvasId: str
 
 
+class UpdateSessionRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    archived: bool | None = None
+
+
 class SendMessageRequest(BaseModel):
     text: str
     focusNodeIds: list[str] = Field(default_factory=list)
@@ -59,9 +64,22 @@ def create_session(request: Request, body: CreateSessionRequest) -> dict:
 def list_sessions(request: Request, canvasId: str | None = None, projectId: str | None = None) -> list[dict]:
     store = _store(request)
     project = projectId or (store.project_for_canvas(canvasId) if canvasId else 'default')
-    sessions = store.list_sessions(project)
+    sessions = store.list_sessions(project, canvasId)
     service = _service(request)
-    return [{**session, 'activeRunId': service.active_run(session['id'])} for session in sessions]
+    result = []
+    for session in sessions:
+        run_id = service.active_run(session['id'])
+        status = 'idle'
+        if run_id:
+            status = 'waiting' if store.get_run(run_id)['status'] == 'waiting_confirmation' else 'running'
+        result.append({**session, 'activeRunId': run_id, 'status': status})
+    return result
+
+
+@router.patch('/agent/sessions/{session_id}')
+def update_session(request: Request, session_id: str, body: UpdateSessionRequest) -> dict:
+    """Rename or archive / restore a chat. Chats are never deleted."""
+    return _store(request).update_session(session_id, body.title, body.archived)
 
 
 @router.get('/agent/sessions/{session_id}/messages')

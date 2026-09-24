@@ -83,3 +83,31 @@ def test_api_key_never_leaves_backend(tmp_path, monkeypatch, caplog):
     assert SECRET not in caplog.text
     assert SECRET.encode() not in (tmp_path / 'canvas.sqlite3').read_bytes()
     assert SECRET not in repr(factory.clients[0].options)
+
+
+def test_sessions_are_per_canvas_with_preview_status_rename_and_archive(tmp_path, monkeypatch):
+    factory = FakeFactory([('text', '## 分镜表\n\n| 镜头 | 画面 |\n| --- | --- |')])
+    app = make_client(tmp_path, monkeypatch, factory)
+    with TestClient(app) as client:
+        client.post('/api/canvases', json={'name': 'A', 'canvasId': 'c1'})
+        client.post('/api/canvases', json={'name': 'B', 'canvasId': 'c2'})
+        first = client.post('/api/agent/sessions', json={'canvasId': 'c1'}).json()
+        other_canvas = client.post('/api/agent/sessions', json={'canvasId': 'c2'}).json()
+        client.post(f"/api/agent/sessions/{first['id']}/messages", json={'text': '做个分镜'})
+        wait_for(client, first['id'], 'run_finished')
+
+        listed = client.get('/api/agent/sessions', params={'canvasId': 'c1'}).json()
+        assert [s['id'] for s in listed] == [first['id']]  # other canvas's chat is not here
+        assert listed[0]['preview'] == '分镜表 镜头 画面 --- ---'
+        assert listed[0]['message_count'] >= 2 and listed[0]['status'] == 'idle'
+        assert other_canvas['id'] in [s['id'] for s in client.get('/api/agent/sessions', params={'canvasId': 'c2'}).json()]
+
+        renamed = client.patch(f"/api/agent/sessions/{first['id']}", json={'title': '  菜板   分镜 '}).json()
+        assert renamed['title'] == '菜板 分镜'
+        assert client.patch(f"/api/agent/sessions/{first['id']}", json={'title': '   '}).status_code in (400, 422)
+
+        assert client.patch(f"/api/agent/sessions/{first['id']}", json={'archived': True}).json()['archived_at']
+        # archived chats are still listed (the panel shows them under 已归档) and keep their messages
+        assert client.get('/api/agent/sessions', params={'canvasId': 'c1'}).json()[0]['archived_at']
+        assert client.get(f"/api/agent/sessions/{first['id']}/messages").json()
+        assert client.patch(f"/api/agent/sessions/{first['id']}", json={'archived': False}).json()['archived_at'] is None

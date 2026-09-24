@@ -256,3 +256,56 @@ describe('dragging reply blocks', () => {
     });
   });
 });
+
+describe('chat list', () => {
+  const base = { project_id: 'default', canvas_id: 'c1', created_at: '2026-09-01 01:00:00' };
+  const today = new Date();
+  const utc = (date: Date) => date.toISOString().slice(0, 19).replace('T', ' ');
+  const sessions = [
+    { ...base, id: 'a', title: '菜板广告分镜', preview: '新建 9 个节点', message_count: 6, status: 'running' as const, last_active_at: utc(today) },
+    { ...base, id: 'b', title: '兔子三种风格', preview: '生成 3 个节点？', message_count: 4, status: 'waiting' as const, last_active_at: utc(today) },
+    { ...base, id: 'c', title: '广告思路讨论', preview: '可以从菜板的质感入手', message_count: 8, status: 'idle' as const, last_active_at: '2026-01-02 03:00:00' },
+    { ...base, id: 'd', title: '旧的', preview: '', message_count: 2, status: 'idle' as const, archived_at: '2026-09-02 00:00:00' },
+    { ...base, id: 'e', title: null, preview: '', message_count: 0, status: 'idle' as const },
+  ];
+
+  it('groups by day, shows status, searches, and hides empty chats', async () => {
+    const { SessionList } = await import('../agent/SessionList');
+    const onOpen = vi.fn();
+    render(<SessionList sessions={sessions} currentId="c" onOpen={onOpen} onNew={vi.fn()} onBack={vi.fn()}
+      onRename={vi.fn()} onArchive={vi.fn()} />);
+    expect(screen.getByText('今天')).toBeInTheDocument();
+    expect(screen.getByText('更早')).toBeInTheDocument();
+    expect(screen.getByText('运行中')).toBeInTheDocument();
+    expect(screen.getByText('等你确认')).toBeInTheDocument();
+    expect(screen.queryByText('新对话', { selector: '.session-title' })).toBeNull(); // empty chat hidden
+    expect(screen.queryByText('旧的')).toBeNull(); // archived collapsed
+    fireEvent.change(screen.getByLabelText('搜索对话'), { target: { value: '质感' } });
+    expect(screen.getByText('广告思路讨论')).toBeInTheDocument();
+    expect(screen.queryByText('菜板广告分镜')).toBeNull();
+    fireEvent.click(screen.getByText('广告思路讨论'));
+    expect(onOpen).toHaveBeenCalledWith('c');
+  });
+
+  it('renames once, archives idle chats only, and restores archived ones', async () => {
+    const { SessionList } = await import('../agent/SessionList');
+    const onRename = vi.fn();
+    const onArchive = vi.fn();
+    render(<SessionList sessions={sessions} currentId={null} onOpen={vi.fn()} onNew={vi.fn()} onBack={vi.fn()}
+      onRename={onRename} onArchive={onArchive} />);
+    const archiveButtons = screen.getAllByRole('button', { name: '归档' });
+    expect(archiveButtons[0]).toBeDisabled(); // running
+    fireEvent.click(archiveButtons[2]);
+    expect(onArchive).toHaveBeenCalledWith('c', true);
+    fireEvent.click(screen.getAllByRole('button', { name: '重命名' })[2]);
+    const input = screen.getByLabelText('对话名称');
+    fireEvent.change(input, { target: { value: '  菜板思路  ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.blur(input);
+    expect(onRename).toHaveBeenCalledTimes(1);
+    expect(onRename).toHaveBeenCalledWith('c', '菜板思路');
+    fireEvent.click(screen.getByText(/已归档/));
+    fireEvent.click(screen.getByRole('button', { name: '恢复' }));
+    expect(onArchive).toHaveBeenCalledWith('d', false);
+  });
+});

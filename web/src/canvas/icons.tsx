@@ -93,3 +93,11 @@ export const CheckIcon = (p: IconProps) => <Icon {...p}><path d="m5 12.5 4.5 4.5
 export const NoteAddIcon = (p: IconProps) => (
   <Icon {...p}><path d="M5 4h14v11l-5 5H5z" /><path d="M14 20v-5h5M12 8v6M9 11h6" /></Icon>
 );
+export const ChatsIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z" /><path d="M16 8h2.5A1.5 1.5 0 0 1 20 9.5v6a1.5 1.5 0 0 1-1.5 1.5H18v3l-3.5-3H11a1.5 1.5 0 0 1-1.5-1.5V15" /></Icon>
+);
+export const SearchIcon = (p: IconProps) => <Icon {...p}><circle cx="11" cy="11" r="6" /><path d="m20 20-4.2-4.2" /></Icon>;
+export const PencilIcon = (p: IconProps) => <Icon {...p}><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></Icon>;
+export const ArchiveIcon = (p: IconProps) => (
+  <Icon {...p}><rect x="3.5" y="4.5" width="17" height="4" rx="1" /><path d="M5 8.5V18a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V8.5M10 12.5h4" /></Icon>
+);

@@ -1465,8 +1465,38 @@ h1 {
   gap: 4px;
   padding: 12px 10px 8px 16px;
 }
-.agent-title { display: flex; flex: 1; align-items: baseline; gap: 8px; font-weight: 700; font-size: 14px; }
+.agent-header { padding-left: 8px; }
+.agent-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-title:hover { background: var(--chrome-hover); }
+.agent-title-text { max-width: 100%; overflow: hidden; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .agent-model { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.agent-chats { position: relative; }
+.agent-chats.is-active { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.agent-chats-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--chrome-bg);
+  border-radius: 50%;
+  background: var(--accent);
+}
+.agent-chats-badge.is-waiting { background: #f59e0b; }
+.agent-chats-badge.is-running { animation: session-pulse 1.4s ease-in-out infinite; }
 .agent-icon {
   display: inline-grid;
   place-items: center;
@@ -1492,6 +1522,7 @@ h1 {
   font-size: 12px;
 }
 .agent-toolbar select:last-child { flex: 0 0 auto; }
+.agent-toolbar select { flex: 0 0 auto; }
 
 .agent-messages {
   display: flex;
@@ -1905,3 +1936,120 @@ h1 {
   white-space: nowrap;
 }
 .canvas-toast.canvas-notice button.canvas-notice-undo:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* ---------- Chat list (all chats on this canvas) ---------- */
+.session-list { display: flex; flex: 1; flex-direction: column; min-height: 0; border-top: 1px solid var(--chrome-border); }
+.session-list-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px; }
+.session-back, .session-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.session-back:hover, .session-new:hover { background: var(--chrome-hover); }
+.session-new { color: var(--accent); }
+.session-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+.session-search:focus-within { border-color: var(--accent); }
+.session-search input { flex: 1; min-width: 0; border: 0; outline: 0; color: var(--text-primary); background: transparent; font-size: 13px; }
+.session-scroll { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+.session-scroll ul { margin: 0; padding: 0; list-style: none; }
+.session-group {
+  margin: 10px 8px 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.session-archived-toggle { display: block; width: calc(100% - 16px); padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.session-empty { padding: 32px 12px; color: var(--text-muted); font-size: 13px; text-align: center; }
+.session-item { position: relative; display: flex; align-items: center; border-radius: 10px; }
+.session-item:hover, .session-item.is-current { background: var(--chrome-hover); }
+.session-item.is-current::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.session-open {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
+  color: var(--text-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.session-status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border: 1.5px solid color-mix(in srgb, var(--text-muted) 60%, transparent);
+  border-radius: 50%;
+}
+.session-item.is-running .session-status-dot { border-color: var(--accent); background: var(--accent); animation: session-pulse 1.4s ease-in-out infinite; }
+.session-item.is-waiting .session-status-dot { border-color: #f59e0b; background: #f59e0b; }
+.session-main { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.session-title-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.session-title { flex: 1; min-width: 0; overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.session-status { flex: none; color: var(--accent); font-size: 11px; font-weight: 600; }
+.session-item.is-waiting .session-status { color: #f59e0b; }
+.session-time { flex: none; color: var(--text-muted); font-size: 11px; }
+.session-preview { overflow: hidden; color: var(--text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.session-actions { display: none; flex: none; gap: 2px; padding-right: 6px; }
+.session-item:hover .session-actions, .session-item:focus-within .session-actions { display: flex; }
+.session-item:hover .session-time { visibility: hidden; }
+.session-actions button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.session-actions button:hover:not(:disabled) { color: var(--text-primary); background: color-mix(in srgb, var(--text-muted) 16%, transparent); }
+.session-actions button:disabled { opacity: 0.35; cursor: not-allowed; }
+.session-actions .session-restore { padding: 0 8px; color: var(--accent); font-size: 12px; font-weight: 600; }
+.session-rename {
+  flex: 1;
+  margin: 5px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  outline: 0;
+  color: var(--text-primary);
+  background: var(--node-bg);
+  font-size: 13px;
+}
+.session-archived .session-item { opacity: 0.75; }
+@keyframes session-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .session-item.is-running .session-status-dot, .agent-chats-badge.is-running { animation: none; }
+}
+.session-archived .session-actions { display: flex; }
+.session-archived .session-time { display: none; }

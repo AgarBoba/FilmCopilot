@@ -183,6 +183,9 @@ class Database:
             }
             if 'sdk_session_id' not in session_columns:
                 connection.execute('ALTER TABLE agent_sessions ADD COLUMN sdk_session_id TEXT')
+            if 'archived_at' not in session_columns:
+                # Archived chats leave the list but keep their transcript (never deleted).
+                connection.execute('ALTER TABLE agent_sessions ADD COLUMN archived_at TEXT')
             if 'project_id' not in canvas_columns:
                 # Existing canvases belong to the default project.
                 connection.execute(
