@@ -1093,7 +1093,7 @@ h1 {
 }
 
 .video-player video {
-  cursor: pointer;
+  cursor: default;
 }
 
 .video-controls {

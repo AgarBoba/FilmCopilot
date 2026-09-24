@@ -21,6 +21,7 @@ function formatTime(seconds: number) {
 
 /**
  * Video with a compact control bar: play/pause, progress (drag to seek), time, sound.
+ * Clicking the picture selects the node; double-clicking it plays or pauses.
  * Hovering the node still plays a silent preview (see VideoNode); once the user
  * touches the controls, playback is theirs until the pointer leaves a paused video.
  */
@@ -82,7 +83,9 @@ export function VideoPlayer({ src, poster, videoRef, manualRef }: VideoPlayerPro
         muted
         playsInline
         preload="metadata"
-        onClick={(event) => {
+        // A click selects the node like anywhere else on it (so ⌘/Shift multi-select works);
+        // play with the control bar, or double-click the picture.
+        onDoubleClick={(event) => {
           event.stopPropagation();
           togglePlay();
         }}

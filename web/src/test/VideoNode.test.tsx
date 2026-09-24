@@ -92,6 +92,21 @@ describe('node menu', () => {
 });
 
 describe('video player controls', () => {
+  it('a click on the picture reaches the node (selection); double-click plays', () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const onNodeClick = vi.fn();
+    const { container } = render(
+      <div onClick={onNodeClick}><VideoNode data={{ assetUrl: '/video.mp4' }} /></div>,
+    );
+    const video = container.querySelector('.video-player video')!;
+    fireEvent.click(video);
+    expect(onNodeClick).toHaveBeenCalledOnce();
+    expect(play).not.toHaveBeenCalled();
+    fireEvent.doubleClick(video);
+    expect(play).toHaveBeenCalledOnce();
+    play.mockRestore();
+  });
+
   it('play button takes over from hover preview', async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
