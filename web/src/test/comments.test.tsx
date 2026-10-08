@@ -75,6 +75,15 @@ describe('placing a pin', () => {
     expect(anchorAt(50, 50, video, null)).toEqual({ kind: 'media', nodeId: 'v1', x: 0.5, y: 0.5, time: 2.35 });
     expect(video.pause).toHaveBeenCalled();
     expect(video.dataset.held).toBe('1'); // hover preview must not rewind it
+    // Only looking (the hover hint) leaves a playing video alone.
+    const fresh = document.createElement('video');
+    document.querySelector('.media-preview')!.replaceChildren(fresh);
+    Object.defineProperty(fresh, 'paused', { value: false, configurable: true });
+    fresh.pause = vi.fn();
+    fresh.getBoundingClientRect = video.getBoundingClientRect;
+    expect(anchorAt(50, 50, fresh, null, true)).toMatchObject({ kind: 'media', time: 0 });
+    expect(fresh.pause).not.toHaveBeenCalled();
+    expect(fresh.dataset.held).toBeUndefined();
   });
 
   it('describes where a comment is pinned', () => {

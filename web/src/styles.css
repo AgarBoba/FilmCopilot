@@ -3437,3 +3437,27 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .version-empty, .version-error { padding: 24px 16px; color: var(--text-muted); text-align: center; font-size: 13px; }
 .version-error { color: var(--pin-failed); }
 .version-history footer { padding: 10px 16px; border-top: 1px solid var(--chrome-border); color: var(--text-muted); font-size: 11.5px; }
+
+/* Comment mode: hovering a picture or video says the pin will carry a spot (and a moment). */
+.canvas-page.is-commenting .react-flow__node .media-preview:has(img, video):hover {
+  outline: 2px dashed color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: -2px;
+}
+.comment-hover-hint {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 240px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  color: var(--tooltip-text);
+  background: var(--tooltip-bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.comment-hover-title { font-weight: 600; font-variant-numeric: tabular-nums; }
+.comment-hover-detail { opacity: 0.7; font-size: 11px; }

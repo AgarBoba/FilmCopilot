@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
 import { CheckIcon, SparkIcon } from '../canvas/icons';
-import { commentApi, describeAnchor, type CanvasComment, type CommentAnchor } from './commentApi';
+import { commentApi, describeAnchor, formatMoment, type CanvasComment, type CommentAnchor } from './commentApi';
 
 export { describeAnchor };
 import { CommentPopover } from './CommentPopover';
@@ -48,6 +48,9 @@ export function CommentLayer({
   const { comments, mode, hidden, openId, draft, focusRequest, error } = useCommentStore();
   const [positions, setPositions] = useState<Record<string, XY | null>>({});
   const [bounds, setBounds] = useState({ width: 0, height: 0 });
+  /** Comment mode, pointer over a picture or video: says the pin will carry a spot (and a moment). */
+  const [hint, setHint] = useState<{ x: number; y: number; time: number | null } | null>(null);
+  const hoverRef = useRef<{ x: number; y: number; target: Element } | null>(null);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const stateRef = useRef({ comments, mode, hidden, openId, draft, selectedNodeIds });
@@ -94,11 +97,18 @@ export function CommentLayer({
         place(comment.id, comment.anchor, forced);
       }
       if (state.draft) place('draft', state.draft.anchor, true);
-      const key = JSON.stringify([next, usable, rect.height]);
+      // Read every frame, so a playing video's time in the hint keeps up.
+      const hover = state.mode ? hoverRef.current : null;
+      const over = hover && !hover.target.closest(UI) ? anchorAt(hover.x, hover.y, hover.target, flow, true) : null;
+      const nextHint = over?.kind === 'media'
+        ? { x: Math.round(hover!.x - rect.left), y: Math.round(hover!.y - rect.top), time: over.time ?? null }
+        : null;
+      const key = JSON.stringify([next, usable, rect.height, nextHint]);
       if (key !== last) {
         last = key;
         setPositions(next);
         setBounds({ width: usable, height: rect.height });
+        setHint(nextHint);
       }
     };
     frame = requestAnimationFrame(tick);
@@ -131,10 +141,19 @@ export function CommentLayer({
         if (!event.shiftKey) useCommentStore.setState({ mode: false });
       }
     };
+    const onPointerMove = (event: PointerEvent) => {
+      hoverRef.current = { x: event.clientX, y: event.clientY, target: event.target as Element };
+    };
+    const onPointerLeave = () => { hoverRef.current = null; };
+    root.addEventListener('pointermove', onPointerMove, { capture: true, passive: true });
+    root.addEventListener('pointerleave', onPointerLeave);
     root.addEventListener('pointerdown', onPointerDown, true);
     const others = ['mousedown', 'click', 'dblclick', 'touchstart'] as const;
     others.forEach((name) => root.addEventListener(name, swallow, true));
     return () => {
+      hoverRef.current = null;
+      root.removeEventListener('pointermove', onPointerMove, { capture: true });
+      root.removeEventListener('pointerleave', onPointerLeave);
       root.removeEventListener('pointerdown', onPointerDown, true);
       others.forEach((name) => root.removeEventListener(name, swallow, true));
     };
@@ -196,6 +215,16 @@ export function CommentLayer({
         <div className="comment-hint comment-ui is-quiet" role="status">
           <span>图钉已隐藏（{unresolved.length} 条留言）</span>
           <button type="button" onClick={() => useCommentStore.getState().setHidden(false)}>显示</button>
+        </div>
+      )}
+      {hint && (
+        <div className="comment-hover-hint" style={{ left: Math.min(hint.x + 18, Math.max(8, bounds.width - 250)), top: Math.min(hint.y + 20, bounds.height - 56) }} aria-hidden="true">
+          <span className="comment-hover-title">
+            {hint.time != null ? `钉在 ${formatMoment(hint.time)} 这一帧的这一点` : '钉在画面的这一点'}
+          </span>
+          <span className="comment-hover-detail">
+            {hint.time != null ? 'Agent 会拿到位置和时间，点下时视频暂停' : 'Agent 会拿到具体位置，看到你指的是哪里'}
+          </span>
         </div>
       )}
       {comments.map((comment) => {
@@ -301,8 +330,13 @@ function Pin({ comment, at, active, queue, onClick }: {
 }
 
 
-/** What a click at this point pins to: a spot in a picture, a node, or the canvas. */
-export function anchorAt(clientX: number, clientY: number, target: Element, flow: CommentFlow | null): CommentAnchor | null {
+/**
+ * What a click at this point pins to: a spot in a picture, a node, or the canvas.
+ * `peek`: only looking (the hover hint), so a playing video is left alone.
+ */
+export function anchorAt(
+  clientX: number, clientY: number, target: Element, flow: CommentFlow | null, peek = false,
+): CommentAnchor | null {
   const nodeElement = target.closest('.react-flow__node');
   const nodeId = nodeElement?.getAttribute('data-id');
   if (nodeElement && nodeId && !nodeId.startsWith('ghost:')) {
@@ -310,9 +344,11 @@ export function anchorAt(clientX: number, clientY: number, target: Element, flow
     if (element && target.closest('.media-preview')) {
       const at = screenToMedia(element.getBoundingClientRect(), natural, { x: clientX, y: clientY });
       if (element instanceof HTMLVideoElement) {
-        // The pin is for the frame the user is looking at: stop there.
-        if (!element.paused) element.pause();
-        element.dataset.held = '1';
+        if (!peek) {
+          // The pin is for the frame the user is looking at: stop there.
+          if (!element.paused) element.pause();
+          element.dataset.held = '1';
+        }
         return { kind: 'media', nodeId, x: round(at.x), y: round(at.y), time: Math.round(element.currentTime * 100) / 100 };
       }
       return { kind: 'media', nodeId, x: round(at.x), y: round(at.y) };
