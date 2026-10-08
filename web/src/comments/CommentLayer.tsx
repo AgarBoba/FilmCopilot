@@ -120,13 +120,15 @@ export function CommentLayer({
       event.stopPropagation();
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || !qualifies(event)) return;
+      if ((event.button ?? 0) > 0 || !qualifies(event)) return; // left button only
       event.preventDefault();
       event.stopPropagation();
       const anchor = anchorAt(event.clientX, event.clientY, event.target as Element, flowRef.current);
       if (anchor) {
         setText('');
         useCommentStore.getState().setDraft({ anchor });
+        // One pin per trip: back to the normal pointer while typing. Shift keeps comment mode on.
+        if (!event.shiftKey) useCommentStore.setState({ mode: false });
       }
     };
     root.addEventListener('pointerdown', onPointerDown, true);
@@ -183,7 +185,7 @@ export function CommentLayer({
       {mode && (
         <div className="comment-hint comment-ui" role="status">
           <span className="comment-hint-dot" aria-hidden="true" />
-          <span>留言模式：点画布、节点或画面上任意一处留言</span>
+          <span>点一下放图钉留言 · 按住 Shift 可以连续留言</span>
           <button type="button" onClick={() => useCommentStore.getState().setHidden(!hidden)}>
             {hidden ? '显示图钉' : '隐藏图钉'}
           </button>

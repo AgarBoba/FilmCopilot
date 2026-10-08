@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -170,5 +170,37 @@ describe('on the nodes', () => {
     expect(onMark).toHaveBeenCalledWith('m1');
     duration.mockRestore();
     pause.mockRestore();
+  });
+});
+
+
+describe('comment mode', () => {
+  it('drops back to the normal pointer after one pin, unless Shift is held', async () => {
+    const { CommentLayer } = await import('../comments/CommentLayer');
+    const viewport = document.createElement('div');
+    viewport.innerHTML = '<div class="react-flow__pane" id="pane"></div>';
+    document.body.appendChild(viewport);
+    const flow = {
+      screenToFlowPosition: (point: { x: number; y: number }) => point,
+      flowToScreenPosition: (point: { x: number; y: number }) => point,
+      fitView: () => undefined, setCenter: () => undefined, getViewport: () => ({ zoom: 1 }),
+    };
+    vi.stubGlobal('EventSource', undefined);
+    vi.stubGlobal('PointerEvent', MouseEvent); // jsdom has none; MouseEvent carries button and shiftKey
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ comments: [] }))));
+    render(<CommentLayer canvasId="c" revision={0} viewportRef={{ current: viewport }} flowRef={{ current: flow }}
+      selectedNodeIds={[]} nodeTitles={{}} onOpenInPanel={vi.fn()} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} />);
+    const pane = document.getElementById('pane')!;
+
+    act(() => useCommentStore.getState().setMode(true));
+    fireEvent.pointerDown(pane, { button: 0, clientX: 10, clientY: 20, shiftKey: true });
+    expect(useCommentStore.getState().mode).toBe(true);
+    expect(useCommentStore.getState().draft?.anchor).toEqual({ kind: 'canvas', x: 10, y: 20 });
+
+    fireEvent.pointerDown(pane, { button: 0, clientX: 30, clientY: 40 });
+    expect(useCommentStore.getState().mode).toBe(false);
+    expect(useCommentStore.getState().draft?.anchor).toEqual({ kind: 'canvas', x: 30, y: 40 }); // still typing
+    vi.unstubAllGlobals();
+    viewport.remove();
   });
 });
