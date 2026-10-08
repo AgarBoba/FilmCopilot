@@ -3270,24 +3270,35 @@ body.is-resizing-panel .agent-panel { transition: none; }
 /* Comment marks above a video's progress bar; click to jump there. */
 .video-track { position: relative; display: flex; flex: 1; align-items: center; min-width: 40px; }
 .video-track .video-progress { flex: 1; }
-.video-mark {
+/* Prefixed with .video-controls so the player's own button style (26px squares) doesn't apply. */
+.video-controls .video-mark {
   position: absolute;
-  top: -9px;
-  width: 11px;
-  height: 11px;
+  top: -6px;
+  left: 0;
+  display: block;
+  width: 8px;
+  height: 8px;
+  min-width: 0;
   padding: 0;
   border: 0;
-  border-radius: 50% 50% 50% 2px;
+  border-radius: 50% 50% 50% 1px;
   background: #fff;
-  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.5);
-  transform: translateX(-2px);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  transform: translateX(-1px);
   cursor: pointer;
 }
-.video-mark.is-queued { background: #a1a1aa; }
-.video-mark.is-waiting { background: var(--pin-waiting); }
-.video-mark.is-done { background: var(--pin-done); }
-.video-mark.is-failed { background: var(--pin-failed); }
-.video-mark:hover { transform: translateX(-2px) scale(1.25); }
+/* A bigger invisible hit area, so the small mark is still easy to click. */
+.video-controls .video-mark::before { content: ''; position: absolute; inset: -6px; }
+.video-controls .video-mark.is-queued { background: #a1a1aa; }
+.video-controls .video-mark.is-waiting { background: var(--pin-waiting); }
+.video-controls .video-mark.is-done { background: var(--pin-done); }
+.video-controls .video-mark.is-failed { background: var(--pin-failed); }
+.video-controls .video-mark:hover,
+.video-controls .video-mark:focus-visible { background: #fff; transform: translateX(-1px) scale(1.4); }
+.video-controls .video-mark.is-waiting:hover { background: var(--pin-waiting); }
+.video-controls .video-mark.is-done:hover { background: var(--pin-done); }
+.video-controls .video-mark.is-failed:hover { background: var(--pin-failed); }
+.video-controls .video-mark.is-queued:hover { background: #a1a1aa; }
 
 /* Rail: count of open comments on the comment button. */
 .rail-button { position: relative; }
