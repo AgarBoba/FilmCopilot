@@ -18,9 +18,12 @@ const MAX_ZOOM = 4;
 /**
  * Trackpad support that React Flow does not cover on its own.
  *
- * - Safari reports a pinch as `gesture*` events instead of a Ctrl+wheel, so
- *   without this the whole page zooms. We turn it into a canvas zoom around
- *   the fingers.
+ * - A pinch must never zoom the page itself (the rail, the toolbar and the agent panel
+ *   would all grow). Chrome reports a pinch as Ctrl+wheel; when React Flow doesn't take it
+ *   (over a comment popover, a pin, a `nowheel` area, the agent panel) the browser would.
+ *   So any pinch React Flow left alone is stopped here: over the canvas area it zooms the
+ *   canvas, over the agent panel it does nothing.
+ * - Safari reports a pinch as `gesture*` events instead; same rule.
  * - Two-finger scrolling over a textarea that can scroll scrolls the text,
  *   instead of panning the canvas underneath it.
  */
@@ -33,25 +36,38 @@ export function useTrackpadGestures(
     if (!container) return undefined;
 
     let startZoom = 1;
+    let gestureOnCanvas = false;
+
+    /** Over the canvas area (pins, popovers and floating chrome included), not the panel. */
+    function overCanvas(target: EventTarget | null) {
+      const element = target instanceof Element ? target : null;
+      return Boolean(element && container!.contains(element) && !element.closest('.agent-panel'));
+    }
+
+    function zoomAround(clientX: number, clientY: number, nextZoom: number) {
+      const flow = flowRef.current;
+      if (!flow) return;
+      const { x, y, zoom } = flow.getViewport();
+      const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+      const bounds = container!.getBoundingClientRect();
+      // Keep the point under the fingers fixed while zooming.
+      const px = clientX - bounds.left;
+      const py = clientY - bounds.top;
+      const ratio = clamped / zoom;
+      void flow.setViewport({ x: px - (px - x) * ratio, y: py - (py - y) * ratio, zoom: clamped });
+    }
 
     function onGestureStart(event: Event) {
       event.preventDefault();
+      gestureOnCanvas = overCanvas(event.target);
       startZoom = flowRef.current?.getViewport().zoom ?? 1;
     }
 
     function onGestureChange(event: Event) {
       event.preventDefault();
-      const flow = flowRef.current;
-      if (!flow) return;
+      if (!gestureOnCanvas) return;
       const gesture = event as SafariGestureEvent;
-      const { x, y, zoom } = flow.getViewport();
-      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, startZoom * gesture.scale));
-      const bounds = container!.getBoundingClientRect();
-      // Keep the point under the fingers fixed while zooming.
-      const px = gesture.clientX - bounds.left;
-      const py = gesture.clientY - bounds.top;
-      const ratio = nextZoom / zoom;
-      void flow.setViewport({ x: px - (px - x) * ratio, y: py - (py - y) * ratio, zoom: nextZoom });
+      zoomAround(gesture.clientX, gesture.clientY, startZoom * gesture.scale);
     }
 
     function onWheel(event: WheelEvent) {
@@ -62,13 +78,26 @@ export function useTrackpadGestures(
       if (canScroll) event.stopPropagation(); // let the text scroll; don't pan the canvas
     }
 
-    container.addEventListener('gesturestart', onGestureStart);
-    container.addEventListener('gesturechange', onGestureChange);
+    /** Runs last (window, bubbling): a pinch nobody handled would zoom the whole page. */
+    function onUnhandledPinch(event: WheelEvent) {
+      if (!event.ctrlKey || event.defaultPrevented) return;
+      event.preventDefault();
+      if (!overCanvas(event.target)) return;
+      const zoom = flowRef.current?.getViewport().zoom ?? 1;
+      // Same feel as React Flow's own pinch: proportional to the scroll amount.
+      const delta = event.deltaMode === 1 ? event.deltaY * 0.05 : event.deltaMode ? event.deltaY : event.deltaY * 0.002;
+      zoomAround(event.clientX, event.clientY, zoom * Math.pow(2, -delta * 10));
+    }
+
+    window.addEventListener('gesturestart', onGestureStart);
+    window.addEventListener('gesturechange', onGestureChange);
+    window.addEventListener('wheel', onUnhandledPinch, { passive: false });
     // Capture phase on the container runs before React Flow's own wheel handler below it.
     container.addEventListener('wheel', onWheel, { capture: true, passive: true });
     return () => {
-      container.removeEventListener('gesturestart', onGestureStart);
-      container.removeEventListener('gesturechange', onGestureChange);
+      window.removeEventListener('gesturestart', onGestureStart);
+      window.removeEventListener('gesturechange', onGestureChange);
+      window.removeEventListener('wheel', onUnhandledPinch);
       container.removeEventListener('wheel', onWheel, { capture: true });
     };
   }, [containerRef, flowRef]);
