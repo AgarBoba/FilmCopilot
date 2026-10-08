@@ -45,7 +45,8 @@ import { splitNoteBlock } from '../agent/Markdown';
 import { agentNodeMarks } from '../agent/agentMarks';
 import { useModelStore } from '../models/modelStore';
 import { appendText, carriesBlock, readBlock } from '../agent/blockDrag';
-import { useAgentStore } from '../agent/agentStore';
+import { pendingConfirmations, useAgentStore } from '../agent/agentStore';
+import { AgentAvatar, type AgentMood } from '../agent/AgentAvatar';
 import { isGenerationBusy } from '../nodes/GenerationOverlay';
 import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM, useTrackpadGestures } from './useTrackpadGestures';
 import { ConnectionChooser, type ChooserNodeType } from './ConnectionChooser';
@@ -355,6 +356,14 @@ export function CanvasShell() {
       return { ...node, className };
     });
   }, [nodes, agentMarks, dropTarget, nodeComments]);
+
+  /** The agent's face (top right): busy in any chat or comment, waiting on you, or just done. */
+  const agentMood: AgentMood = useMemo(() => {
+    if (pendingConfirmations(agentEvents).length || comments.some((c) => c.status === 'waiting')) return 'waiting';
+    if (agentActiveRun || comments.some((c) => c.status === 'running')) return 'working';
+    if (agentRecentRun) return 'happy';
+    return 'idle';
+  }, [agentEvents, agentActiveRun, agentRecentRun, comments]);
 
   /** The node's comment badge: the panel's list, showing this node's comments. */
   function openCommentList(nodeId?: string) {
@@ -920,13 +929,25 @@ export function CanvasShell() {
             <CanvasRail
               onAddNode={(type) => void addNode(type)}
               onUpload={requestUploadAsNewNode}
-              agentOpen={agentOpen}
-              onToggleAgent={() => useAgentStore.getState().setOpen(!agentOpen)}
               commentMode={commentMode}
               onToggleComments={() => useCommentStore.getState().setMode(!commentMode)}
               commentCount={openComments(comments).length}
               commentWaiting={comments.some((comment) => comment.status === 'waiting')}
             />
+          </Panel>
+          <Panel position="top-right" className="canvas-panel">
+            <button
+              type="button"
+              className="agent-launcher"
+              aria-label="Agent"
+              aria-pressed={agentOpen}
+              data-tooltip={agentMood === 'waiting' ? 'Agent 在等你确认' : agentMood === 'working' ? 'Agent 正在处理…' : 'Agent：让它帮你操作画布'}
+              data-tooltip-shortcut="⌘J"
+              data-tooltip-side="left"
+              onClick={() => useAgentStore.getState().setOpen(!agentOpen)}
+            >
+              <AgentAvatar mood={agentMood} size={50} followPointer />
+            </button>
           </Panel>
           <Panel position="bottom-left" className="canvas-panel">
             <CanvasControls

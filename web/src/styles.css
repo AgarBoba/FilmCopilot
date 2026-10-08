@@ -3462,3 +3462,129 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .comment-hover-title { font-weight: 600; font-variant-numeric: tabular-nums; }
 .comment-hover-detail { opacity: 0.7; font-size: 11px; }
 .comment-thread .comment-undo { align-self: flex-start; margin-top: 2px; font-size: 12px; }
+
+/* ===================================================================== Agent face */
+/* A glossy lens with two eyes (agent/AgentAvatar.tsx). Always a dark device, in both themes. */
+.agent-avatar {
+  --s: var(--avatar-size, 44px);
+  --eye-w: calc(var(--s) * 0.13);
+  --eye-h: calc(var(--s) * 0.28);
+  --eye-color: #f4f6ff;
+  --eye-glow: rgba(214, 226, 255, 0.75);
+  --rim: transparent;
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+}
+.agent-avatar-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--rim);
+}
+.agent-avatar-face {
+  position: absolute;
+  inset: calc(var(--s) * 0.06);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.28) 0, rgba(255, 255, 255, 0) 28%),
+    radial-gradient(circle at 50% 120%, rgba(120, 140, 255, 0.18) 0, rgba(120, 140, 255, 0) 55%),
+    radial-gradient(circle at 40% 35%, #34353c 0%, #15161a 55%, #050506 100%);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.22),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.agent-avatar-eyes {
+  display: flex;
+  gap: calc(var(--s) * 0.13);
+  transform: translate(var(--look-x, 0), var(--look-y, 0));
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.agent-avatar-eye {
+  width: var(--eye-w);
+  height: var(--eye-h);
+  border-radius: calc(var(--eye-w) / 2);
+  background: var(--eye-color);
+  box-shadow: 0 0 calc(var(--s) * 0.12) var(--eye-glow);
+  transform-origin: center;
+  transition: height 220ms ease, width 220ms ease, background 220ms ease, border-radius 220ms ease;
+  animation: avatar-blink 5.2s infinite;
+}
+.agent-avatar-eye + .agent-avatar-eye { animation-delay: 30ms; }
+@keyframes avatar-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  95.5% { transform: scaleY(0.12); }
+}
+
+/* Working: narrowed eyes scan left and right; a light runs round the rim. */
+.agent-avatar.is-working {
+  --eye-h: calc(var(--s) * 0.16);
+  --rim: conic-gradient(from 0deg, transparent 0 62%, color-mix(in srgb, var(--accent) 40%, transparent) 78%, var(--accent) 100%);
+}
+.agent-avatar.is-working .agent-avatar-rim { animation: avatar-spin 1.3s linear infinite; }
+.agent-avatar.is-working .agent-avatar-eyes { animation: avatar-scan 1.6s ease-in-out infinite; }
+.agent-avatar.is-working .agent-avatar-eye { animation: none; }
+@keyframes avatar-spin { to { transform: rotate(360deg); } }
+@keyframes avatar-scan {
+  0%, 100% { transform: translateX(calc(var(--s) * -0.09)); }
+  50% { transform: translateX(calc(var(--s) * 0.09)); }
+}
+
+/* Waiting for you: amber eyes, amber rim, a little hop. */
+.agent-avatar.is-waiting {
+  --eye-color: #ffc861;
+  --eye-glow: rgba(255, 184, 77, 0.8);
+  --rim: radial-gradient(circle, transparent 62%, #f5b041 64%, rgba(245, 176, 65, 0.35) 100%);
+  animation: avatar-hop 1.6s ease-in-out infinite;
+}
+.agent-avatar.is-waiting .agent-avatar-eye { animation: none; }
+@keyframes avatar-hop {
+  0%, 70%, 100% { transform: translateY(0); }
+  80% { transform: translateY(calc(var(--s) * -0.08)); }
+  90% { transform: translateY(0); }
+}
+
+/* Done: "^ ^". */
+.agent-avatar.is-happy .agent-avatar-eye {
+  width: calc(var(--s) * 0.17);
+  height: calc(var(--s) * 0.1);
+  border: calc(var(--s) * 0.045) solid var(--eye-color);
+  border-bottom: 0;
+  border-radius: calc(var(--s) * 0.12) calc(var(--s) * 0.12) 0 0;
+  background: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 0 calc(var(--s) * 0.05) var(--eye-glow));
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-avatar, .agent-avatar-eye, .agent-avatar-eyes, .agent-avatar-rim { animation: none !important; }
+}
+
+/* Entry point: top right of the canvas. */
+.agent-launcher {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 50%;
+  background: var(--chrome-bg);
+  box-shadow: var(--chrome-shadow);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.agent-launcher:hover { transform: translateY(-1px) scale(1.04); }
+.agent-launcher:hover .agent-avatar.is-idle { --eye-h: calc(var(--s) * 0.32); }
+.agent-launcher:active { transform: scale(0.97); }
+.canvas-page.agent-open .agent-launcher { display: none; }
+.agent-header .agent-avatar { margin: 0 2px 0 4px; }

@@ -8,6 +8,7 @@ import { useCommentStore } from '../comments/commentStore';
 import { describeAnchor, STATUS_LABELS, type CanvasComment } from '../comments/commentApi';
 import { Markdown } from './Markdown';
 import { SessionList } from './SessionList';
+import { AgentAvatar } from './AgentAvatar';
 import { MemoryView } from './MemoryView';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
@@ -349,6 +350,7 @@ export function AgentPanel({
           <ChatsIcon width={16} height={16} />
           {backgroundBusy && <span className={`agent-chats-badge is-${backgroundBusy}`} aria-hidden="true" />}
         </button>
+        <AgentAvatar size={28} mood={pending.size ? 'waiting' : activeRunId ? 'working' : store.recentRunId ? 'happy' : 'idle'} />
         <button type="button" className="agent-title" onClick={() => setView('list')} data-tooltip="切换对话" data-tooltip-side="bottom">
           <span className="agent-title-text">{currentTitle}</span>
           {modelLabel && (
