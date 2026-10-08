@@ -213,3 +213,24 @@ describe('comment mode', () => {
     viewport.remove();
   });
 });
+
+
+describe('comment popover', () => {
+  it('offers to undo the round that just finished', async () => {
+    const { CommentPopover } = await import('../comments/CommentPopover');
+    const { agentApi } = await import('../agent/agentApi');
+    const history = [
+      { id: 1, runId: 'r1', kind: 'user_message' as const, text: '加个便签' },
+      { id: 2, runId: 'r1', kind: 'tool_step' as const, tool: 'create_nodes', summary: '新建 1 个节点', touched: ['n'] },
+      { id: 3, runId: 'r1', kind: 'run_finished' as const, status: 'completed' as const },
+    ];
+    vi.spyOn(agentApi, 'messages').mockResolvedValue(history);
+    vi.spyOn(agentApi, 'stream').mockReturnValue(() => undefined);
+    const undo = vi.spyOn(agentApi, 'undo').mockResolvedValue({ id: 4, runId: 'r1', kind: 'run_undone' });
+    render(<CommentPopover comment={comment({ id: 'c1', status: 'done' })} at={{ x: 10, y: 10 }} bounds={{ width: 1000, height: 800 }}
+      where="画布空白处" onClose={vi.fn()} onOpenInPanel={vi.fn()} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} />);
+    await userEvent.click(await screen.findByRole('button', { name: /撤销这一轮的改动/ }));
+    expect(undo).toHaveBeenCalledWith('r1');
+    vi.restoreAllMocks();
+  });
+});

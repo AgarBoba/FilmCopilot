@@ -282,7 +282,7 @@ class CommentService:
 
     def _on_event(self, session_id: str, event: dict) -> None:
         kind = event.get('kind')
-        if kind not in ('assistant_text', 'confirm_request', 'confirm_resolved', 'run_finished', 'error'):
+        if kind not in ('assistant_text', 'confirm_request', 'confirm_resolved', 'run_finished', 'error', 'run_undone'):
             return
         row = self.for_session(session_id)
         if row is None:
@@ -291,6 +291,10 @@ class CommentService:
             self._last_text[row['id']] = str(event.get('text') or '')
         elif kind == 'error':
             self._last_text[row['id']] = str(event.get('message') or '')
+        elif kind == 'run_undone' and row['status'] in ('done', 'failed', 'resolved'):
+            # The canvas is back to how it was; say so on the comment and in the task log.
+            self._update(row['id'], outcome='已撤销这一轮的改动，画布回到了留言前的样子。')
+            self._log(row['id'])
         elif kind == 'confirm_request' and row['status'] == 'running':
             self._update(row['id'], status='waiting')
         elif kind == 'confirm_resolved' and row['status'] == 'waiting':
@@ -355,11 +359,11 @@ class CommentService:
                     (row['canvas_id'], row['node_id'], comment_id)).fetchone()
             version = hit['v'] if hit else None
         asked = ' '.join(row['text'].split())[:40]
-        result = ' '.join((row['outcome'] or '').split())[:80]
+        result = ' '.join((row['outcome'] or '').split())[:80].rstrip('。.')
         text = f'{where}：{asked}'
         if result:
             text += f' → {result}'
-        if version:
+        if version and not (row['outcome'] or '').startswith('已撤销'):
             text += f'（第 {version} 版）'
         text += '，用户已解决' if row['status'] == 'resolved' else '，等用户查看'
         with self.database.transaction() as connection:

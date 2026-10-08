@@ -3461,3 +3461,4 @@ body.is-resizing-panel .agent-panel { transition: none; }
 }
 .comment-hover-title { font-weight: 600; font-variant-numeric: tabular-nums; }
 .comment-hover-detail { opacity: 0.7; font-size: 11px; }
+.comment-thread .comment-undo { align-self: flex-start; margin-top: 2px; font-size: 12px; }

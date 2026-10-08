@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { CloseIcon, SendIcon } from '../canvas/icons';
+import { CloseIcon, SendIcon, UndoIcon } from '../canvas/icons';
 import { agentApi, type AgentEvent } from '../agent/agentApi';
 import { AgentMessage } from '../agent/AgentMessage';
-import { pendingConfirmations } from '../agent/agentStore';
+import { pendingConfirmations, undoableRuns } from '../agent/agentStore';
 import { Markdown } from '../agent/Markdown';
 import { assetFileUrl, formatMoment, STATUS_LABELS, type CanvasComment } from './commentApi';
 import { queuePosition, useCommentStore } from './commentStore';
@@ -11,7 +11,7 @@ import { useSessionEvents } from './useSessionEvents';
 import { sideOf } from './mediaGeometry';
 
 /** Only what helps at a glance; skills, sources and to-do lists are in the panel. */
-const SHOWN = new Set<AgentEvent['kind']>(['user_message', 'assistant_text', 'tool_step', 'confirm_request', 'error']);
+const SHOWN = new Set<AgentEvent['kind']>(['user_message', 'assistant_text', 'tool_step', 'confirm_request', 'error', 'run_undone']);
 
 interface CommentPopoverProps {
   comment: CanvasComment;
@@ -42,6 +42,22 @@ export function CommentPopover({ comment, at, bounds, where, onClose, onOpenInPa
 
   const pending = new Set(pendingConfirmations(events).map((event) => event.requestId));
   const shown = events.filter((event) => SHOWN.has(event.kind));
+  // Same rule as the panel: the last finished round, if it changed something, can be undone.
+  const lastRun = [...events].reverse().find((event) => event.kind === 'run_finished')?.runId ?? null;
+  const canUndo = !busy && lastRun !== null && undoableRuns(events).has(lastRun);
+  const [undoing, setUndoing] = useState(false);
+
+  async function undo() {
+    if (!lastRun || undoing) return;
+    setUndoing(true);
+    try {
+      await agentApi.undo(lastRun); // the "已撤销" note arrives through the stream
+    } catch (error) {
+      useCommentStore.setState({ error: error instanceof Error ? error.message : '撤销失败' });
+    } finally {
+      setUndoing(false);
+    }
+  }
   const anchor = comment.anchor;
   const oldVersion = Boolean(anchor.stale);
 
@@ -116,6 +132,11 @@ export function CommentPopover({ comment, at, bounds, where, onClose, onOpenInPa
         {streaming && <div className="agent-msg is-assistant is-streaming"><Markdown text={streaming} /></div>}
         {comment.status === 'running' && !streaming && pending.size === 0 && (
           <div className="agent-thinking" aria-live="polite"><span /><span /><span /></div>
+        )}
+        {canUndo && (
+          <button type="button" className="agent-undo comment-undo" disabled={undoing} onClick={() => void undo()}>
+            <UndoIcon width={13} height={13} /> 撤销这一轮的改动
+          </button>
         )}
         {comment.pendingReply && <div className="comment-note">你的回复在排队：{comment.pendingReply}</div>}
       </div>

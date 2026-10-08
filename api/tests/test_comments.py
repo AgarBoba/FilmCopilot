@@ -351,7 +351,7 @@ def test_redraw_from_a_comment_is_tagged_and_logged(repository, tmp_path):
         repository.update_node(canvas_id, 'img', {'data': {'assetId': 'p2'}})
     comments._log(comment['id'])
     comments.resolve(comment['id'])
-    assert service.task_log(canvas_id) == ['「图片 img」：天空换成黄昏 → 天空换成黄昏了，这是整张重画。（第 2 版），用户已解决']
+    assert service.task_log(canvas_id) == ['「图片 img」：天空换成黄昏 → 天空换成黄昏了，这是整张重画（第 2 版），用户已解决']
 
 
 def test_build_request_puts_the_picture_being_redrawn_first(tmp_path):
@@ -380,3 +380,22 @@ def test_version_tools(repository, tmp_path):
     assert old.text.startswith('「图片 img」第 1 版的图片') and decode(old.images[0]).getpixel((5, 5))[2] < 100
     assert tools.view_asset('img', 7).is_error
     assert decode(tools.view_asset('img').images[0]).getpixel((5, 5))[2] > 200
+
+
+def test_undoing_a_comment_round_restores_the_canvas_and_says_so(repository):
+    comments, service, store, canvas_id, _ = setup(
+        repository, [('tool', 'create_nodes', {'nodes': [{'type': 'note', 'content': '分镜'}]}), ('text', '加了一个便签。')])
+
+    async def scenario():
+        comment = await comments.create(canvas_id, {'kind': 'canvas', 'x': 0, 'y': 0}, '加个便签写分镜')
+        await settle(service, comments)
+        assert len(repository.get_snapshot(canvas_id).nodes) == 1
+        run_id = store.list_messages(comment['sessionId'])[0]['run_id']
+        service.undo(run_id)
+        return comment
+
+    comment = asyncio.run(scenario())
+    assert repository.get_snapshot(canvas_id).nodes == []
+    undone = comments.get(comment['id'])
+    assert undone['status'] == 'done' and undone['outcome'].startswith('已撤销')
+    assert service.task_log(canvas_id) == ['画布：加个便签写分镜 → 已撤销这一轮的改动，画布回到了留言前的样子，等用户查看']
