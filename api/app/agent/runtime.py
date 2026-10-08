@@ -25,6 +25,8 @@ from .memory_tools import MemoryTools
 from .permissions import ConfirmationBroker, RunState, decide, describe_request, request_node_ids
 from .prompts import SYSTEM_PROMPT, build_user_message
 from .store import AgentStore
+from .builtin_events import BuiltinToolTracker
+from .skills import BUILTIN_TOOLS, discover, find as find_skill, plugin_dirs
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ class SessionRuntime:
     task: asyncio.Task | None = None
     handlers: dict[str, Any] = field(default_factory=dict)
     model: str | None = None  # model the live client is using
+    skill_ids: tuple[str, ...] = ()  # skills the live client was started with
 
 
 class AgentService:
@@ -72,8 +75,15 @@ class AgentService:
 
     # --------------------------------------------------------------- public
 
-    async def send_message(self, session_id: str, text: str, focus_node_ids: list[str] | None = None) -> dict:
+    async def send_message(
+        self, session_id: str, text: str, focus_node_ids: list[str] | None = None, skill: str | None = None,
+    ) -> dict:
         text = (text or '').strip()
+        chosen = find_skill(skill) if skill else None
+        if skill and chosen is None:
+            raise DomainError('UNKNOWN_SKILL', f'没有这个技能：{skill}')
+        if not text and chosen is not None:
+            text = f'用「{chosen.label}」'
         if not text:
             raise DomainError('INVALID_PAYLOAD', '消息不能为空')
         if not self.config.configured:
@@ -102,11 +112,15 @@ class AgentService:
         snapshot = self.repository.get_snapshot(runtime.canvas_id)
         titles = {node.id: node.data.get('title', '') for node in snapshot.nodes}
         focus = [(node_id, titles[node_id]) for node_id in (focus_node_ids or []) if node_id in titles]
-        self._emit(session_id, run['id'], 'user_message', {'text': text, 'focus': [i for i, _ in focus]}, role='user')
+        user_event = {'text': text, 'focus': [i for i, _ in focus]}
+        if chosen is not None:
+            user_event['skill'] = {'id': chosen.id, 'label': chosen.label}
+        self._emit(session_id, run['id'], 'user_message', user_event, role='user')
         prompt = build_user_message(
             text, settings['permissionMode'], focus, settings['generationCap'],
             memory=self.memory.context_block(runtime.project_id),
             other_chats=self._other_chats(runtime),
+            skill=(chosen.id, chosen.label) if chosen else None,
         )
         model = settings.get('model') or self.config.model
         runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt, model))
@@ -199,6 +213,15 @@ class AgentService:
         return next((item for item in self.sessions.values() if item.run_id == run_id), None)
 
     async def _client(self, runtime: SessionRuntime, model: str) -> Any:
+        skill_ids = tuple(skill.id for skill in discover())
+        if runtime.client is not None and runtime.skill_ids != skill_ids:
+            # Skills are read when a client starts: reconnect (same conversation, via resume)
+            # so a skill added or changed since is picked up.
+            try:
+                await runtime.client.disconnect()
+            except Exception:
+                log.debug('disconnect for skill reload failed', exc_info=True)
+            runtime.client = None
         if runtime.client is not None:
             if runtime.model != model:
                 # Switching models keeps the conversation; it applies from this message on.
@@ -233,7 +256,11 @@ class AgentService:
         options = ClaudeAgentOptions(
             model=model,
             system_prompt=SYSTEM_PROMPT,
-            tools=[],  # no built-in file / shell / web tools
+            # Built-ins: skills, web search / reading, the to-do list. No file or shell tools.
+            tools=list(BUILTIN_TOOLS),
+            # Skills come from two local plugin folders, not from setting_sources (see skills.py).
+            plugins=[{'type': 'local', 'path': str(path)} for path in plugin_dirs()],
+            skills=list(skill_ids),
             mcp_servers={'canvas': build_server(runtime.handlers)},
             # Read-only tools run freely; write tools must NOT be listed here, or they would
             # skip can_use_tool (see Task 0 notes).
@@ -248,6 +275,7 @@ class AgentService:
         await client.connect()
         runtime.client = client
         runtime.model = model
+        runtime.skill_ids = skill_ids
         return client
 
     async def _permission(self, runtime: SessionRuntime, name: str, tool_input: dict[str, Any]):
@@ -301,7 +329,15 @@ class AgentService:
     async def _run(self, runtime: SessionRuntime, run_id: str, prompt: str, model: str | None = None) -> None:
         model = model or self.config.model
         auth = self.config.auth
-        from claude_agent_sdk import AssistantMessage, ResultMessage, StreamEvent, SystemMessage, TextBlock
+        from claude_agent_sdk import (
+            AssistantMessage, ResultMessage, StreamEvent, SystemMessage, TextBlock, ToolResultBlock, ToolUseBlock,
+            UserMessage,
+        )
+        tracker = BuiltinToolTracker()
+
+        def emit_builtin(events: list[tuple[str, dict]]) -> None:
+            for kind, payload in events:
+                self._emit(runtime.session_id, run_id, kind, payload, role='tool_call')
 
         status, cost, error_text = 'completed', None, None
         try:
@@ -325,6 +361,13 @@ class AgentService:
                     text = ''.join(block.text for block in message.content if isinstance(block, TextBlock))
                     if text.strip():
                         self._emit(runtime.session_id, run_id, 'assistant_text', {'text': text, 'model': model}, role='assistant')
+                    for block in message.content:
+                        if isinstance(block, ToolUseBlock) and not block.name.startswith('mcp__'):
+                            emit_builtin(tracker.on_tool_use(block.id, block.name, block.input or {}))
+                elif isinstance(message, UserMessage) and isinstance(message.content, list):
+                    for block in message.content:
+                        if isinstance(block, ToolResultBlock):
+                            emit_builtin(tracker.on_tool_result(block.tool_use_id, block.content, bool(block.is_error)))
                 elif isinstance(message, ResultMessage):
                     cost = message.total_cost_usd
                     if message.session_id:

@@ -96,6 +96,9 @@ export const NoteAddIcon = (p: IconProps) => (
 export const ChatsIcon = (p: IconProps) => (
   <Icon {...p}><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v6a1.5 1.5 0 0 1-1.5 1.5H9l-3.5 3v-3h0A1.5 1.5 0 0 1 4 11.5z" /><path d="M16 8h2.5A1.5 1.5 0 0 1 20 9.5v6a1.5 1.5 0 0 1-1.5 1.5H18v3l-3.5-3H11a1.5 1.5 0 0 1-1.5-1.5V15" /></Icon>
 );
+export const GlobeIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.3 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.3-3.5-8.5s1.1-6.1 3.5-8.5z" /></Icon>
+);
 export const SearchIcon = (p: IconProps) => <Icon {...p}><circle cx="11" cy="11" r="6" /><path d="m20 20-4.2-4.2" /></Icon>;
 export const PencilIcon = (p: IconProps) => <Icon {...p}><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></Icon>;
 export const ArchiveIcon = (p: IconProps) => (

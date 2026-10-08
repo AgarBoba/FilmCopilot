@@ -4,6 +4,8 @@ A script is a list of steps for one `query()`:
     ('text', '回复文字')              -> streamed deltas + an AssistantMessage
     ('tool', 'create_nodes', {...})   -> goes through can_use_tool (write tools) and the real handler
     ('pause', seconds)                -> lets the test act mid-run (e.g. press stop)
+    ('builtin', 'WebSearch', {...}, 'result text')  -> a Claude Code built-in tool: permission
+                                         check, then its tool_use and tool_result blocks
 """
 import asyncio
 from typing import Any
@@ -16,7 +18,9 @@ from claude_agent_sdk import (
     SystemMessage,
     TextBlock,
     ToolPermissionContext,
+    ToolResultBlock,
     ToolUseBlock,
+    UserMessage,
 )
 
 from app.agent.mcp_server import READ_ONLY, qualified
@@ -72,6 +76,15 @@ class FakeClient:
                         self.denials.append(decision.message)
                         continue
                 self.tool_results.append(await self.handlers[name](args))
+            elif kind == 'builtin':
+                name, args, result = step[1], step[2], step[3]
+                yield AssistantMessage([ToolUseBlock(f'tool-{index}', name, args)], model='fake')
+                decision = await self.options.can_use_tool(name, args, ToolPermissionContext())
+                if not isinstance(decision, PermissionResultAllow):
+                    self.denials.append(decision.message)
+                    yield UserMessage([ToolResultBlock(f'tool-{index}', decision.message, True)])
+                    continue
+                yield UserMessage([ToolResultBlock(f'tool-{index}', result, False)])
             elif kind == 'pause':
                 await asyncio.sleep(step[1])
         yield ResultMessage(

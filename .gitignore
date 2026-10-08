@@ -24,4 +24,5 @@ web/vite.config.d.ts
 .pnpm-store/
 .venv.old-*/
 data/model-checks/
+data/agent-skills/
 __pycache__/

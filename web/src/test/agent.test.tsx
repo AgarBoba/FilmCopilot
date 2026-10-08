@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReactFlowProvider } from '@xyflow/react';
 
-import type { AgentEvent } from '../agent/agentApi';
+import { agentApi, type AgentEvent } from '../agent/agentApi';
 import { AgentMessage } from '../agent/AgentMessage';
+import { AgentPanel } from '../agent/AgentPanel';
 import { Markdown, noteBlocks, splitNoteBlock, titleFromMarkdown } from '../agent/Markdown';
 import { pendingConfirmations, undoableRuns, useAgentStore } from '../agent/agentStore';
 import { NoteNode } from '../nodes/NoteNode';
@@ -403,5 +404,103 @@ describe('models', () => {
         focusTitles={{}} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} onConfirm={vi.fn()} pending={false} />,
     );
     expect(screen.getByText('Sonnet 5')).toBeInTheDocument();
+  });
+});
+
+describe('skills, web and the to-do list', () => {
+  const props = { focusTitles: {}, onFocusNodes: vi.fn(), onSaveToCanvas: vi.fn(), onConfirm: vi.fn(), pending: false };
+
+  it('shows the skill used, what was searched with its sources, and pages read', () => {
+    const { container } = render(<>
+      <AgentMessage {...props} event={event({ kind: 'skill_used', skill: 'film-copilot:storyboard', label: '分镜拆解' })} />
+      <AgentMessage {...props} event={event({ kind: 'web_search', query: '王家卫 色调',
+        links: [{ title: '色彩分析', url: 'https://www.a.example/1' }] })} />
+      <AgentMessage {...props} event={event({ kind: 'web_fetch', url: 'https://b.example/page', isError: true })} />
+    </>);
+    expect(screen.getByText('用了技能「分镜拆解」')).toBeInTheDocument();
+    expect(screen.getByText('搜索「王家卫 色调」')).toBeInTheDocument();
+    const source = screen.getByRole('link', { name: 'a.example' });
+    expect(source).toHaveAttribute('href', 'https://www.a.example/1');
+    expect(source).toHaveAttribute('target', '_blank');
+    expect(screen.getByText('没能读取')).toBeInTheDocument();
+    expect(container.querySelectorAll('a[rel="noreferrer"]')).toHaveLength(2);
+  });
+
+  it('the to-do list shows progress', () => {
+    render(<AgentMessage {...props} event={event({ kind: 'tasks', items: [
+      { id: '1', subject: '写分镜表', status: 'completed' },
+      { id: '2', subject: '建节点', status: 'in_progress' },
+    ] })} />);
+    expect(screen.getByLabelText('任务清单')).toHaveTextContent('1/2');
+    expect(screen.getByText('写分镜表').closest('li')).toHaveClass('is-completed');
+  });
+
+  it('a message sent with a skill shows it', () => {
+    render(<AgentMessage {...props} event={event({ kind: 'user_message', text: '用「点评作品」',
+      skill: { id: 'film-copilot:review', label: '点评作品' } })} />);
+    expect(screen.getByText('点评作品')).toBeInTheDocument();
+  });
+});
+
+describe('agent panel', () => {
+  const skills = [
+    { id: 'film-copilot:storyboard', name: 'storyboard', label: '分镜拆解', description: '把故事拆成分镜', source: 'builtin' as const },
+    { id: 'film-copilot:review', name: 'review', label: '点评作品', description: '比较生成结果', source: 'builtin' as const },
+  ];
+
+  async function renderPanel() {
+    vi.spyOn(agentApi, 'status').mockResolvedValue({ configured: true, model: 'm', auth: 'api', models: [] });
+    vi.spyOn(agentApi, 'getSettings').mockResolvedValue({ permissionMode: 'confirm_generation', generationCap: 4 });
+    vi.spyOn(agentApi, 'listSessions').mockResolvedValue([]);
+    vi.spyOn(agentApi, 'listSkills').mockResolvedValue({ skills });
+    vi.spyOn(agentApi, 'stream').mockReturnValue(() => undefined);
+    vi.spyOn(agentApi, 'createSession').mockResolvedValue({
+      id: 's1', project_id: 'p', canvas_id: 'c', title: null, created_at: '' });
+    const send = vi.spyOn(agentApi, 'send').mockResolvedValue({ runId: 'r9' });
+    render(<AgentPanel canvasId="c" selectedNodeIds={[]} nodeTitles={{}} onFocusNodes={vi.fn()}
+      onSaveToCanvas={vi.fn()} onClose={vi.fn()} />);
+    await screen.findByLabelText('消息');
+    return send;
+  }
+
+  it('typing / lists skills; picking one sends it with the message', async () => {
+    const send = await renderPanel();
+    const input = screen.getByLabelText('消息');
+    fireEvent.change(input, { target: { value: '/点评' } });
+    const menu = await screen.findByRole('listbox', { name: '技能' });
+    expect(within(menu).getAllByRole('option').map((option) => option.textContent)).toEqual([expect.stringContaining('点评作品')]);
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(input).toHaveValue('');
+    expect(screen.queryByRole('listbox', { name: '技能' })).toBeNull();
+    fireEvent.change(input, { target: { value: '重点看人物' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith('s1', '重点看人物', [], 'film-copilot:review'));
+  });
+
+  it('a picked skill can be sent alone and removed with backspace', async () => {
+    const send = await renderPanel();
+    const input = screen.getByLabelText('消息');
+    fireEvent.change(input, { target: { value: '/' } });
+    await screen.findByRole('listbox', { name: '技能' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(screen.getByLabelText('不用这个技能')).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: 'Backspace' });
+    expect(screen.queryByLabelText('不用这个技能')).toBeNull();
+    fireEvent.change(input, { target: { value: '/' } });
+    await screen.findByRole('listbox', { name: '技能' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: '发送' }));
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith('s1', '', [], 'film-copilot:storyboard'));
+  });
+
+  it('shows only the latest version of a run\'s to-do list', async () => {
+    await renderPanel();
+    const { apply } = useAgentStore.getState();
+    useAgentStore.getState().reset('s1');
+    apply(event({ id: 1, kind: 'tasks', items: [{ id: '1', subject: '第一步', status: 'pending' }] }));
+    apply(event({ id: 2, kind: 'tasks', items: [{ id: '1', subject: '第一步', status: 'completed' }] }));
+    expect(await screen.findAllByLabelText('任务清单')).toHaveLength(1);
+    expect(screen.getByLabelText('任务清单')).toHaveTextContent('1/1');
   });
 });

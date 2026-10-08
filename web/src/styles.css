@@ -2852,3 +2852,151 @@ body.is-resizing-panel .agent-panel { transition: none; }
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22), inset 0 -1px 0 rgba(15, 18, 25, 0.08);
 }
 .canvas-rail .rail-menu { border-radius: 18px; }
+
+/* ---------- Agent: skills, web, to-do list ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* Steps that aren't canvas edits: an icon instead of the dot. */
+.agent-step.is-skill,
+.agent-step.is-web { cursor: default; }
+.agent-step.is-skill svg { color: var(--accent); flex: none; }
+.agent-step.is-web svg { flex: none; }
+.agent-step.is-web.is-error { color: #f59e0b; }
+.agent-step.is-skill:hover,
+.agent-step.is-web:hover { background: transparent; color: var(--text-muted); }
+.agent-web { display: grid; gap: 4px; }
+.agent-web-links { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 29px; }
+.agent-link {
+  max-width: 180px;
+  overflow: hidden;
+  padding: 1px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 18px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-link:hover { border-color: var(--accent); color: var(--text-primary); }
+.agent-step .agent-link { margin-left: 2px; }
+
+.agent-tasks {
+  margin: 2px 0;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 12px;
+  font-size: 12px;
+}
+.agent-tasks-head { margin-bottom: 6px; color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.agent-tasks-head span { margin-left: 4px; font-weight: 400; }
+.agent-tasks ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.agent-tasks li { display: flex; align-items: flex-start; gap: 8px; line-height: 1.45; }
+.agent-task-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  border: 1.5px solid color-mix(in srgb, var(--text-muted) 60%, transparent);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.agent-tasks li.is-in_progress .agent-task-mark {
+  border-color: var(--accent);
+  border-right-color: transparent;
+  animation: agent-task-spin 900ms linear infinite;
+}
+.agent-tasks li.is-completed .agent-task-mark { border-color: var(--accent); color: #fff; background: var(--accent); }
+.agent-tasks li.is-completed .agent-task-text { color: var(--text-muted); text-decoration: line-through; }
+@keyframes agent-task-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .agent-tasks li.is-in_progress .agent-task-mark { animation: none; } }
+
+/* "/" menu above the input, and the picked skill as a chip inside it. */
+.agent-composer { position: relative; }
+.agent-skill-menu {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% - 4px);
+  left: 12px;
+  z-index: 10;
+  display: grid;
+  gap: 2px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 14px;
+  background: var(--node-bg);
+  box-shadow: var(--chrome-shadow);
+}
+.agent-skill-menu-head { padding: 4px 8px 6px; color: var(--text-muted); font-size: 11px; }
+.agent-skill-menu button {
+  display: grid;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-skill-menu button.is-active { background: var(--chrome-hover); }
+.agent-skill-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.agent-skill-tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 10px;
+  font-weight: 500;
+}
+.agent-skill-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.agent-skill-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.agent-skill-chip button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: inherit;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.agent-skill-chip button:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.agent-skill-chip.is-sent { align-self: flex-end; margin-bottom: 4px; padding-right: 8px; }

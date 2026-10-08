@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
-import { CheckIcon, CopyIcon } from '../canvas/icons';
+import { CheckIcon, CopyIcon, GlobeIcon, SearchIcon, SparkIcon } from '../canvas/icons';
 import { ApiError } from '../api/client';
-import { agentApi, type AgentEvent } from './agentApi';
+import { agentApi, type AgentEvent, type AgentTask } from './agentApi';
 import { useAgentStore } from './agentStore';
 import { Markdown } from './Markdown';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
@@ -32,6 +32,9 @@ export function AgentMessage({ event, focusTitles, focusPreviews = {}, onFocusNo
                   ?? { nodeId: id, kind: 'note' as const, title: focusTitles[id] ?? '已删除的节点' })}
               />
             </div>
+          )}
+          {typeof event.skill === 'object' && (
+            <div className="agent-skill-chip is-sent"><SparkIcon width={12} height={12} />{event.skill.label}</div>
           )}
           <div className="agent-bubble">{event.text}</div>
         </div>
@@ -71,6 +74,28 @@ export function AgentMessage({ event, focusTitles, focusPreviews = {}, onFocusNo
       return <div className="agent-note">{event.status === 'stopped' ? '已停止' : '这一轮没有完成'}</div>;
     case 'memory_change':
       return <MemoryLine event={event} />;
+    case 'skill_used':
+      return (
+        <div className="agent-step is-skill">
+          <SparkIcon width={13} height={13} aria-hidden="true" />
+          <span>用了技能「{event.label || String(event.skill ?? '')}」</span>
+        </div>
+      );
+    case 'web_search':
+      return <WebSearchStep event={event} />;
+    case 'web_fetch':
+      return (
+        <div className={`agent-step is-web ${event.isError ? 'is-error' : ''}`}>
+          <GlobeIcon width={13} height={13} aria-hidden="true" />
+          <span>{event.isError ? '没能读取' : '读了网页'}</span>
+          {event.url && (
+            <a className="agent-link" href={event.url} target="_blank" rel="noreferrer" data-tooltip={event.url}
+              data-tooltip-side="left">{hostOf(event.url)}</a>
+          )}
+        </div>
+      );
+    case 'tasks':
+      return <TaskList items={event.items ?? []} />;
     case 'run_undone': {
       const skipped = event.skipped ?? [];
       return (
@@ -209,6 +234,60 @@ function AssistantText({ text, model, onSaveToCanvas }: {
           {copied ? <CheckIcon width={14} height={14} /> : <CopyIcon width={14} height={14} />}
         </button>
       </div>
+    </div>
+  );
+}
+
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+
+/** "搜索「…」" with the pages it found as small links (sources for what the agent says). */
+function WebSearchStep({ event }: { event: AgentEvent }) {
+  const links = event.links ?? [];
+  return (
+    <div className="agent-web">
+      <div className={`agent-step is-web ${event.isError ? 'is-error' : ''}`}>
+        <SearchIcon width={13} height={13} aria-hidden="true" />
+        <span>{event.isError ? '搜索失败' : '搜索'}「{event.query}」</span>
+      </div>
+      {links.length > 0 && (
+        <div className="agent-web-links">
+          {links.map((link) => (
+            <a key={link.url} className="agent-link" href={link.url} target="_blank" rel="noreferrer"
+              data-tooltip={link.title} data-tooltip-side="left">{hostOf(link.url)}</a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/** The agent's to-do list for a longer job; only the latest version per run is shown. */
+function TaskList({ items }: { items: AgentTask[] }) {
+  if (items.length === 0) return null;
+  const done = items.filter((item) => item.status === 'completed').length;
+  return (
+    <div className="agent-tasks" aria-label="任务清单">
+      <div className="agent-tasks-head">任务清单 <span>{done}/{items.length}</span></div>
+      <ul>
+        {items.map((item) => (
+          <li key={item.id} className={`is-${item.status}`}>
+            <span className="agent-task-mark" aria-hidden="true">
+              {item.status === 'completed' && <CheckIcon width={10} height={10} />}
+            </span>
+            <span className="agent-task-text">{item.subject}</span>
+            <span className="sr-only">{item.status === 'completed' ? '已完成' : item.status === 'in_progress' ? '进行中' : '未开始'}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

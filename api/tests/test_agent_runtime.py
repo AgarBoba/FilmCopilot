@@ -72,7 +72,14 @@ def test_options_lock_down_tools_and_permissions(repository):
 
     asyncio.run(scenario())
     options = factory.clients[0].options
-    assert options.tools == [] and options.model == 'claude-opus-5-5'
+    # Built-ins: skills, web, to-do list only; never file or shell tools.
+    assert set(options.tools) == {'Skill', 'WebSearch', 'WebFetch', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'}
+    assert not set(options.tools) & {'Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'Task'}
+    assert options.model == 'claude-opus-5-5'
+    # Skills come from explicit plugin folders; nothing from the project / user settings.
+    assert options.setting_sources == []
+    assert [plugin['path'].endswith('agent-skills') for plugin in options.plugins] == [True, True]
+    assert 'film-copilot:storyboard' in options.skills
     memory_tools = ('remember', 'update_memory', 'forget', 'recall')
     assert all('get_' in name or 'view_' in name or 'wait_' in name or 'list_' in name or name.endswith(memory_tools)
                for name in options.allowed_tools)

@@ -9,6 +9,12 @@ from app.main import create_app
 from app.repositories import CanvasRepository
 
 
+@pytest.fixture(autouse=True)
+def isolated_data_dir(tmp_path, monkeypatch):
+    """Anything that reads CANVAS_DATA_DIR (e.g. the user's skills folder) stays in tmp."""
+    monkeypatch.setenv('CANVAS_DATA_DIR', str(tmp_path / 'data'))
+
+
 @pytest.fixture
 def client(tmp_path) -> Iterator[TestClient]:
     settings = Settings(

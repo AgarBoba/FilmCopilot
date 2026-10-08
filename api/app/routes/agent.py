@@ -26,8 +26,10 @@ class UpdateSessionRequest(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    text: str
+    text: str = ''
     focusNodeIds: list[str] = Field(default_factory=list)
+    # A skill id ("film-copilot:storyboard") the user picked from the / menu.
+    skill: str | None = None
 
 
 class ConfirmRequest(BaseModel):
@@ -88,6 +90,13 @@ def update_session(request: Request, session_id: str, body: UpdateSessionRequest
     return _store(request).update_session(session_id, body.title, body.archived)
 
 
+@router.get('/agent/skills')
+def list_skills() -> dict:
+    """Skills for the / menu in the agent panel (built-in first, then the user's own)."""
+    from ..agent.skills import discover
+    return {'skills': [skill.public() for skill in discover()]}
+
+
 @router.get('/agent/sessions/{session_id}/messages')
 def list_messages(request: Request, session_id: str, after: int = Query(default=0, ge=0)) -> list[dict]:
     store = _store(request)
@@ -97,7 +106,7 @@ def list_messages(request: Request, session_id: str, after: int = Query(default=
 
 @router.post('/agent/sessions/{session_id}/messages', status_code=202)
 async def send_message(request: Request, session_id: str, body: SendMessageRequest) -> dict:
-    run = await _service(request).send_message(session_id, body.text, body.focusNodeIds)
+    run = await _service(request).send_message(session_id, body.text, body.focusNodeIds, body.skill)
     return {'runId': run['id']}
 
 

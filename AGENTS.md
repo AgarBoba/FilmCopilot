@@ -118,6 +118,19 @@ python3 scripts/doctor.py --json     # 机器可读，ready=true 表示可以用
 - **换默认模型**：把 `"default": true` 移到另一个同 kind 的模型文件上。每个 kind 只能有一个默认。
 - **下线模型**：删掉它的 json。已经选了它的节点会自动回落到默认模型。
 
+## 画布 Agent 的技能
+
+画布里的 Agent 会用技能，也就是“做某类事的方法”，每个技能是一个 `SKILL.md`。
+- 内置技能放在 `agent-skills/skills/<名字>/SKILL.md`，随仓库发布。
+- 用户自己的技能放在 `data/agent-skills/skills/`，只在本机，不进 git。
+
+用户想加一个技能，或改某个技能的做法时：
+1. 照着已有的技能写。开头的 `name` 用小写字母和连字符；`description` 写清楚什么时候用，Agent 靠这句判断；正文第一行 `# 中文名` 会显示在 `/` 菜单里。
+2. 用户个人的技能放进 `data/agent-skills/skills/`；只有想给所有人用的才放进 `agent-skills/`，再按“改了代码以后”跑测试。
+3. 不用重启：下一条消息时，Agent 会重新加载技能。
+
+画布 Agent 只能用技能、联网搜索和读网页、任务清单这几样自带能力，不能读写文件、不能跑命令。技能里不要写需要这些能力的步骤。
+
 ## 不要动
 
 - `data/`：用户的画布、素材和对话记录。不要删，不要重置。
@@ -133,6 +146,7 @@ api/app/providers/      provider 对接代码（replicate.py、_template.py）
 api/app/models_registry.py  模型文件的读取与校验
 api/app/worker.py       领取生成任务，调 provider，下载结果
 api/app/agent/          画布里的 Agent（Claude Agent SDK）
+agent-skills/           画布 Agent 的内置技能（SKILL.md，随仓库发布）
 web/src/                React 前端（React Flow 画布）
 scripts/                setup / doctor / add_model / check_model / dev.sh
 docs/ADDING_MODELS.md   模型文件和 provider 的完整说明

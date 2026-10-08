@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { ChatsIcon, CloseIcon, MemoryIcon, PlusIcon, SendIcon, StopIcon, UndoIcon } from '../canvas/icons';
-import { agentApi, type AgentEvent, type PermissionMode } from './agentApi';
+import { ChatsIcon, CloseIcon, MemoryIcon, PlusIcon, SendIcon, SparkIcon, StopIcon, UndoIcon } from '../canvas/icons';
+import { agentApi, type AgentEvent, type AgentSkill, type PermissionMode } from './agentApi';
 import { AgentMessage } from './AgentMessage';
 import { pendingConfirmations, undoableRuns, useAgentStore } from './agentStore';
 import { Markdown } from './Markdown';
@@ -45,6 +45,25 @@ export function AgentPanel({
   const { sessionId, events, streaming, activeRunId, settings, configured, sessions } = store;
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  /** Skills for the / menu, and the one picked for the next message. */
+  const [skills, setSkills] = useState<AgentSkill[]>([]);
+  const [skill, setSkill] = useState<AgentSkill | null>(null);
+  const [menuIndex, setMenuIndex] = useState(0);
+  const slash = /^\/(\S*)$/.exec(draft);
+  const menuSkills = slash ? matchSkills(skills, slash[1]) : [];
+  const menuOpen = Boolean(slash) && menuSkills.length > 0;
+
+  function loadSkills() {
+    agentApi.listSkills().then((data) => setSkills(data.skills)).catch(() => undefined);
+  }
+  useEffect(loadSkills, []);
+
+  function pickSkill(next: AgentSkill) {
+    setSkill(next);
+    setDraft('');
+    setMenuIndex(0);
+    inputRef.current?.focus();
+  }
   const [width, setWidth] = useState(readPanelWidth);
   // The canvas keeps its minimap clear of the panel through this variable.
   useLayoutEffect(() => {
@@ -179,21 +198,22 @@ export function AgentPanel({
 
   async function send() {
     const text = draft.trim();
-    if (!text || sending || activeRunId) return;
+    if ((!text && !skill) || sending || activeRunId) return;
     setSending(true);
     try {
       let id = sessionId;
       if (!id) {
         const session = await agentApi.createSession(canvasId);
         useAgentStore.setState({
-          sessions: [{ ...session, title: text.slice(0, 30), message_count: 1, status: 'running' }, ...sessions],
+          sessions: [{ ...session, title: (text || skill?.label || '').slice(0, 30), message_count: 1, status: 'running' }, ...sessions],
         });
         useAgentStore.getState().reset(session.id);
         id = session.id;
       }
-      const { runId } = await agentApi.send(id, text, selectedNodeIds);
+      const { runId } = await agentApi.send(id, text, selectedNodeIds, skill?.id);
       useAgentStore.setState({ activeRunId: runId, error: null });
       setDraft('');
+      setSkill(null);
       stickToBottom.current = true;
     } catch (error) {
       useAgentStore.setState({ error: error instanceof Error ? error.message : '发送失败' });
@@ -237,6 +257,9 @@ export function AgentPanel({
   }
 
   const pending = new Set(pendingConfirmations(events).map((event) => event.requestId));
+  // The agent's to-do list is re-sent after every change: show only its latest version per run.
+  const lastTasks = new Map<string | null, number>();
+  events.forEach((event, index) => { if (event.kind === 'tasks') lastTasks.set(event.runId, index); });
   const undoable = undoableRuns(events);
   const lastFinishedRun = [...events].reverse().find((event) => event.kind === 'run_finished')?.runId ?? null;
   const focusTitles = { ...nodeTitles };
@@ -330,8 +353,8 @@ export function AgentPanel({
       >
         {configured === false && (
           <div className="agent-empty">
-            Agent 还没配置模型登录。在 .env 里设 AGENT_AUTH=subscription 用 Claude 订阅（先运行 claude setup-token，
-            把令牌填进 CLAUDE_CODE_OAUTH_TOKEN），或填 ANTHROPIC_API_KEY 用 API，然后重启 dev.sh。
+            Agent 还没配置：在项目的 .env 里填上 ANTHROPIC_API_KEY，然后重启 dev.sh。可以让你的编码 Agent 按项目里的
+            AGENTS.md 帮你弄好。
           </div>
         )}
         {configured !== false && events.length === 0 && (
@@ -339,7 +362,7 @@ export function AgentPanel({
             告诉 Agent 你想做什么，比如「用这张兔子图做 3 个不同风格的版本」。先在画布上选中节点，它会围绕这些节点工作。
           </div>
         )}
-        {events.map((event, index) => (
+        {events.map((event, index) => event.kind === 'tasks' && lastTasks.get(event.runId) !== index ? null : (
           <AgentMessage
             key={event.id ?? `live-${index}`}
             event={event}
@@ -385,15 +408,74 @@ export function AgentPanel({
             />
           </div>
         )}
+        {menuOpen && (
+          <div className="agent-skill-menu" role="listbox" aria-label="技能">
+            <div className="agent-skill-menu-head">技能 · 让 Agent 按这套方法做</div>
+            {menuSkills.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                role="option"
+                aria-selected={index === menuIndex}
+                className={index === menuIndex ? 'is-active' : ''}
+                onMouseEnter={() => setMenuIndex(index)}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pickSkill(item)}
+              >
+                <span className="agent-skill-name">
+                  {item.label}
+                  {item.source === 'user' && <span className="agent-skill-tag">我的</span>}
+                </span>
+                <span className="agent-skill-desc">{item.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="agent-input-row">
+          {skill && (
+            <span className="agent-skill-chip" data-tooltip={skill.description} data-tooltip-side="top">
+              <SparkIcon width={12} height={12} />{skill.label}
+              <button type="button" aria-label="不用这个技能" onClick={() => setSkill(null)}>×</button>
+            </span>
+          )}
           <textarea
             ref={inputRef}
             value={draft}
             rows={1}
-            placeholder={activeRunId ? 'Agent 正在处理…' : '想让 Agent 做什么？Enter 发送，Shift+Enter 换行'}
-            onChange={(event) => setDraft(event.target.value)}
+            aria-label="消息"
+            placeholder={activeRunId ? 'Agent 正在处理…'
+              : skill ? `补充要求（可以不写），Enter 发送` : '想让 Agent 做什么？输入 / 选技能，Enter 发送'}
+            onFocus={() => { if (!skills.length) loadSkills(); }}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setMenuIndex(0);
+              if (event.target.value === '/') loadSkills(); // pick up skills added since
+            }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              if (event.nativeEvent.isComposing) return;
+              if (menuOpen) {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  const step = event.key === 'ArrowDown' ? 1 : -1;
+                  setMenuIndex((index) => (index + step + menuSkills.length) % menuSkills.length);
+                  return;
+                }
+                if (event.key === 'Enter' || event.key === 'Tab') {
+                  event.preventDefault();
+                  pickSkill(menuSkills[Math.min(menuIndex, menuSkills.length - 1)]);
+                  return;
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  setDraft('');
+                  return;
+                }
+              }
+              if (event.key === 'Backspace' && !draft && skill) {
+                setSkill(null);
+                return;
+              }
+              if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 void send();
               }
@@ -406,7 +488,7 @@ export function AgentPanel({
             </button>
           ) : (
             <button type="button" className="agent-send" aria-label="发送" data-tooltip="发送"
-              disabled={!draft.trim() || sending || configured === false} onClick={() => void send()}>
+              disabled={(!draft.trim() && !skill) || sending || configured === false} onClick={() => void send()}>
               <SendIcon width={15} height={15} />
             </button>
           )}
@@ -468,4 +550,12 @@ function savePanelWidth(value: number) {
   } catch {
     /* private mode: width just isn't remembered */
   }
+}
+
+
+/** Skills whose label, name or description contains what was typed after "/". */
+function matchSkills(skills: AgentSkill[], query: string): AgentSkill[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return skills;
+  return skills.filter((item) => [item.label, item.name, item.description].some((text) => text.toLowerCase().includes(q)));
 }

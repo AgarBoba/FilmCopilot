@@ -73,7 +73,11 @@ export interface AgentEvent {
     | 'error'
     | 'run_finished'
     | 'run_undone'
-    | 'memory_change';
+    | 'memory_change'
+    | 'skill_used'
+    | 'web_search'
+    | 'web_fetch'
+    | 'tasks';
   createdAt?: string;
   text?: string;
   focus?: string[];
@@ -103,6 +107,31 @@ export interface AgentEvent {
   previous?: string;
   layer?: MemoryLayer;
   categoryLabel?: string;
+  /** skill_used: the skill id; user_message: the skill picked from the / menu. */
+  skill?: string | { id: string; label: string };
+  /** skill_used */
+  label?: string;
+  /** web_search */
+  query?: string;
+  links?: { title: string; url: string }[];
+  /** web_fetch */
+  url?: string;
+  /** tasks: the agent's whole to-do list after each change */
+  items?: AgentTask[];
+}
+
+export interface AgentTask {
+  id: string;
+  subject: string;
+  status: 'pending' | 'in_progress' | 'completed' | string;
+}
+
+export interface AgentSkill {
+  id: string;
+  name: string;
+  label: string;
+  description: string;
+  source: 'builtin' | 'user';
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -137,11 +166,12 @@ export const agentApi = {
     call<AgentSession>(`/agent/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify(changes) }),
   messages: (sessionId: string, after = 0) =>
     call<AgentEvent[]>(`/agent/sessions/${sessionId}/messages?after=${after}`),
-  send: (sessionId: string, text: string, focusNodeIds: string[]) =>
+  send: (sessionId: string, text: string, focusNodeIds: string[], skill?: string | null) =>
     call<{ runId: string }>(`/agent/sessions/${sessionId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ text, focusNodeIds }),
+      body: JSON.stringify({ text, focusNodeIds, ...(skill ? { skill } : {}) }),
     }),
+  listSkills: () => call<{ skills: AgentSkill[] }>('/agent/skills'),
   confirm: (runId: string, requestId: string, approved: boolean, note = '') =>
     call<{ resolved: boolean }>(`/agent/runs/${runId}/confirm`, {
       method: 'POST',
@@ -171,6 +201,7 @@ export const agentApi = {
     const kinds: AgentEvent['kind'][] = [
       'user_message', 'text_delta', 'assistant_text', 'tool_step', 'confirm_request',
       'confirm_resolved', 'error', 'run_finished', 'run_undone', 'memory_change',
+      'skill_used', 'web_search', 'web_fetch', 'tasks',
     ];
     const open = () => {
       if (closed) return;

@@ -18,6 +18,9 @@ WRITE_TOOLS = {
 }
 ASK_IN_DEFAULT_MODE = {'generate', 'delete_nodes'}
 MEMORY_TOOLS = {'remember', 'update_memory', 'forget', 'recall'}
+# Claude Code built-ins the agent has (skills.BUILTIN_TOOLS). None of them touch the canvas or
+# the computer: loading a skill, searching / reading the public web, keeping a to-do list.
+BUILTIN_SAFE_TOOLS = {'Skill', 'WebSearch', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'}
 
 
 @dataclass
@@ -31,8 +34,12 @@ class RunState:
 def decide(tool_name: str, args: dict[str, Any], mode: str, run: RunState) -> tuple[Decision, str]:
     """(decision, reason). `reason` is shown to the user when confirmation is needed."""
     name = tool_name.split('__')[-1]  # accept "mcp__canvas__generate" as well as "generate"
-    if name in READ_ONLY_TOOLS or name in MEMORY_TOOLS:
+    if name in READ_ONLY_TOOLS or name in MEMORY_TOOLS or name in BUILTIN_SAFE_TOOLS:
         return 'allow', ''
+    if name == 'WebFetch':
+        from .skills import url_allowed
+        ok, why = url_allowed(args.get('url', ''))
+        return ('allow', '') if ok else ('deny', f'{why}：{args.get("url", "")}')
     if name not in WRITE_TOOLS:
         return 'deny', f'未知工具 {name}'
 
