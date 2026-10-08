@@ -80,7 +80,7 @@ class CommentService:
 
     def get(self, comment_id: str) -> dict[str, Any]:
         row = self._row(comment_id)
-        return self._public(row, self._node_ids(row['canvas_id']))
+        return self._public(row, self._nodes(row['canvas_id']))
 
     def list(self, canvas_id: str, status: str = 'all', node_id: str | None = None) -> list[dict[str, Any]]:
         self.repository.assert_canvas(canvas_id)
@@ -96,7 +96,7 @@ class CommentService:
         query += ' ORDER BY created_at, rowid'
         with self.database.connection() as connection:
             rows = [dict(row) for row in connection.execute(query, params).fetchall()]
-        nodes = self._node_ids(canvas_id)
+        nodes = self._nodes(canvas_id)
         return [self._public(row, nodes) for row in rows]
 
     def for_session(self, session_id: str) -> dict[str, Any] | None:
@@ -409,12 +409,29 @@ class CommentService:
         queues: Iterable[asyncio.Queue] = list(self.subscribers.get(row['canvas_id'], ()))
         if not queues:
             return
-        comment = self._public(row, self._node_ids(row['canvas_id']))
+        comment = self._public(row, self._nodes(row['canvas_id']))
         for queue in queues:
             queue.put_nowait(comment)
 
+    def _nodes(self, canvas_id: str) -> dict[str, dict[str, Any]]:
+        with self.database.connection() as connection:
+            return {row['id']: json.loads(row['data_json']) for row in connection.execute(
+                'SELECT id, data_json FROM canvas_nodes WHERE canvas_id = ?', (canvas_id,)).fetchall()}
+
+    def _public(self, row: dict[str, Any], nodes: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        comment = self._fields(row, set(nodes))
+        if row['anchor_kind'] == 'media' and row['node_id'] in nodes:
+            # Which picture the pin was put on, and whether the node has moved on since.
+            pinned = self.versions.get(row['canvas_id'], row['node_id'], row['version'])
+            comment['anchor']['assetId'] = pinned['assetId'] if pinned else None
+            comment['anchor']['currentVersion'] = self.versions.latest(
+                row['canvas_id'], row['node_id'], nodes[row['node_id']].get('assetId'))
+            # A different picture than the one pinned (switching back to it counts as the same).
+            comment['anchor']['stale'] = bool(pinned) and pinned['assetId'] != nodes[row['node_id']].get('assetId')
+        return comment
+
     @staticmethod
-    def _public(row: dict[str, Any], node_ids: set[str]) -> dict[str, Any]:
+    def _fields(row: dict[str, Any], node_ids: set[str]) -> dict[str, Any]:
         anchor: dict[str, Any] = {'kind': row['anchor_kind']}
         if row['anchor_kind'] == 'canvas':
             anchor.update(x=row['x'], y=row['y'])

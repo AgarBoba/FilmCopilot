@@ -34,6 +34,8 @@ export interface AgentSession {
   last_active_at?: string;
   status?: 'idle' | 'running' | 'waiting';
   archived_at?: string | null;
+  /** 'comment': started by a comment pinned on the canvas. */
+  kind?: 'chat' | 'comment';
 }
 
 export type MemoryLayer = 'project' | 'preference';

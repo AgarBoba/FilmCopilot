@@ -2,9 +2,20 @@ import { useEffect, useRef, useState } from 'react';
 
 import { ArchiveIcon, ChevronLeftIcon, PencilIcon, PlusIcon, SearchIcon } from '../canvas/icons';
 import type { AgentSession } from './agentApi';
+import type { SessionFilter } from './agentStore';
+import { assetFileUrl, describeAnchor, STATUS_LABELS, type CanvasComment } from '../comments/commentApi';
 
 interface SessionListProps {
   sessions: AgentSession[];
+  /** Canvas comments: each is a chat of its own, listed with its pin's status. */
+  comments?: CanvasComment[];
+  filter?: SessionFilter;
+  onFilterChange?: (filter: SessionFilter) => void;
+  /** Only this node's comments (from the comment badge on a node). */
+  nodeFilter?: string | null;
+  onClearNodeFilter?: () => void;
+  nodeTitles?: Record<string, string>;
+  onOpenComment?: (comment: CanvasComment) => void;
   currentId: string | null;
   onOpen: (id: string) => void;
   onNew: () => void;
@@ -43,9 +54,23 @@ const STATUS_LABEL = { running: '运行中', waiting: '等你确认', idle: '' }
  * All chats on this canvas: search, grouped by last activity, with live status. Archived
  * chats sit in a collapsed section at the bottom and can be restored.
  */
-export function SessionList({ sessions, currentId, onOpen, onNew, onBack, onRename, onArchive }: SessionListProps) {
+type Entry =
+  | { type: 'chat'; time: string; session: AgentSession }
+  | { type: 'comment'; time: string; comment: CanvasComment };
+
+const FILTERS: { value: SessionFilter; label: string }[] = [
+  { value: 'all', label: '全部' },
+  { value: 'comment', label: '留言' },
+  { value: 'chat', label: '对话' },
+];
+
+export function SessionList({
+  sessions, comments = [], filter = 'all', onFilterChange, nodeFilter = null, onClearNodeFilter, nodeTitles = {},
+  onOpenComment, currentId, onOpen, onNew, onBack, onRename, onArchive,
+}: SessionListProps) {
   const [query, setQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [showResolved, setShowResolved] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const now = new Date();
@@ -55,18 +80,60 @@ export function SessionList({ sessions, currentId, onOpen, onNew, onBack, onRena
   const needle = query.trim().toLowerCase();
   const matches = (session: AgentSession) => !needle
     || `${session.title ?? ''} ${session.preview ?? ''}`.toLowerCase().includes(needle);
-  // Chats nobody wrote in yet are noise, except the one that is open.
-  const visible = sessions.filter((s) => (s.message_count ?? 0) > 0 || s.id === currentId).filter(matches);
-  const active = visible.filter((s) => !s.archived_at);
+  const commentMatches = (comment: CanvasComment) => !needle
+    || `${comment.text} ${comment.outcome ?? ''}`.toLowerCase().includes(needle);
+  const showChats = filter !== 'comment' && !nodeFilter;
+  const showComments = filter !== 'chat';
+  // Chats nobody wrote in yet are noise, except the one that is open. Comment chats are
+  // listed through their comment instead.
+  const visible = showChats
+    ? sessions.filter((s) => s.kind !== 'comment').filter((s) => (s.message_count ?? 0) > 0 || s.id === currentId).filter(matches)
+    : [];
+  const listedComments = showComments
+    ? comments.filter((c) => !nodeFilter || c.anchor.nodeId === nodeFilter).filter(commentMatches)
+    : [];
+  const resolved = listedComments.filter((c) => c.status === 'resolved')
+    .sort((a, b) => (b.resolvedAt ?? b.updatedAt).localeCompare(a.resolvedAt ?? a.updatedAt));
   const archived = visible.filter((s) => s.archived_at);
+  const entries: Entry[] = [
+    ...visible.filter((s) => !s.archived_at)
+      .map((session): Entry => ({ type: 'chat', time: session.last_active_at ?? session.created_at, session })),
+    ...listedComments.filter((c) => c.status !== 'resolved')
+      .map((comment): Entry => ({ type: 'comment', time: comment.updatedAt, comment })),
+  ].sort((a, b) => (parseTime(b.time)?.getTime() ?? 0) - (parseTime(a.time)?.getTime() ?? 0));
 
-  const groups: { label: string; items: AgentSession[] }[] = [];
-  for (const session of active) {
-    const label = dayGroup(parseTime(session.last_active_at ?? session.created_at), now);
+  const groups: { label: string; items: Entry[] }[] = [];
+  for (const entry of entries) {
+    const label = dayGroup(parseTime(entry.time), now);
     const group = groups.find((item) => item.label === label);
-    if (group) group.items.push(session);
-    else groups.push({ label, items: [session] });
+    if (group) group.items.push(entry);
+    else groups.push({ label, items: [entry] });
   }
+  const openCount = comments.filter((c) => c.status !== 'resolved').length;
+
+  const commentRow = (comment: CanvasComment) => {
+    const where = describeAnchor(comment.anchor, nodeTitles);
+    const thumb = comment.anchor.kind === 'media' && comment.anchor.assetId && comment.anchor.time == null
+      ? assetFileUrl(comment.anchor.assetId) : null;
+    return (
+      <li key={comment.id} className={`session-item is-comment is-${comment.status} ${comment.sessionId === currentId ? 'is-current' : ''}`}>
+        <button type="button" className="session-open" onClick={() => onOpenComment?.(comment)}>
+          <span className={`session-pin is-${comment.status}`} aria-hidden="true" />
+          <span className="session-main">
+            <span className="session-title-row">
+              <span className="session-title">{comment.text}</span>
+              <span className="session-status">{STATUS_LABELS[comment.status]}</span>
+              <span className="session-time">{shortTime(parseTime(comment.updatedAt), now)}</span>
+            </span>
+            <span className="session-preview">
+              {where}{comment.nodeMissing ? '（节点已删除）' : ''}{comment.outcome ? ` · ${comment.outcome}` : ''}
+            </span>
+          </span>
+          {thumb && <img className="session-thumb" src={thumb} alt="" loading="lazy" />}
+        </button>
+      </li>
+    );
+  };
 
   const row = (session: AgentSession) => {
     const status = session.status ?? 'idle';
@@ -137,16 +204,51 @@ export function SessionList({ sessions, currentId, onOpen, onNew, onBack, onRena
           onKeyDown={(event) => { if (event.key === 'Escape') onBack(); }}
         />
       </label>
+      {onFilterChange && (
+        <div className="session-filters" role="tablist" aria-label="筛选">
+          {FILTERS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              role="tab"
+              aria-selected={filter === item.value}
+              className={filter === item.value ? 'is-active' : ''}
+              onClick={() => onFilterChange(item.value)}
+            >
+              {item.label}
+              {item.value === 'comment' && openCount > 0 && <span className="session-filter-count">{openCount}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {nodeFilter && (
+        <div className="session-node-filter">
+          只看「{nodeTitles[nodeFilter] || '这个节点'}」的留言
+          <button type="button" aria-label="看全部留言" onClick={onClearNodeFilter}>×</button>
+        </div>
+      )}
       <div className="session-scroll">
-        {!active.length && (
-          <div className="session-empty">{needle ? '没有找到相关对话' : '这张画布上还没有对话'}</div>
+        {!entries.length && (
+          <div className="session-empty">
+            {needle ? '没有找到相关内容'
+              : filter === 'comment' || nodeFilter ? '还没有留言。按 C 进入留言模式，在画布上点一下就能留'
+                : '这张画布上还没有对话'}
+          </div>
         )}
         {groups.map((group) => (
           <section key={group.label}>
             <h3 className="session-group">{group.label}</h3>
-            <ul>{group.items.map(row)}</ul>
+            <ul>{group.items.map((entry) => (entry.type === 'chat' ? row(entry.session) : commentRow(entry.comment)))}</ul>
           </section>
         ))}
+        {resolved.length > 0 && (
+          <section className="session-archived">
+            <button type="button" className="session-group session-archived-toggle" onClick={() => setShowResolved(!showResolved)}>
+              已解决（{resolved.length}）{showResolved ? '▾' : '▸'}
+            </button>
+            {showResolved && <ul>{resolved.map(commentRow)}</ul>}
+          </section>
+        )}
         {archived.length > 0 && (
           <section className="session-archived">
             <button type="button" className="session-group session-archived-toggle" onClick={() => setShowArchived(!showArchived)}>

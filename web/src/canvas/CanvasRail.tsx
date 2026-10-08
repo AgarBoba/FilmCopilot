@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { NodeType } from '../domain/types';
-import { ImageIcon, NoteIcon, PlusIcon, SparkIcon, UploadIcon, VideoIcon } from './icons';
+import { CommentIcon, ImageIcon, NoteIcon, PlusIcon, SparkIcon, UploadIcon, VideoIcon } from './icons';
 
 
 const NODE_OPTIONS: { type: NodeType; label: string; hint: string; Icon: typeof ImageIcon }[] = [
@@ -15,11 +15,20 @@ interface CanvasRailProps {
   onUpload: () => void;
   agentOpen?: boolean;
   onToggleAgent?: () => void;
+  /** Comment mode: click anywhere on the canvas to pin a comment for the agent. */
+  commentMode?: boolean;
+  onToggleComments?: () => void;
+  /** Open (unresolved) comments, and whether one waits for the user's confirmation. */
+  commentCount?: number;
+  commentWaiting?: boolean;
 }
 
 
 /** Left-side rail: "+" opens the node menu; upload picks the node type from the file. */
-export function CanvasRail({ onAddNode, onUpload, agentOpen = false, onToggleAgent }: CanvasRailProps) {
+export function CanvasRail({
+  onAddNode, onUpload, agentOpen = false, onToggleAgent, commentMode = false, onToggleComments, commentCount = 0,
+  commentWaiting = false,
+}: CanvasRailProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +76,28 @@ export function CanvasRail({ onAddNode, onUpload, agentOpen = false, onToggleAge
       >
         <UploadIcon />
       </button>
+      {onToggleComments && (
+        <button
+          type="button"
+          className={`rail-button ${commentMode ? 'is-active' : ''}`}
+          aria-label="留言"
+          aria-pressed={commentMode}
+          data-tooltip="留言：在画布、节点或画面上钉一条意见，Agent 接手去改"
+          data-tooltip-shortcut="C"
+          data-tooltip-side="right"
+          onClick={() => {
+            setMenuOpen(false);
+            onToggleComments();
+          }}
+        >
+          <CommentIcon />
+          {commentCount > 0 && (
+            <span className={`rail-badge ${commentWaiting ? 'is-waiting' : ''}`} aria-label={`${commentCount} 条未解决的留言`}>
+              {commentCount > 99 ? '99+' : commentCount}
+            </span>
+          )}
+        </button>
+      )}
       {onToggleAgent && (
         <button
           type="button"

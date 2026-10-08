@@ -3000,3 +3000,429 @@ body.is-resizing-panel .agent-panel { transition: none; }
 }
 .agent-skill-chip button:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .agent-skill-chip.is-sent { align-self: flex-end; margin-bottom: 4px; padding-right: 8px; }
+
+/* ===================================================================== Canvas comments */
+/* Pins, the new-comment box and the popover sit over the canvas at a fixed size (spec 3.2). */
+.canvas-page {
+  --pin-queued: #5b5b63;
+  --pin-waiting: #f5b041;
+  --pin-done: #22c55e;
+  --pin-failed: #e5484d;
+}
+.comment-layer { position: absolute; inset: 0; z-index: 20; pointer-events: none; overflow: hidden; }
+.comment-ui { pointer-events: auto; }
+
+/* A speech bubble whose sharp bottom-left corner sits exactly on the spot. */
+.comment-pin {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50% 50% 50% 4px;
+  color: #141416;
+  background: #fff;
+  font: 700 12px/1 inherit;
+  transform: translate(0, -100%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42), 0 0 0 2px rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 160ms ease;
+  animation: pin-in 160ms ease-out;
+}
+.comment-pin:hover, .comment-pin.is-active { transform: translate(0, -100%) scale(1.12); }
+.comment-pin.is-active { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 0 2px #fff, 0 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent); }
+.comment-pin.is-queued { color: #ececf0; background: var(--pin-queued); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42), 0 0 0 2px rgba(255, 255, 255, 0.55); }
+.comment-pin.is-running::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  animation: generation-spin 1s linear infinite;
+}
+.theme-light .comment-pin.is-running::after { border-color: rgba(23, 24, 28, 0.6); border-right-color: transparent; border-bottom-color: transparent; }
+.comment-pin.is-waiting {
+  color: #2a1c00;
+  background: var(--pin-waiting);
+  box-shadow: 0 0 0 2px #fff, 0 0 0 6px rgba(245, 176, 65, 0.3), 0 4px 12px rgba(0, 0, 0, 0.42);
+  animation: pin-in 160ms ease-out, pin-pulse 1.6s ease-in-out infinite;
+}
+.comment-pin.is-done { color: #fff; background: var(--pin-done); }
+.comment-pin.is-failed { color: #fff; background: var(--pin-failed); font-size: 15px; }
+.comment-pin.is-resolved { color: #fff; background: var(--pin-queued); }
+.comment-pin.is-old:not(.is-active) { opacity: 0.45; }
+.comment-pin.is-draft { background: var(--accent); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42), 0 0 0 2px #fff; cursor: default; }
+.comment-pin svg { stroke-width: 2.6; }
+@keyframes pin-in { from { opacity: 0; transform: translate(0, -80%) scale(0.6); } }
+@keyframes pin-pulse { 50% { box-shadow: 0 0 0 2px #fff, 0 0 0 9px rgba(245, 176, 65, 0.12), 0 4px 12px rgba(0, 0, 0, 0.42); } }
+@media (prefers-reduced-motion: reduce) {
+  .comment-pin, .comment-pin.is-waiting { animation: none; }
+  .comment-pin.is-running::after { animation-duration: 3s; }
+}
+
+/* Comment mode: a small pin for a cursor; nodes can't be picked up. */
+.canvas-page.is-commenting .react-flow__pane,
+.canvas-page.is-commenting .react-flow__node,
+.canvas-page.is-commenting .react-flow__node * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'%3E%3Cpath d='M3 23V13a9 9 0 1 1 9 9H3z' fill='white' stroke='%23141416' stroke-width='1.6'/%3E%3Cpath d='M9 13h6M12 10v6' stroke='%23141416' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") 3 23, crosshair;
+}
+.canvas-page.is-commenting .react-flow__node .video-controls,
+.canvas-page.is-commenting .react-flow__node .video-controls * { cursor: pointer; }
+
+.comment-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: var(--chrome-bg);
+  box-shadow: var(--chrome-shadow);
+  backdrop-filter: blur(12px);
+  font-size: 12.5px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.comment-hint.is-quiet { color: var(--text-muted); }
+.comment-hint-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+.comment-hint button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: var(--chrome-hover);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.comment-hint kbd { margin-left: 2px; color: var(--text-muted); font: inherit; font-size: 11px; }
+
+/* New comment and popover share the look of the agent panel. */
+.comment-draft,
+.comment-popover {
+  position: absolute;
+  border: 1px solid var(--chrome-border);
+  border-radius: 16px;
+  color: var(--text-primary);
+  background: var(--node-bg);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.35);
+  font-size: 12.5px;
+}
+.comment-draft { width: 290px; padding: 10px; animation: popover-in 140ms ease-out; }
+.comment-draft-where { margin-bottom: 6px; color: var(--text-muted); font-size: 11.5px; }
+.comment-draft textarea,
+.comment-reply textarea {
+  width: 100%;
+  resize: none;
+  padding: 7px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  outline: none;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+  font: inherit;
+  line-height: 1.5;
+}
+.comment-draft textarea:focus, .comment-reply textarea:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.comment-draft-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
+@keyframes popover-in { from { opacity: 0; transform: translateY(4px); } }
+
+.comment-popover { display: flex; flex-direction: column; max-height: min(520px, calc(100% - 16px)); overflow: hidden; animation: popover-in 140ms ease-out; }
+.comment-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 8px 9px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.comment-popover-where { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comment-status {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--chrome-hover);
+  font-weight: 600;
+}
+.comment-status.is-running { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.comment-status.is-waiting { color: #b7791f; background: rgba(245, 176, 65, 0.16); }
+.theme-dark .comment-status.is-waiting { color: var(--pin-waiting); }
+.comment-status.is-done { color: #16a34a; background: rgba(34, 197, 94, 0.14); }
+.comment-status.is-failed { color: var(--pin-failed); background: rgba(229, 72, 77, 0.12); }
+.comment-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.comment-icon:hover { color: var(--text-primary); background: var(--chrome-hover); }
+.comment-old-version {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.comment-old-version img, .comment-old-version video { flex: none; width: 44px; height: 44px; border-radius: 8px; object-fit: cover; }
+.comment-note { margin: 6px 0; padding: 6px 10px; border-radius: 8px; color: var(--text-muted); background: var(--chrome-hover); font-size: 11.5px; }
+.comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 60px;
+  max-height: 320px;
+  padding: 10px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Compact versions of the panel's messages. */
+.comment-thread .agent-msg { font-size: 12.5px; }
+.comment-thread .agent-msg.is-user .agent-bubble { max-width: 88%; padding: 6px 10px; }
+.comment-thread .agent-step { padding: 2px 0; font-size: 11.5px; }
+.comment-thread .agent-msg-actions { display: none; }
+.comment-popover-foot { padding: 8px 10px 10px; border-top: 1px solid var(--chrome-border); }
+.comment-reply { display: flex; align-items: flex-end; gap: 6px; }
+.comment-send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--cta-text, #fff);
+  background: var(--cta-bg, var(--accent));
+  cursor: pointer;
+}
+.comment-send:disabled { opacity: 0.35; cursor: default; }
+.comment-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.comment-link { padding: 0; border: 0; color: var(--text-muted); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.comment-link:hover { color: var(--text-primary); text-decoration: underline; }
+.comment-button {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: var(--chrome-hover);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.comment-button.is-primary { color: var(--cta-text, #fff); background: var(--cta-bg, var(--accent)); }
+.comment-button:disabled { opacity: 0.4; cursor: default; }
+.comment-error {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: #fff;
+  background: #c2410c;
+  font-size: 12.5px;
+  transform: translateX(-50%);
+}
+.comment-error button { border: 0; color: inherit; background: transparent; cursor: pointer; }
+
+/* "2 条留言" on a closed card; hidden once the card opens and shows its pins. */
+.comment-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(20, 20, 22, 0.72);
+  backdrop-filter: blur(8px);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.comment-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+.comment-badge.is-waiting .comment-badge-dot { background: var(--pin-waiting); }
+.react-flow__node.selected .comment-badge,
+.canvas-page.is-commenting .comment-badge { display: none; }
+
+/* Comment marks above a video's progress bar; click to jump there. */
+.video-track { position: relative; display: flex; flex: 1; align-items: center; min-width: 40px; }
+.video-track .video-progress { flex: 1; }
+.video-mark {
+  position: absolute;
+  top: -9px;
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 0;
+  border-radius: 50% 50% 50% 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.5);
+  transform: translateX(-2px);
+  cursor: pointer;
+}
+.video-mark.is-queued { background: #a1a1aa; }
+.video-mark.is-waiting { background: var(--pin-waiting); }
+.video-mark.is-done { background: var(--pin-done); }
+.video-mark.is-failed { background: var(--pin-failed); }
+.video-mark:hover { transform: translateX(-2px) scale(1.25); }
+
+/* Rail: count of open comments on the comment button. */
+.rail-button { position: relative; }
+.rail-badge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+.rail-badge.is-waiting { color: #2a1c00; background: var(--pin-waiting); }
+
+/* Panel list: 全部 / 留言 / 对话, comment rows, the node filter. */
+.session-filters {
+  display: flex;
+  gap: 4px;
+  margin: 0 12px 6px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--chrome-hover);
+}
+.session-filters button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.session-filters button.is-active { color: var(--text-primary); background: var(--node-bg); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); font-weight: 600; }
+.session-filter-count { min-width: 16px; padding: 0 5px; border-radius: 999px; color: #fff; background: var(--accent); font-size: 10px; line-height: 16px; }
+.session-node-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 12px 6px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 12px;
+}
+.session-node-filter button { border: 0; color: inherit; background: transparent; font-size: 15px; cursor: pointer; }
+.session-pin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border-radius: 50% 50% 50% 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--text-muted) 60%, transparent);
+}
+.session-pin.is-queued { background: var(--pin-queued); }
+.session-pin.is-running { background: var(--accent); animation: session-pulse 1.4s ease-in-out infinite; box-shadow: none; }
+.session-pin.is-waiting { background: var(--pin-waiting); box-shadow: none; }
+.session-pin.is-done { background: var(--pin-done); box-shadow: none; }
+.session-pin.is-failed { background: var(--pin-failed); box-shadow: none; }
+.session-pin.is-resolved { background: color-mix(in srgb, var(--text-muted) 45%, transparent); box-shadow: none; }
+.session-item.is-comment.is-done .session-status { color: #16a34a; }
+.session-item.is-comment.is-failed .session-status { color: var(--pin-failed); }
+.session-item.is-comment.is-queued .session-status,
+.session-item.is-comment.is-resolved .session-status { color: var(--text-muted); }
+.session-thumb { flex: none; width: 34px; height: 34px; border-radius: 6px; object-fit: cover; }
+
+/* Panel: a comment's chat says where it is pinned. */
+.agent-comment-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 10px;
+  background: var(--chrome-hover);
+  font-size: 12px;
+}
+.agent-comment-where { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-comment-status { flex: none; color: var(--text-muted); font-weight: 600; }
+.agent-comment-bar.is-waiting .agent-comment-status { color: #f59e0b; }
+.agent-comment-bar.is-done .agent-comment-status { color: #16a34a; }
+.agent-comment-bar button {
+  flex: none;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: var(--node-bg);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.agent-comment-bar button:disabled { opacity: 0.4; cursor: default; }
+
+/* Node menu → 版本历史 */
+.version-history-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); }
+.version-history {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 64px));
+  border: 1px solid var(--chrome-border);
+  border-radius: 18px;
+  color: var(--text-primary);
+  background: var(--node-bg);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.version-history header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--chrome-border); font-weight: 600; }
+.version-history header button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; color: var(--text-muted); background: transparent; cursor: pointer; }
+.version-history header button:hover { background: var(--chrome-hover); }
+.version-history ul { margin: 0; padding: 8px; overflow-y: auto; list-style: none; }
+.version-history li { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 12px; }
+.version-history li.is-current { background: var(--chrome-hover); }
+.version-thumb { flex: none; width: 72px; height: 72px; overflow: hidden; border-radius: 10px; background: var(--card-inset); }
+.version-thumb img, .version-thumb video { width: 100%; height: 100%; object-fit: cover; }
+.version-info { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.version-title { font-weight: 600; font-size: 13px; }
+.version-title em { margin-left: 8px; padding: 1px 7px; border-radius: 999px; color: #fff; background: var(--accent); font-size: 10.5px; font-style: normal; }
+.version-meta, .version-comment, .version-prompt { overflow: hidden; color: var(--text-muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.version-comment { color: var(--accent); }
+.version-empty, .version-error { padding: 24px 16px; color: var(--text-muted); text-align: center; font-size: 13px; }
+.version-error { color: var(--pin-failed); }
+.version-history footer { padding: 10px 16px; border-top: 1px solid var(--chrome-border); color: var(--text-muted); font-size: 11.5px; }

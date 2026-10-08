@@ -4,6 +4,9 @@ import type { AgentEvent, AgentSession, AgentSettings } from './agentApi';
 
 export const RECENT_MARK_MS = 4000;
 
+/** The chat list's filter: everything, canvas comments only, or panel chats only. */
+export type SessionFilter = 'all' | 'comment' | 'chat';
+
 /** What the panel renders: persisted events plus the text currently streaming in. */
 export interface AgentState {
   open: boolean;
@@ -23,6 +26,11 @@ export interface AgentState {
   settings: AgentSettings | null;
   lastEventId: number;
   error: string | null;
+  /** Set by the canvas (comment badge, "在面板中打开"); the panel acts on it and clears it. */
+  listRequest: { filter: SessionFilter; nodeId?: string; seq: number } | null;
+  sessionRequest: { id: string; seq: number } | null;
+  requestList: (request: { filter: SessionFilter; nodeId?: string }) => void;
+  requestSession: (id: string) => void;
   setOpen: (open: boolean) => void;
   reset: (sessionId: string | null, events?: AgentEvent[]) => void;
   apply: (event: AgentEvent) => void;
@@ -44,6 +52,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   lastEventId: 0,
   error: null,
 
+  listRequest: null,
+  sessionRequest: null,
+  requestList: (request) => set({ listRequest: { ...request, seq: (get().listRequest?.seq ?? 0) + 1 } }),
+  requestSession: (id) => set({ sessionRequest: { id, seq: (get().sessionRequest?.seq ?? 0) + 1 } }),
   setOpen: (open) => set({ open }),
 
   reset: (sessionId, events = []) => {

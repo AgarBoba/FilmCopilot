@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import socket
 import stat
+import shutil
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -45,6 +46,10 @@ def check_python() -> bool:
 
 def check_web() -> None:
     check('Web 依赖', (ROOT / 'web' / 'node_modules' / 'vite').exists(), '', '运行 python3 scripts/setup.py')
+    # Optional: the agent looks at video frames (view_asset, comments pinned on a video) with ffmpeg.
+    found = bool(shutil.which('ffmpeg') and shutil.which('ffprobe'))
+    check('ffmpeg', found, '已安装' if found else 'Agent 看不了视频画面',
+          'macOS: brew install ffmpeg；Windows: winget install ffmpeg', required=False)
 
 
 def check_env_file() -> list[int]:

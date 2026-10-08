@@ -10,6 +10,7 @@ import { ReferenceStrip, normalizeReferences, type NodeReference } from './Refer
 import { GenerationOverlay, isGenerationBusy } from './GenerationOverlay';
 import { PromptComposer } from './PromptComposer';
 import { NodeTag } from './NodeTag';
+import { CommentBadge, type NodeCommentSummary } from './CommentBadge';
 
 
 export interface ImageNodeData {
@@ -32,18 +33,21 @@ export interface ImageNodeData {
   model?: string;
   onModelChange?: (model: string, parameters: Record<string, unknown>) => void;
   onRemoveReference?: (reference: NodeReference) => void;
+  comments?: NodeCommentSummary;
+  onOpenComments?: () => void;
   [key: string]: unknown;
 }
 
 
 interface ImageNodeProps {
+  id?: string;
   data: ImageNodeData;
   /** From React Flow: the node's x on the canvas, used to swing the name tag while dragging. */
   positionAbsoluteX?: number;
 }
 
 
-export function ImageNode({ data, positionAbsoluteX }: ImageNodeProps) {
+export function ImageNode({ id, data, positionAbsoluteX }: ImageNodeProps) {
   const references = normalizeReferences(data.references);
   const busy = isGenerationBusy(data.generationStatus);
   const noteCount = references.filter((reference) => reference.kind === 'note' && reference.text?.trim()).length;
@@ -60,6 +64,7 @@ export function ImageNode({ data, positionAbsoluteX }: ImageNodeProps) {
           <NodeTitle title={data.title} fallback="图片节点" onChange={data.onTitleChange} />
           <MediaNodeActions
             kind="image"
+            nodeId={id}
             assetUrl={data.assetUrl}
             title={data.title?.trim() || '图片节点'}
             busy={busy}
@@ -70,6 +75,7 @@ export function ImageNode({ data, positionAbsoluteX }: ImageNodeProps) {
       </div>
       <div className="media-preview image-preview">
         <GenerationOverlay status={data.generationStatus} error={data.generationError} />
+        <CommentBadge summary={data.comments} onOpen={data.onOpenComments} />
         {data.assetUrl ? (
           <img src={data.assetUrl} alt={data.title ?? 'image'} />
         ) : (

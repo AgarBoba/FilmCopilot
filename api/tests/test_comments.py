@@ -45,7 +45,8 @@ def test_a_comment_on_a_picture_starts_a_run_with_its_location(repository):
         return comment
 
     comment = asyncio.run(scenario())
-    assert comment['anchor'] == {'kind': 'media', 'nodeId': 'img', 'version': 1, 'x': 0.62, 'y': 0.3, 'time': None}
+    assert comment['anchor'] == {'kind': 'media', 'nodeId': 'img', 'version': 1, 'x': 0.62, 'y': 0.3, 'time': None,
+                                 'assetId': 'a1', 'currentVersion': 1, 'stale': False}
     prompt = factory.clients[0].prompts[0]
     assert '[留言位置] 图片节点「图片 img」[img] 第 1 版，画面内 (62%, 30%) 处' in prompt
     assert prompt.endswith('这里的天空换成黄昏')

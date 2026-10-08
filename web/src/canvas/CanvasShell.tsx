@@ -49,6 +49,9 @@ import { useAgentStore } from '../agent/agentStore';
 import { isGenerationBusy } from '../nodes/GenerationOverlay';
 import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM, useTrackpadGestures } from './useTrackpadGestures';
 import { ConnectionChooser, type ChooserNodeType } from './ConnectionChooser';
+import { CommentLayer, type CommentFlow } from '../comments/CommentLayer';
+import { openComments, useCommentStore } from '../comments/commentStore';
+import type { CanvasComment } from '../comments/commentApi';
 
 
 const nodeTypes = { image: ImageNode, video: VideoNode, note: NoteNode };
@@ -108,7 +111,9 @@ export function CanvasShell() {
   const [nodes, setNodes] = useState<Node<CanvasNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
-  const flowRef = useRef<Pick<ReactFlowInstance<Node<CanvasNodeData>, Edge>, 'screenToFlowPosition' | 'getNodes' | 'getViewport' | 'setViewport' | 'fitView'> | null>(null);
+  const flowRef = useRef<Pick<ReactFlowInstance<Node<CanvasNodeData>, Edge>, 'screenToFlowPosition' | 'flowToScreenPosition' | 'getNodes' | 'getViewport' | 'setViewport' | 'setCenter' | 'fitView'> | null>(null);
+  const comments = useCommentStore((state) => state.comments);
+  const commentMode = useCommentStore((state) => state.mode);
   const agentOpen = useAgentStore((state) => state.open);
   const agentEvents = useAgentStore((state) => state.events);
   const agentActiveRun = useAgentStore((state) => state.activeRunId);
@@ -176,6 +181,9 @@ export function CanvasShell() {
         setTool('select');
       } else if (event.key.toLowerCase() === 'h') {
         setTool('hand');
+      } else if (event.key.toLowerCase() === 'c') {
+        const store = useCommentStore.getState();
+        store.setMode(!store.mode);
       }
     }
     function onKeyUp(event: KeyboardEvent) {
@@ -304,11 +312,36 @@ export function CanvasShell() {
     () => agentNodeMarks(agentEvents, agentActiveRun, agentRecentRun),
     [agentEvents, agentActiveRun, agentRecentRun],
   );
+  /** Open comments per node: the badge on closed cards and the marks on video progress bars. */
+  const nodeComments = useMemo(() => {
+    const byNode = new Map<string, CanvasComment[]>();
+    for (const comment of openComments(comments)) {
+      const nodeId = comment.anchor.nodeId;
+      if (comment.anchor.kind === 'canvas' || !nodeId) continue;
+      byNode.set(nodeId, [...(byNode.get(nodeId) ?? []), comment]);
+    }
+    return byNode;
+  }, [comments]);
   const displayNodes = useMemo(() => {
-    if (!agentMarks.size && !dropTarget) return nodes;
+    if (!agentMarks.size && !dropTarget && !nodeComments.size) return nodes;
     return nodes.map((node) => {
       const mark = agentMarks.get(node.id);
       const isDropTarget = node.id === dropTarget;
+      const pinned = nodeComments.get(node.id);
+      if (pinned) {
+        node = {
+          ...node,
+          data: {
+            ...node.data,
+            comments: { count: pinned.length, waiting: pinned.some((comment) => comment.status === 'waiting') },
+            onOpenComments: () => openCommentList(node.id),
+            commentMarks: pinned
+              .filter((comment) => comment.anchor.kind === 'media' && comment.anchor.time != null)
+              .map((comment) => ({ id: comment.id, time: comment.anchor.time ?? 0, status: comment.status, text: comment.text })),
+            onOpenComment: (commentId: string) => useCommentStore.getState().open(commentId),
+          },
+        };
+      }
       if (!mark && !isDropTarget) return node;
       const busy = isGenerationBusy(node.data.generationStatus as string | undefined);
       const generating = !!mark && mark !== 'recent' && busy;
@@ -321,7 +354,21 @@ export function CanvasShell() {
       ].filter(Boolean).join(' ');
       return { ...node, className };
     });
-  }, [nodes, agentMarks, dropTarget]);
+  }, [nodes, agentMarks, dropTarget, nodeComments]);
+
+  /** The node's comment badge: the panel's list, showing this node's comments. */
+  function openCommentList(nodeId?: string) {
+    const agent = useAgentStore.getState();
+    agent.setOpen(true);
+    agent.requestList({ filter: 'comment', nodeId });
+  }
+
+  /** "在面板中打开" on a comment: its conversation in the agent panel. */
+  function openCommentInPanel(comment: CanvasComment) {
+    const agent = useAgentStore.getState();
+    agent.setOpen(true);
+    agent.requestSession(comment.sessionId);
+  }
 
   /** What each node looks like as a thumbnail (agent panel focus strip and message history). */
   const nodePreviews = useMemo(() => Object.fromEntries(nodes.map((node): [string, NodeReference] => {
@@ -808,7 +855,7 @@ export function CanvasShell() {
   }
 
   return (
-    <div className={`canvas-page theme-${theme} mode-${activeTool} ${altHeld ? 'is-alt-held' : ''} ${agentOpen ? 'agent-open' : ''}`}>
+    <div className={`canvas-page theme-${theme} mode-${activeTool} ${altHeld ? 'is-alt-held' : ''} ${agentOpen ? 'agent-open' : ''} ${commentMode ? 'is-commenting' : ''}`}>
       <div
         ref={viewportRef}
         className={`canvas-viewport ${dropTarget === null ? 'is-block-over-blank' : ''}`}
@@ -875,6 +922,10 @@ export function CanvasShell() {
               onUpload={requestUploadAsNewNode}
               agentOpen={agentOpen}
               onToggleAgent={() => useAgentStore.getState().setOpen(!agentOpen)}
+              commentMode={commentMode}
+              onToggleComments={() => useCommentStore.getState().setMode(!commentMode)}
+              commentCount={openComments(comments).length}
+              commentWaiting={comments.some((comment) => comment.status === 'waiting')}
             />
           </Panel>
           <Panel position="bottom-left" className="canvas-panel">
@@ -911,6 +962,19 @@ export function CanvasShell() {
             </Panel>
           )}
         </ReactFlow>
+        {canvasId && (
+          <CommentLayer
+            canvasId={canvasId}
+            revision={snapshot?.revision ?? 0}
+            viewportRef={viewportRef}
+            flowRef={flowRef as React.RefObject<CommentFlow | null>}
+            selectedNodeIds={selectedNodeIds}
+            nodeTitles={Object.fromEntries((snapshot?.nodes ?? []).map((node) => [node.id, String(node.data?.title ?? '')]))}
+            onOpenInPanel={openCommentInPanel}
+            onFocusNodes={focusNodes}
+            onSaveToCanvas={(text, title) => void saveTextAsNote(text, title)}
+          />
+        )}
         {pendingConnection && (
           <ConnectionChooser
             position={pendingConnection.screen}

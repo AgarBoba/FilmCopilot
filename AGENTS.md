@@ -131,6 +131,12 @@ python3 scripts/doctor.py --json     # 机器可读，ready=true 表示可以用
 
 画布 Agent 只能用技能、联网搜索和读网页、任务清单这几样自带能力，不能读写文件、不能跑命令。技能里不要写需要这些能力的步骤。
 
+## 画布留言和版本历史
+
+用户可以在画布上钉留言（按 C），每条留言由画布 Agent 单独处理；图片 / 视频节点每换一次画面都记一版，节点「⋯ → 版本历史」可以切回。
+- 数据在 `data/canvas.sqlite3` 的 `canvas_comments`、`node_versions`、`canvas_task_log` 表里，和其他数据一样不要删。
+- 留言要视频截帧时用 ffmpeg；没装的话留言照样能用，只是 Agent 看不到那一帧（`doctor.py` 会提示）。
+
 ## 不要动
 
 - `data/`：用户的画布、素材和对话记录。不要删，不要重置。

@@ -10,6 +10,17 @@ interface VideoPlayerProps {
   videoRef: RefObject<HTMLVideoElement | null>;
   /** Set to true once the user uses the controls, so hover preview stops taking over. */
   manualRef: MutableRefObject<boolean>;
+  /** Comments pinned to moments of this video. */
+  marks?: CommentMark[];
+  /** A mark was clicked: the video has jumped there and paused. */
+  onMark?: (commentId: string) => void;
+}
+
+export interface CommentMark {
+  id: string;
+  time: number;
+  status: string;
+  text: string;
 }
 
 function formatTime(seconds: number) {
@@ -25,7 +36,7 @@ function formatTime(seconds: number) {
  * Hovering the node still plays a silent preview (see VideoNode); once the user
  * touches the controls, playback is theirs until the pointer leaves a paused video.
  */
-export function VideoPlayer({ src, poster, videoRef, manualRef }: VideoPlayerProps) {
+export function VideoPlayer({ src, poster, videoRef, manualRef, marks = [], onMark }: VideoPlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -102,6 +113,7 @@ export function VideoPlayer({ src, poster, videoRef, manualRef }: VideoPlayerPro
         >
           {playing ? <PauseIcon width={14} height={14} /> : <PlayIcon width={14} height={14} />}
         </button>
+        <span className="video-track">
         <input
           type="range"
           className="video-progress nodrag"
@@ -114,6 +126,29 @@ export function VideoPlayer({ src, poster, videoRef, manualRef }: VideoPlayerPro
           onChange={(event) => seek(Number(event.target.value))}
           onClick={(event) => event.stopPropagation()}
         />
+        {duration > 0 && marks.map((mark) => (
+          <button
+            key={mark.id}
+            type="button"
+            className={`video-mark is-${mark.status}`}
+            style={{ left: `${Math.min(100, (mark.time / duration) * 100)}%` }}
+            aria-label={`留言 ${formatTime(mark.time)}：${mark.text}`}
+            data-tooltip={`${formatTime(mark.time)} · ${mark.text.slice(0, 30)}`}
+            data-tooltip-side="top"
+            onClick={(event) => {
+              event.stopPropagation();
+              const video = videoRef.current;
+              if (video) {
+                manualRef.current = true;
+                video.pause();
+                video.currentTime = mark.time;
+                setCurrent(mark.time);
+              }
+              onMark?.(mark.id);
+            }}
+          />
+        ))}
+        </span>
         <span className="video-time" aria-label="播放时间">
           {formatTime(current)} / {formatTime(duration)}
         </span>

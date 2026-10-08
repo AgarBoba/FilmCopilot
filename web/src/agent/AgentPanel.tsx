@@ -3,7 +3,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChatsIcon, CloseIcon, MemoryIcon, PlusIcon, SendIcon, SparkIcon, StopIcon, UndoIcon } from '../canvas/icons';
 import { agentApi, type AgentEvent, type AgentSkill, type PermissionMode } from './agentApi';
 import { AgentMessage } from './AgentMessage';
-import { pendingConfirmations, undoableRuns, useAgentStore } from './agentStore';
+import { pendingConfirmations, undoableRuns, useAgentStore, type SessionFilter } from './agentStore';
+import { useCommentStore } from '../comments/commentStore';
+import { describeAnchor, STATUS_LABELS, type CanvasComment } from '../comments/commentApi';
 import { Markdown } from './Markdown';
 import { SessionList } from './SessionList';
 import { MemoryView } from './MemoryView';
@@ -88,6 +90,38 @@ export function AgentPanel({
 
   /** 'list' shows every chat on this canvas; 'chat' the open one. */
   const [view, setView] = useState<'chat' | 'list' | 'memory'>('chat');
+  const [listFilter, setListFilter] = useState<SessionFilter>('all');
+  const [nodeFilter, setNodeFilter] = useState<string | null>(null);
+  const comments = useCommentStore((state) => state.comments);
+  /** The open chat belongs to a canvas comment: replies go through the comment's queue. */
+  const currentComment = comments.find((comment) => comment.sessionId === sessionId) ?? null;
+  const commentBusy = currentComment ? ['queued', 'running', 'waiting'].includes(currentComment.status) : false;
+  const listRequest = useAgentStore((state) => state.listRequest);
+  /** Set once the canvas asked for a list or a chat: the panel then doesn't jump to the last chat. */
+  const requestedRef = useRef(false);
+  const sessionRequest = useAgentStore((state) => state.sessionRequest);
+
+  // The canvas asked for the comment list (a node's badge) or a comment's chat.
+  useEffect(() => {
+    if (!listRequest) return;
+    requestedRef.current = true;
+    setListFilter(listRequest.filter);
+    setNodeFilter(listRequest.nodeId ?? null);
+    setView('list');
+    useAgentStore.setState({ listRequest: null });
+  }, [listRequest]);
+  useEffect(() => {
+    if (!sessionRequest) return;
+    requestedRef.current = true;
+    useAgentStore.setState({ sessionRequest: null });
+    void agentApi.listSessions(canvasId).then((list) => useAgentStore.setState({ sessions: list })).catch(() => undefined);
+    void openSession(sessionRequest.id);
+  }, [sessionRequest]);
+
+  function openComment(comment: CanvasComment) {
+    useCommentStore.getState().focus(comment.id);
+    void openSession(comment.sessionId);
+  }
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -105,8 +139,9 @@ export function AgentPanel({
           configured: status.configured, model: status.model, auth: status.auth, models: status.models,
           settings: projectSettings, sessions: list,
         });
-        const recent = list.find((item) => !item.archived_at && (item.message_count ?? 0) > 0);
-        if (!useAgentStore.getState().sessionId && recent) await openSession(recent.id);
+        // Reopen the latest panel chat, unless the canvas already asked for something else.
+        const recent = list.find((item) => !item.archived_at && item.kind !== 'comment' && (item.message_count ?? 0) > 0);
+        if (!useAgentStore.getState().sessionId && !requestedRef.current && recent) await openSession(recent.id);
       } catch (error) {
         useAgentStore.setState({ error: error instanceof Error ? error.message : '无法连接 Agent' });
       }
@@ -199,6 +234,19 @@ export function AgentPanel({
   async function send() {
     const text = draft.trim();
     if ((!text && !skill) || sending || activeRunId) return;
+    if (currentComment) {
+      // A comment's chat continues through the comment, so its pin and queue stay right.
+      if (!text || commentBusy) return;
+      setSending(true);
+      if (await useCommentStore.getState().reply(currentComment.id, text)) {
+        setDraft('');
+        stickToBottom.current = true;
+      } else {
+        useAgentStore.setState({ error: useCommentStore.getState().error ?? '回复没发出去' });
+      }
+      setSending(false);
+      return;
+    }
     setSending(true);
     try {
       let id = sessionId;
@@ -334,6 +382,13 @@ export function AgentPanel({
       ) : view === 'list' ? (
         <SessionList
           sessions={sessions}
+          comments={comments}
+          filter={listFilter}
+          onFilterChange={(next) => { setListFilter(next); setNodeFilter(null); }}
+          nodeFilter={nodeFilter}
+          onClearNodeFilter={() => setNodeFilter(null)}
+          nodeTitles={nodeTitles}
+          onOpenComment={openComment}
           currentId={sessionId}
           onOpen={(id) => void openSession(id)}
           onNew={newSession}
@@ -343,6 +398,19 @@ export function AgentPanel({
         />
       ) : (
       <>
+      {currentComment && (
+        <div className={`agent-comment-bar is-${currentComment.status}`}>
+          <span className={`session-pin is-${currentComment.status}`} aria-hidden="true" />
+          <span className="agent-comment-where">留言 · {describeAnchor(currentComment.anchor, nodeTitles)}</span>
+          <span className="agent-comment-status">{STATUS_LABELS[currentComment.status]}</span>
+          <button type="button" onClick={() => useCommentStore.getState().focus(currentComment.id)}>在画布上看</button>
+          {currentComment.status === 'resolved' ? (
+            <button type="button" onClick={() => void useCommentStore.getState().reopen(currentComment.id)}>重新打开</button>
+          ) : (
+            <button type="button" disabled={commentBusy} onClick={() => void useCommentStore.getState().resolve(currentComment.id)}>解决</button>
+          )}
+        </div>
+      )}
       <div
         ref={listRef}
         className="agent-messages"
@@ -443,8 +511,9 @@ export function AgentPanel({
             value={draft}
             rows={1}
             aria-label="消息"
-            placeholder={activeRunId ? 'Agent 正在处理…'
-              : skill ? `补充要求（可以不写），Enter 发送` : '想让 Agent 做什么？输入 / 选技能，Enter 发送'}
+            placeholder={activeRunId || commentBusy ? 'Agent 正在处理…'
+              : currentComment ? '回复这条留言，Enter 发送'
+                : skill ? `补充要求（可以不写），Enter 发送` : '想让 Agent 做什么？输入 / 选技能，Enter 发送'}
             onFocus={() => { if (!skills.length) loadSkills(); }}
             onChange={(event) => {
               setDraft(event.target.value);
@@ -488,7 +557,7 @@ export function AgentPanel({
             </button>
           ) : (
             <button type="button" className="agent-send" aria-label="发送" data-tooltip="发送"
-              disabled={(!draft.trim() && !skill) || sending || configured === false} onClick={() => void send()}>
+              disabled={(!draft.trim() && !skill) || sending || commentBusy || configured === false} onClick={() => void send()}>
               <SendIcon width={15} height={15} />
             </button>
           )}
