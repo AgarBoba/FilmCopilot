@@ -210,7 +210,10 @@ def test_needs_a_configured_agent_and_stays_out_of_other_chats(repository):
         await settle(service, comments)
 
     asyncio.run(scenario())
-    assert '加一个镜头' not in factory.clients[-1].prompts[0]
+    prompt = factory.clients[-1].prompts[0]
+    # Not listed as another chat; it reaches the main chat as a task-log line instead.
+    assert '[这张画布上的其他对话]' not in prompt
+    assert '[画布任务记录]' in prompt and '- 画布：加一个镜头 → 加好了，等用户查看' in prompt
 
 
 def test_restart_marks_interrupted_runs_failed(repository):
@@ -231,3 +234,148 @@ def test_comment_routes(client):
     response = client.post(f'/api/canvases/{canvas_id}/comments',
                            json={'anchor': {'kind': 'canvas', 'x': 0, 'y': 0}, 'text': '加一个镜头'})
     assert response.status_code in (201, 200, 503)
+
+
+# --------------------------------------------------------------- step 2: what the agent gets
+
+import base64
+import io
+import shutil
+import subprocess
+
+from PIL import Image
+
+from app.agent import media
+from app.worker import build_request
+from tests.test_canvas_tools import add_image_asset
+
+
+def decode(image):
+    return Image.open(io.BytesIO(base64.b64decode(image['data'])))
+
+
+def test_mark_point_rings_the_spot_and_zooms_in():
+    picture = Image.new('RGB', (2000, 1000), (20, 20, 20))
+    marked, zoom = media.mark_point(picture, 0.25, 0.5)
+    whole = decode(marked)
+    assert whole.size == (1024, 512)
+    # The ring is red around the point, the picture elsewhere is untouched.
+    ring = [whole.getpixel((256 + dx, 256)) for dx in range(-40, 41)]
+    assert any(r > 200 and g < 120 for r, g, _ in ring)
+    assert whole.getpixel((900, 100))[0] < 60
+    close = decode(zoom)
+    assert max(close.size) == 768 and close.size[0] > close.size[1]
+
+
+def test_a_picture_comment_sends_the_marked_spot(repository, tmp_path):
+    comments, service, store, canvas_id, factory = setup(repository, [('text', 'ok')])
+    add_image(repository, canvas_id, asset=None)
+    add_image_asset(repository, canvas_id, 'img', tmp_path / 'p.png', 'p1')
+
+    async def scenario():
+        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.1, 'y': 0.9}, '这块太亮')
+        await settle(service, comments)
+
+    asyncio.run(scenario())
+    images = factory.clients[0].prompt_images[0]
+    assert [image['caption'] for image in images] == ['留言位置（红圈）：', '红圈处放大：']
+    assert all(image['media_type'] == 'image/jpeg' and image['type'] == 'base64' for image in images)
+    assert '见附图里的红圈' in factory.clients[0].prompts[0]
+    # The panel's copy of the message carries no pictures.
+    assert store.list_messages(comments.list(canvas_id)[0]['sessionId'])[0]['content']['text'] == '这块太亮'
+
+
+def test_missing_file_still_sends_the_text(repository, tmp_path):
+    comments, service, _, canvas_id, factory = setup(repository, [('text', 'ok')])
+    add_image(repository, canvas_id, asset=None)
+    add_image_asset(repository, canvas_id, 'img', tmp_path / 'p.png', 'p1')
+    (tmp_path / 'p.png').unlink()
+
+    async def scenario():
+        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.5, 'y': 0.5}, '这里')
+        await settle(service, comments)
+
+    asyncio.run(scenario())
+    assert factory.clients[0].prompt_images[0] == []
+    assert '位置截图没做出来' in factory.clients[0].prompts[0]
+
+
+@pytest.mark.skipif(not shutil.which('ffmpeg'), reason='ffmpeg not installed')
+def test_a_video_comment_sends_the_frame_and_its_neighbours(repository, tmp_path):
+    comments, service, _, canvas_id, factory = setup(repository, [('text', 'ok')])
+    path = tmp_path / 'clip.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=10', '-t', '3',
+                    '-pix_fmt', 'yuv420p', str(path)], check=True)
+    add_image(repository, canvas_id, 'vid', asset=None, node_type='video')
+    repository._execute("INSERT INTO assets (id, canvas_id, kind, path, mime_type) VALUES ('v1', ?, 'video', ?, 'video/mp4')",
+                        (canvas_id, str(path)))
+    repository.update_node(canvas_id, 'vid', {'data': {'assetId': 'v1'}})
+
+    async def scenario():
+        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'vid', 'x': 0.5, 'y': 0.5, 'time': 1.0}, '手抖')
+        await settle(service, comments)
+
+    asyncio.run(scenario())
+    captions = [image['caption'] for image in factory.clients[0].prompt_images[0]]
+    assert captions[0].startswith('第 1.0 秒的画面') and captions[1] == '红圈处放大：'
+    assert captions[2].startswith('前 0.5 秒（第 0.5 秒）') and captions[3].startswith('后 0.5 秒（第 1.5 秒）')
+    assert '视频总长 3.0 秒' in factory.clients[0].prompts[0]
+
+
+def test_redraw_from_a_comment_is_tagged_and_logged(repository, tmp_path):
+    comments, service, store, canvas_id, factory = setup(repository)
+    add_image(repository, canvas_id, asset=None)
+    add_image_asset(repository, canvas_id, 'img', tmp_path / 'p.png', 'p1')
+    repository.update_node(canvas_id, 'img', {'data': {'prompt': '窗边的猫'}})
+    factory.scripts.append([
+        ('tool', 'generate', {'node_ids': ['img'], 'reference_current': True}),
+        ('text', '天空换成黄昏了，这是整张重画。'),
+    ])
+    store.update_settings(store.project_for_canvas(canvas_id), {'permissionMode': 'auto'})
+
+    async def scenario():
+        comment = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '天空换成黄昏')
+        await settle(service, comments)
+        return comment
+
+    comment = asyncio.run(scenario())
+    (job,) = repository.get_snapshot(canvas_id).jobs
+    request = __import__('json').loads(repository.get_generation_job(job['id'])['request_json'])
+    assert request['commentId'] == comment['id']
+    assert request['selfReference']['id'] == 'p1' and request['references'] == []
+
+    # The worker lands the result: a new version tied to the comment, the original kept.
+    from app.versions import version_source
+    with version_source('generated', job_id=job['id'], comment_id=request['commentId']):
+        repository.update_node(canvas_id, 'img', {'data': {'assetId': 'p2'}})
+    comments._log(comment['id'])
+    comments.resolve(comment['id'])
+    assert service.task_log(canvas_id) == ['「图片 img」：天空换成黄昏 → 天空换成黄昏了，这是整张重画。（第 2 版），用户已解决']
+
+
+def test_build_request_puts_the_picture_being_redrawn_first(tmp_path):
+    from app.models_registry import registry
+    model = registry().for_node('image', None)
+    snapshot = {'prompt': 'p', 'parameters': {}, 'references': [{'kind': 'image', 'path': str(tmp_path / 'ref.png')}],
+                'selfReference': {'kind': 'image', 'path': str(tmp_path / 'self.png')}}
+    request = build_request(model, snapshot)
+    assert [path.name for path in request.images] == ['self.png', 'ref.png']
+
+
+def test_version_tools(repository, tmp_path):
+    from tests.test_canvas_tools import setup as tools_setup
+    tools, _, canvas_id = tools_setup(repository)
+    add_image(repository, canvas_id, asset=None)
+    add_image_asset(repository, canvas_id, 'img', tmp_path / 'one.png', 'one')
+    Image.new('RGB', (400, 400), (0, 0, 255)).save(tmp_path / 'two.png')
+    repository._execute("INSERT INTO assets (id, canvas_id, kind, path, mime_type, width, height) "
+                        "VALUES ('two', ?, 'image', ?, 'image/png', 400, 400)", (canvas_id, str(tmp_path / 'two.png')))
+    repository.update_node(canvas_id, 'img', {'data': {'assetId': 'two'}})
+
+    listed = tools.get_node_versions('img')
+    assert '共 2 版' in listed.text and '第 2 版（当前）' in listed.text
+    assert '现在是第 2 版，共 2 版' in tools.get_node('img').text
+    old = tools.view_asset('img', 1)
+    assert old.text.startswith('「图片 img」第 1 版的图片') and decode(old.images[0]).getpixel((5, 5))[2] < 100
+    assert tools.view_asset('img', 7).is_error
+    assert decode(tools.view_asset('img').images[0]).getpixel((5, 5))[2] > 200

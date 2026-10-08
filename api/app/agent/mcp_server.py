@@ -11,7 +11,7 @@ from claude_agent_sdk import ToolAnnotations, create_sdk_mcp_server, tool
 from .canvas_tools import CanvasTools, ToolResult
 
 SERVER_NAME = 'canvas'
-READ_ONLY = ('get_canvas', 'get_node', 'view_asset', 'wait_for_generation', 'list_models')
+READ_ONLY = ('get_canvas', 'get_node', 'view_asset', 'get_node_versions', 'wait_for_generation', 'list_models')
 # Memory tools never touch the canvas and never need confirmation (changes show in the chat with undo).
 MEMORY_TOOLS = ('remember', 'update_memory', 'forget', 'recall')
 MEMORY_CATEGORY_HELP = (
@@ -53,7 +53,10 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
      {'type': 'object', 'properties': {'node_ids': {'type': 'array', 'items': {'type': 'string'}}}}),
     ('get_node', '读取一个节点的完整信息：Prompt、参数、内容、上下游、最近一次生成结果或失败原因。',
      {'type': 'object', 'properties': {'node_id': {'type': 'string'}}, 'required': ['node_id']}),
-    ('view_asset', '查看节点里的图片（视频为开头 / 中间 / 结尾 3 帧）。用来判断画面效果或参考风格。',
+    ('view_asset', '查看节点里的图片（视频为开头 / 中间 / 结尾 3 帧）。用来判断画面效果或参考风格。默认看当前版本，传 version 看以前的某一版。',
+     {'type': 'object', 'properties': {'node_id': {'type': 'string'}, 'version': {'type': 'integer'}},
+      'required': ['node_id']}),
+    ('get_node_versions', '列出图片 / 视频节点的历史版本：第几版、怎么来的（生成 / 上传 / 切回旧版）、当时的 Prompt 和模型。用户说「上一版」「之前那张」时用。',
      {'type': 'object', 'properties': {'node_id': {'type': 'string'}}, 'required': ['node_id']}),
     ('create_nodes', '新建一个或多个节点。不填位置时自动排在画布右侧。',
      {'type': 'object', 'properties': {'nodes': {'type': 'array', 'items': NODE_SPEC, 'minItems': 1}},
@@ -79,8 +82,11 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
      {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
     ('delete_nodes', '删除节点（连带其连线）。',
      {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
-    ('generate', '对节点发起生成（会花费额度，可能需要用户确认）。之后用 wait_for_generation 查看结果。',
-     {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
+    ('generate', '对节点发起生成（会花费额度，可能需要用户确认）。之后用 wait_for_generation 查看结果。'
+     '结果会替换节点当前的画面，旧的留作历史版本。reference_current=true：把节点当前的画面也作为参考图一起发'
+     '（参考原图重画，用来做局部修改）。',
+     {'type': 'object', 'properties': {'node_ids': ID_LIST, 'reference_current': {'type': 'boolean'}},
+      'required': ['node_ids']}),
     ('wait_for_generation', '等待这些节点的生成完成，返回结果图片（视频为关键帧）或失败原因。',
      {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
     ('remember',
@@ -112,7 +118,9 @@ async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> Tool
     if name == 'get_node':
         return tools.get_node(args['node_id'])
     if name == 'view_asset':
-        return tools.view_asset(args['node_id'])
+        return tools.view_asset(args['node_id'], args.get('version'))
+    if name == 'get_node_versions':
+        return tools.get_node_versions(args['node_id'])
     if name == 'create_nodes':
         return tools.create_nodes(args['nodes'])
     if name == 'update_node':
@@ -129,7 +137,7 @@ async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> Tool
     if name == 'delete_nodes':
         return tools.delete_nodes(args['node_ids'])
     if name == 'generate':
-        return tools.generate(args['node_ids'])
+        return tools.generate(args['node_ids'], bool(args.get('reference_current')))
     if name == 'wait_for_generation':
         return await tools.wait_for_generation(args['node_ids'])
     if name in MEMORY_TOOLS:

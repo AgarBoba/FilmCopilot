@@ -177,6 +177,8 @@ class Worker:
 def build_request(model: ModelSpec, snapshot: dict[str, Any]) -> GenerationRequest:
     """Generation snapshot -> provider-neutral request for this model (refs trimmed to its limits)."""
     references = snapshot.get('references') or []
+    if snapshot.get('selfReference'):
+        references = [snapshot['selfReference'], *references]  # the picture being redrawn goes first
     images = [ref for ref in references if (ref.get('kind') or ref.get('asset_kind')) == 'image']
     videos = [ref for ref in references if (ref.get('kind') or ref.get('asset_kind')) == 'video']
     warnings: list[dict[str, Any]] = []

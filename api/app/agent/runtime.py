@@ -34,6 +34,22 @@ log = logging.getLogger(__name__)
 ClientFactory = Callable[[Any, dict[str, Any]], Any]
 
 
+def user_input(text: str, images: list[dict[str, Any]]):
+    """A user message with pictures, in the SDK's streaming-input form."""
+    content: list[dict[str, Any]] = [{'type': 'text', 'text': text}]
+    for image in images:
+        if image.get('caption'):
+            content.append({'type': 'text', 'text': image['caption']})
+        content.append({'type': 'image', 'source': {
+            'type': 'base64', 'media_type': image['mimeType'], 'data': image['data'],
+        }})
+
+    async def stream():
+        yield {'type': 'user', 'message': {'role': 'user', 'content': content}, 'parent_tool_use_id': None}
+
+    return stream()
+
+
 def sdk_client_factory(options: Any, handlers: dict[str, Any]) -> Any:
     from claude_agent_sdk import ClaudeSDKClient
     return ClaudeSDKClient(options=options)
@@ -80,10 +96,11 @@ class AgentService:
 
     async def send_message(
         self, session_id: str, text: str, focus_node_ids: list[str] | None = None, skill: str | None = None,
-        context: str | None = None,
+        context: str | None = None, images: list[dict[str, Any]] | None = None, comment_id: str | None = None,
     ) -> dict:
-        """Start a run. `context` is extra text for the model only (a comment's location),
-        put before the user's words; the panel shows just the words."""
+        """Start a run. `context` and `images` are for the model only (a comment's location:
+        text before the user's words, pictures after them); the panel shows just the words.
+        `comment_id` ties what this run generates to that comment (version history)."""
         text = (text or '').strip()
         chosen = find_skill(skill) if skill else None
         if skill and chosen is None:
@@ -114,6 +131,7 @@ class AgentService:
             self.memory, self.store, project_id=runtime.project_id, canvas_id=runtime.canvas_id,
             session_id=session_id, run_id=run['id'],
         )
+        runtime.tools.comment_id = comment_id
 
         snapshot = self.repository.get_snapshot(runtime.canvas_id)
         titles = {node.id: node.data.get('title', '') for node in snapshot.nodes}
@@ -126,12 +144,22 @@ class AgentService:
             text, settings['permissionMode'], focus, settings['generationCap'],
             memory=self.memory.context_block(runtime.project_id),
             other_chats=self._other_chats(runtime),
+            task_log=self.task_log(runtime.canvas_id),
             skill=(chosen.id, chosen.label) if chosen else None,
             context=context,
         )
         model = settings.get('model') or self.config.model
-        runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt, model))
+        runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt, model, images))
         return run
+
+    def task_log(self, canvas_id: str, limit: int = 10) -> list[str]:
+        """Latest comment outcomes on this canvas, oldest first (spec 5)."""
+        with self.repository.database.connection() as connection:
+            rows = connection.execute(
+                'SELECT text FROM canvas_task_log WHERE canvas_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?',
+                (canvas_id, limit),
+            ).fetchall()
+        return [row['text'] for row in reversed(rows)]
 
     async def stop(self, run_id: str) -> None:
         runtime = self._runtime_for_run(run_id)
@@ -335,7 +363,10 @@ class AgentService:
             ))
         return PermissionResultDeny(message=f'用户拒绝了：{summary}。不要重试或换个方式再做，先问用户想怎么调整。')
 
-    async def _run(self, runtime: SessionRuntime, run_id: str, prompt: str, model: str | None = None) -> None:
+    async def _run(
+        self, runtime: SessionRuntime, run_id: str, prompt: str, model: str | None = None,
+        images: list[dict[str, Any]] | None = None,
+    ) -> None:
         model = model or self.config.model
         auth = self.config.auth
         from claude_agent_sdk import (
@@ -351,7 +382,7 @@ class AgentService:
         status, cost, error_text = 'completed', None, None
         try:
             client = await self._client(runtime, model)
-            await client.query(prompt)
+            await client.query(user_input(prompt, images) if images else prompt)
             async for message in client.receive_response():
                 if isinstance(message, StreamEvent):
                     event = message.event or {}

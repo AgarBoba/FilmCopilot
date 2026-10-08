@@ -226,6 +226,14 @@ class Database:
                     resolved_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS canvas_comments_canvas ON canvas_comments (canvas_id, status);
+                CREATE TABLE IF NOT EXISTS canvas_task_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    canvas_id TEXT NOT NULL,
+                    comment_id TEXT NOT NULL UNIQUE,
+                    text TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 '''
             )
             columns = {

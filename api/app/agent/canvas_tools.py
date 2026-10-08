@@ -15,6 +15,7 @@ from ..events import EventStore
 from ..repositories import CanvasRepository
 from ..models_registry import ModelSpec, registry as model_registry
 from ..schemas import CommandEnvelope
+from ..versions import NodeVersions
 from . import conflicts, media
 from .config import AgentConfig
 from .store import AgentStore
@@ -75,6 +76,8 @@ class CanvasTools:
         self.confirmation_notes: list[str] = []
         # Memory tools for this run (set by AgentService; tests may leave it empty).
         self.memory: Any = None
+        # Set when this run works on a canvas comment: its generations are tagged with it.
+        self.comment_id: str | None = None
         self.last_seen_revision = repository.get_snapshot(canvas_id).revision
         # The canvas as the agent knows it: what it last looked at plus its own changes.
         self.seen = repository.canvas_state(canvas_id)
@@ -181,6 +184,9 @@ class CanvasTools:
                 size = f"{asset.get('width')}×{asset.get('height')}"
                 duration = f"，{asset['duration_seconds']:.1f} 秒" if asset.get('duration_seconds') else ''
                 lines.append(f"内容：{KIND_LABELS[asset['kind']]} {size}{duration}（可用 view_asset 查看）")
+                count = len(NodeVersions(self.repository.database).list(self.canvas_id, node.id, asset['id']))
+                if count > 1:
+                    lines.append(f'版本：现在是第 {count} 版，共 {count} 版（以前的版本用 get_node_versions 看）')
             else:
                 lines.append('内容：无')
             job = self._latest_job(snapshot, node.id)
@@ -197,23 +203,55 @@ class CanvasTools:
             lines.append('上游有更新：' + '；'.join(snapshot.upstreamChanges[node.id]))
         return ToolResult('\n'.join(lines), summary=f"查看「{data.get('title', '')}」", touched=[node.id])
 
-    def view_asset(self, node_id: str) -> ToolResult:
+    def get_node_versions(self, node_id: str) -> ToolResult:
+        node = self._node_or_none(node_id)
+        if node is None:
+            return self._error(ERROR_TEXT['NOT_FOUND'])
+        title = node['data'].get('title', '')
+        current = node['data'].get('assetId')
+        versions = NodeVersions(self.repository.database).list(self.canvas_id, node_id, current)
+        if not versions:
+            return ToolResult(f'「{title}」还没有图片或视频，没有版本。', summary=f'查看「{title}」的版本', touched=[node_id])
+        sources = {'generated': '生成', 'uploaded': '上传', 'restored': '切回旧版', 'copied': '复制', 'edited': '其他'}
+        lines = [f'「{title}」共 {len(versions)} 版（旧的在前；要看某一版的画面用 view_asset 加 version）：']
+        for item in versions:
+            mark = '（当前）' if item is versions[-1] and item['assetId'] == current else ''
+            line = f"- 第 {item['version']} 版{mark}：{sources.get(item['source'], item['source'])}，{str(item['createdAt'])[:16]}"
+            if item['model']:
+                line += f"，模型 {item['model']}"
+            if item['commentId']:
+                line += '，由画布留言触发'
+            if item['prompt']:
+                prompt = ' '.join(str(item['prompt']).split())
+                line += f"，Prompt：{prompt[:PROMPT_PREVIEW]}{'…' if len(prompt) > PROMPT_PREVIEW else ''}"
+            lines.append(line)
+        return ToolResult('\n'.join(lines), summary=f'查看「{title}」的版本', touched=[node_id])
+
+    def view_asset(self, node_id: str, version: int | None = None) -> ToolResult:
         node = self._node_or_none(node_id)
         if node is None:
             return self._error(ERROR_TEXT['NOT_FOUND'])
         asset_id = node['data'].get('assetId')
+        title = node['data'].get('title', '')
+        label = ''
+        if version is not None:
+            found = NodeVersions(self.repository.database).list(self.canvas_id, node_id, asset_id)
+            match = next((item for item in found if item['version'] == version), None)
+            if match is None:
+                return self._error(f'「{title}」没有第 {version} 版，先用 get_node_versions 看有哪些版本。')
+            asset_id, label = match['assetId'], f'第 {version} 版'
         if not asset_id:
             return self._error('这个节点还没有图片或视频。')
         asset = self.repository.asset_dict(asset_id)
         path = resolve_project_path(asset['path'])
-        title = node['data'].get('title', '')
+        name = f'「{title}」{label}'
         try:
             if asset['kind'] == 'image':
                 image = media.image_for_model(path, self.config.image_max_side)
                 return ToolResult(
-                    f"「{title}」的图片（原图 {asset.get('width')}×{asset.get('height')}）：",
+                    f"{name}的图片（原图 {asset.get('width')}×{asset.get('height')}）：",
                     images=[{'data': image['data'], 'mimeType': image['mimeType']}],
-                    summary=f'查看「{title}」', touched=[node_id],
+                    summary=f'查看{name}', touched=[node_id],
                 )
             duration, frames = media.video_frames_for_model(path, max_side=self.config.image_max_side)
         except DomainError as error:
@@ -221,10 +259,10 @@ class CanvasTools:
         except Exception as error:  # unreadable file, ffmpeg failure
             return self._error(f'读取媒体文件失败：{error}')
         return ToolResult(
-            f"「{title}」的视频，时长 {duration:.1f} 秒，以下是开头、中间、结尾 3 帧"
+            f"{name}的视频，时长 {duration:.1f} 秒，以下是开头、中间、结尾 3 帧"
             f"（{', '.join(str(frame['at']) + 's' for frame in frames)}）：",
             images=[{'data': frame['data'], 'mimeType': frame['mimeType']} for frame in frames],
-            summary=f'查看「{title}」', touched=[node_id],
+            summary=f'查看{name}', touched=[node_id],
         )
 
     # ----------------------------------------------------------------- writes
@@ -386,7 +424,9 @@ class CanvasTools:
             summary=f'删除 {len(node_ids)} 个节点',
         )
 
-    def generate(self, node_ids: list[str]) -> ToolResult:
+    def generate(self, node_ids: list[str], reference_current: bool = False) -> ToolResult:
+        """Start generations. reference_current: also send each node's current picture / video
+        as a reference ("参考原图重画": the result replaces it, the old one stays as a version)."""
         if not node_ids:
             return self._error('没有指定要生成的节点。')
         snapshot = self.repository.get_snapshot(self.canvas_id)
@@ -403,6 +443,16 @@ class CanvasTools:
             )
             if not str(node.data.get('prompt') or '').strip() and not has_notes:
                 return self._error(f'「{title}」没有 Prompt，也没有连接便签，先写 Prompt。')
+            if reference_current:
+                if not node.data.get('assetId'):
+                    return self._error(f'「{title}」还没有图片或视频，不能参考当前画面重画。')
+                model = model_registry().for_node(node.nodeType, node.data.get('model'))
+                kind = next((a['kind'] for a in snapshot.assets if a['id'] == node.data.get('assetId')), node.nodeType)
+                limit = (model.max_images if kind == 'image' else model.max_videos) if model else 0
+                if limit < 1:
+                    return self._error(
+                        f'「{title}」用的模型不能把{KIND_LABELS.get(kind, kind)}当参考，'
+                        '换一个支持的模型（list_models 看参考上限）再参考当前画面重画。')
         if (busy := self._busy_error(node_ids)):
             return busy
         started: list[str] = []
@@ -412,7 +462,12 @@ class CanvasTools:
             for edge in snapshot.edges:
                 if edge.target == node_id:
                     deps[edge.source] = {'gone', 'prompt', 'media'}
-            result = self._command('start_generation', {'targetNodeId': node_id}, deps)
+            payload: dict[str, Any] = {'targetNodeId': node_id}
+            if reference_current:
+                payload['referenceCurrent'] = True
+            if self.comment_id:
+                payload['commentId'] = self.comment_id
+            result = self._command('start_generation', payload, deps)
             if isinstance(result, ToolResult):
                 prefix = f'已开始 {len(started)} 个生成，之后出错：' if started else ''
                 return ToolResult(prefix + result.text, is_error=True, touched=started)

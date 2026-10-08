@@ -11,7 +11,7 @@ from uuid import uuid4
 
 Decision = Literal['allow', 'ask', 'deny']
 
-READ_ONLY_TOOLS = {'get_canvas', 'get_node', 'view_asset', 'wait_for_generation', 'list_models'}
+READ_ONLY_TOOLS = {'get_canvas', 'get_node', 'view_asset', 'get_node_versions', 'wait_for_generation', 'list_models'}
 WRITE_TOOLS = {
     'create_nodes', 'update_node', 'connect', 'disconnect', 'move_nodes',
     'duplicate_nodes', 'delete_nodes', 'generate',
@@ -69,7 +69,8 @@ def describe_request(tool_name: str, args: dict[str, Any], titles: dict[str, str
 
     if name == 'generate':
         ids = list(args.get('node_ids') or [])
-        return f'生成 {len(ids)} 个节点：{names(ids)}'
+        how = '（参考当前画面重画，结果替换原图，原图留作历史版本）' if args.get('reference_current') else ''
+        return f'生成 {len(ids)} 个节点：{names(ids)}{how}'
     if name == 'delete_nodes':
         ids = list(args.get('node_ids') or [])
         return f'删除 {len(ids)} 个节点：{names(ids)}'

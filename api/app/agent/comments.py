@@ -9,6 +9,8 @@ they were queued. A comment's status follows its session's events:
 
 Replying to a finished comment queues it again with the reply as the next message.
 """
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Iterable
 import json
@@ -17,8 +19,12 @@ import math
 from typing import Any
 from uuid import uuid4
 
+from PIL import Image
+
+from ..config import resolve_project_path
 from ..domain import DomainError
 from ..versions import NodeVersions
+from . import media
 from .runtime import AgentService
 
 log = logging.getLogger(__name__)
@@ -118,6 +124,7 @@ class CommentService:
             raise DomainError('COMMENT_BUSY', 'Agent 还在处理这条留言，先等它做完或停止')
         if row['status'] != 'resolved':
             self._update(comment_id, status='resolved', pending_text=None, resolved_at='now')
+            self._log(comment_id)
         return self.get(comment_id)
 
     def reopen(self, comment_id: str) -> dict[str, Any]:
@@ -181,11 +188,15 @@ class CommentService:
         first = not self._has_runs(row['session_id'])
         self._update(row['id'], status='running', pending_text=None, outcome=None)
         self._last_text.pop(row['id'], None)
+        context, images = (None, None)
+        if first:
+            # Rendering frames can take a moment (ffmpeg); keep the event loop free meanwhile.
+            context, images = await asyncio.to_thread(self.location, row)
         try:
             await self.agent.send_message(
                 row['session_id'], text,
                 focus_node_ids=[row['node_id']] if row['node_id'] else None,
-                context=self.location_context(row) if first else None,
+                context=context, images=images, comment_id=row['id'],
             )
         except DomainError as error:
             self._update(row['id'], status='failed', outcome=error.message)
@@ -196,26 +207,76 @@ class CommentService:
             return False
         return True
 
-    def location_context(self, row: dict[str, Any]) -> str:
-        """Text the agent gets with a comment's first message: what it is pinned to."""
+    def location(self, row: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+        """What the agent gets with a comment's first message: a text block saying what the
+        comment is pinned to, and pictures of the spot (spec 4.2)."""
         lines = ['[画布留言] 这条消息是用户钉在画布上的一条留言，按它的意思去做；做完用一两句话说明改了什么。']
         kind = row['anchor_kind']
         if kind == 'canvas':
+            near = self._nearest_nodes(row['canvas_id'], row['x'], row['y'])
             lines.append(
                 f"[留言位置] 画布空白处，坐标 ({row['x']:.0f}, {row['y']:.0f})。"
                 '要新建节点的话，以这个坐标为起点摆放。'
+                + (f"附近的节点：{'、'.join(near)}" if near else '')
             )
-            return '\n'.join(lines)
+            return '\n'.join(lines), []
         node = self._node(row['canvas_id'], row['node_id'])
         title = (node or {}).get('data', {}).get('title') or '未命名节点'
         label = {'image': '图片节点', 'video': '视频节点', 'note': '便签'}.get((node or {}).get('nodeType'), '节点')
         if kind == 'node':
             lines.append(f"[留言位置] {label}「{title}」[{row['node_id']}]")
-            return '\n'.join(lines)
-        where = f"画面内 ({row['x'] * 100:.0f}%, {row['y'] * 100:.0f}%) 处（从左上角量起）"
+            return '\n'.join(lines), []
+        where = f"画面内 ({row['x'] * 100:.0f}%, {row['y'] * 100:.0f}%) 处（从左上角量起，见附图里的红圈）"
         at = f"第 {row['time']:.1f} 秒那一帧，" if row['time'] is not None else ''
-        lines.append(f"[留言位置] {label}「{title}」[{row['node_id']}] 第 {row['version']} 版，{at}{where}")
-        return '\n'.join(lines)
+        current = self.versions.latest(row['canvas_id'], row['node_id'], (node or {}).get('data', {}).get('assetId'))
+        stale = f'（节点现在已经是第 {current} 版）' if current and current != row['version'] else ''
+        lines.append(f"[留言位置] {label}「{title}」[{row['node_id']}] 第 {row['version']} 版{stale}，{at}{where}")
+        try:
+            images, notes = self._spot_images(row)
+            lines.extend(notes)
+        except Exception as error:  # missing file, no ffmpeg: the text still says where
+            log.warning('could not render comment location: %s', error)
+            images = []
+            lines.append(f'（位置截图没做出来：{getattr(error, "message", error)}。需要时用 view_asset 看画面。）')
+        return '\n'.join(lines), images
+
+    def _spot_images(self, row: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+        version = self.versions.get(row['canvas_id'], row['node_id'], row['version'])
+        if version is None:
+            raise DomainError('NOT_FOUND', '找不到留言时的那一版')
+        asset = self.repository.asset_dict(version['assetId'])
+        path = resolve_project_path(asset['path'])
+        x, y = row['x'], row['y']
+        if asset['kind'] == 'image':
+            with Image.open(path) as picture:
+                marked, zoom = media.mark_point(picture, x, y)
+            return [
+                {**marked, 'caption': '留言位置（红圈）：'},
+                {**zoom, 'caption': '红圈处放大：'},
+            ], []
+        duration = media.video_duration(path)
+        at = min(max(row['time'] or 0.0, 0.0), max(duration - 0.05, 0.0))
+        marked, zoom = media.mark_point(media.video_frame(path, at), x, y)
+        images = [
+            {**marked, 'caption': f'第 {at:.1f} 秒的画面，留言位置（红圈）：'},
+            {**zoom, 'caption': '红圈处放大：'},
+        ]
+        for offset, word in ((-0.5, '前'), (0.5, '后')):
+            moment = min(max(at + offset, 0.0), max(duration - 0.05, 0.0))
+            if abs(moment - at) >= 0.2:
+                frame = media._encode(media.video_frame(path, moment))
+                images.append({**frame, 'caption': f'{word} 0.5 秒（第 {moment:.1f} 秒），看动作走向：'})
+        return images, [f'视频总长 {duration:.1f} 秒。']
+
+    def _nearest_nodes(self, canvas_id: str, x: float, y: float, count: int = 3) -> list[str]:
+        nodes = self.repository.get_snapshot(canvas_id).nodes
+
+        def distance(node) -> float:
+            cx = node.x + (node.width or 0) / 2
+            cy = node.y + (node.height or 0) / 2
+            return math.hypot(cx - x, cy - y)
+
+        return [f"「{node.data.get('title') or '未命名节点'}」[{node.id}]" for node in sorted(nodes, key=distance)[:count]]
 
     # --------------------------------------------------------------- events
 
@@ -239,6 +300,7 @@ class CommentService:
             last = ' '.join(self._last_text.pop(row['id'], '').split())[:300]
             if status == 'completed':
                 self._update(row['id'], status='done', outcome=last or None)
+                self._log(row['id'])
             else:
                 outcome = '已停止。' if status == 'stopped' else (last or 'Agent 出错了。')
                 self._update(row['id'], status='failed', outcome=outcome)
@@ -276,6 +338,36 @@ class CommentService:
                 raise DomainError('INVALID_PAYLOAD', '时间点不能是负数')
         version = self.versions.latest(canvas_id, node_id, asset_id)
         return {'kind': kind, 'node_id': node_id, 'x': x, 'y': y, 'time': time, 'version': version}
+
+    def _log(self, comment_id: str) -> None:
+        """One line per comment in the canvas task log, kept up to date (spec 5)."""
+        row = self._row(comment_id)
+        if row['status'] not in ('done', 'resolved'):
+            return
+        where = '画布'
+        version = None
+        if row['node_id']:
+            node = self._node(row['canvas_id'], row['node_id'])
+            where = f"「{node['data'].get('title') or '未命名节点'}」" if node else '（已删除的节点）'
+            with self.database.connection() as connection:
+                hit = connection.execute(
+                    'SELECT MAX(version) AS v FROM node_versions WHERE canvas_id = ? AND node_id = ? AND comment_id = ?',
+                    (row['canvas_id'], row['node_id'], comment_id)).fetchone()
+            version = hit['v'] if hit else None
+        asked = ' '.join(row['text'].split())[:40]
+        result = ' '.join((row['outcome'] or '').split())[:80]
+        text = f'{where}：{asked}'
+        if result:
+            text += f' → {result}'
+        if version:
+            text += f'（第 {version} 版）'
+        text += '，用户已解决' if row['status'] == 'resolved' else '，等用户查看'
+        with self.database.transaction() as connection:
+            connection.execute(
+                '''
+                INSERT INTO canvas_task_log (canvas_id, comment_id, text) VALUES (?, ?, ?)
+                ON CONFLICT (comment_id) DO UPDATE SET text = excluded.text, updated_at = CURRENT_TIMESTAMP
+                ''', (row['canvas_id'], comment_id, text))
 
     def _node(self, canvas_id: str, node_id: str) -> dict[str, Any] | None:
         try:

@@ -296,6 +296,14 @@ class CanvasCommandService:
             snapshot['model'] = payload['model']
         if payload.get('commentId'):
             snapshot['commentId'] = str(payload['commentId'])
+        if payload.get('referenceCurrent'):
+            # The node's own current picture / video as a reference, kept apart from the
+            # upstream references so "上游有更新" doesn't count it (see upstream.py).
+            node = self.repository.node_snapshot(canvas_id, node_id)
+            if not node['data'].get('assetId'):
+                raise DomainError('INVALID_PAYLOAD', '节点还没有内容，不能参考当前画面')
+            asset = self.repository.asset_dict(node['data']['assetId'])
+            snapshot['selfReference'] = {**asset, 'sourceNodeId': node_id, 'sourceTitle': node['data'].get('title', '')}
         from .models_registry import registry
         model = registry().for_node(node_type, snapshot.get('model'))
         if model is None:

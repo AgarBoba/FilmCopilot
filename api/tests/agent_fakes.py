@@ -32,6 +32,7 @@ class FakeClient:
         self.handlers = handlers
         self.scripts = scripts
         self.prompts: list[str] = []
+        self.prompt_images: list[list[dict]] = []  # per query: image blocks with the caption before each
         self.denials: list[str] = []
         self.tool_results: list[dict] = []
         self.models: list[str] = []
@@ -50,8 +51,22 @@ class FakeClient:
     async def set_model(self, model):
         self.models.append(model)
 
-    async def query(self, prompt: str):
+    async def query(self, prompt):
+        images: list[dict] = []
+        if not isinstance(prompt, str):  # streaming input: a user message with content blocks
+            text, caption = '', ''
+            async for message in prompt:
+                for block in message['message']['content']:
+                    if block['type'] == 'text':
+                        if not text:
+                            text = block['text']
+                        else:
+                            caption = block['text']
+                    elif block['type'] == 'image':
+                        images.append({'caption': caption, **block['source']})
+            prompt = text
         self.prompts.append(prompt)
+        self.prompt_images.append(images)
         self.interrupted = False
 
     async def receive_response(self):

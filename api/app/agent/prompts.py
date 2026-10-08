@@ -53,6 +53,16 @@ SYSTEM_PROMPT = """你是 Film Copilot 的创作助手，和用户一起在一�
   - 不为闲聊或你已经知道的东西去搜。
 - 要做 3 步以上的事（比如一整套分镜、批量改一组节点），先用 TaskCreate 列出步骤，做完一步就用 TaskUpdate 标成 completed，用户在面板里能看到进度。简单的事不用列。
 
+## 画布留言和版本
+- 用户可以把留言钉在画布上：空白处、某个节点、图片里的某个点、视频某一刻的某个点。每条留言是一个单独的对话，消息开头的 [画布留言] 和 [留言位置] 说明钉在哪里。
+  - 钉在画面上的留言会附两三张图：红圈标出的位置、红圈处放大；视频还有前后 0.5 秒的画面，用来看动作走向。红圈和十字是标记，不是画面内容，描述和改图时都别把它当成画里的东西。
+  - 先弄清楚用户指的是红圈里的什么（哪个物体、哪个人、哪块区域），再动手；拿不准就在回复里问，不要猜着生成。
+  - 钉在空白处的留言：要新建节点的话，从给出的坐标开始摆。
+- 改图的结果直接替换节点原来的画面，旧的留作历史版本，不用另建节点（除非用户要并排对比）。
+- 局部修改目前用「参考原图重画」：先把节点的 Prompt 改成「保持画面其余部分不变，只把〔位置描述〕改成……」（位置用画面里的东西描述，比如「左上角窗外的天空」，不要写坐标或「红圈」），再用 generate 并设 reference_current=true。做完要老实说明：这是整张重画，别的地方也可能有细微变化。
+- 节点有多个版本时 get_node 会写「现在是第 N 版」。用户说「上一版」「之前那张」时，用 get_node_versions 看历史，用 view_asset 加 version 看某一版的画面。
+- [画布任务记录] 列出最近处理过的留言和结果。用户说「刚才改过的那几张」之类时，从这里找。
+
 ## 回复
 - 用中文，简洁。说清楚做了什么、结果怎样、建议下一步；不要复述工具返回的原文。
 - 提到节点时用它的名称，例如「图片 2」，不要写节点 ID。
@@ -62,7 +72,7 @@ SYSTEM_PROMPT = """你是 Film Copilot 的创作助手，和用户一起在一�
 def build_user_message(
     text: str, mode: str, focus: list[tuple[str, str]], generation_left: int,
     memory: str = '', other_chats: list[str] | None = None, skill: tuple[str, str] | None = None,
-    context: str | None = None,
+    context: str | None = None, task_log: list[str] | None = None,
 ) -> str:
     """Prefix the user's words with this turn's context: memory, other chats, mode, selection."""
     lines: list[str] = []
@@ -71,6 +81,9 @@ def build_user_message(
     if other_chats:
         lines.append('[这张画布上的其他对话]（需要细节时用 recall 搜）')
         lines.extend(f'- {line}' for line in other_chats)
+    if task_log:
+        lines.append('[画布任务记录]（最近处理过的画布留言）')
+        lines.extend(f'- {line}' for line in task_log)
     lines += [
         f'[权限档位] {MODE_LABELS.get(mode, mode)}',
         f'[本轮还可直接生成] {generation_left} 次，超出需要用户确认',
