@@ -58,13 +58,13 @@ class AgentStore:
 
     # ---- sessions -------------------------------------------------------
 
-    def create_session(self, canvas_id: str, title: str | None = None) -> dict[str, Any]:
+    def create_session(self, canvas_id: str, title: str | None = None, kind: str = 'chat') -> dict[str, Any]:
         project_id = self.project_for_canvas(canvas_id)
         session_id = str(uuid4())
         with self.database.transaction() as connection:
             connection.execute(
-                'INSERT INTO agent_sessions (id, project_id, canvas_id, title) VALUES (?, ?, ?, ?)',
-                (session_id, project_id, canvas_id, title),
+                'INSERT INTO agent_sessions (id, project_id, canvas_id, title, kind) VALUES (?, ?, ?, ?, ?)',
+                (session_id, project_id, canvas_id, title, kind),
             )
         return self.get_session(session_id)
 

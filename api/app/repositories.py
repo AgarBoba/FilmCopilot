@@ -10,6 +10,7 @@ from .db import Database
 from .domain import DomainError, EdgeRecord, NodeType
 from .prompting import compose_prompt
 from .upstream import upstream_changes
+from .versions import NodeVersions
 from .schemas import (
     CanvasEdgeSchema,
     CanvasNodeSchema,
@@ -83,6 +84,14 @@ class CanvasRepository:
                 node['width'], node['height'], json.dumps(node['data']),
             ),
         )
+        self._track_version(canvas_id, node['id'], node['data'])
+
+    def _track_version(
+        self, canvas_id: str, node_id: str, data: dict[str, Any], previous: str | None = None,
+    ) -> None:
+        asset_id = data.get('assetId') if isinstance(data, dict) else None
+        if asset_id:
+            NodeVersions(self.database).track(canvas_id, node_id, asset_id, previous)
 
     def record_agent_changes(
         self, run_id: str, canvas_id: str, revision: int, changes: list[tuple[str, str, Any, Any]]
@@ -345,6 +354,7 @@ class CanvasRepository:
             ''',
             (canvas_id, node_id, node_type, x, y, width, height, json.dumps(data)),
         )
+        self._track_version(canvas_id, node_id, data)
 
     def update_node(self, canvas_id: str, node_id: str, payload: dict[str, Any]) -> None:
         current = self._fetchone(
@@ -357,6 +367,7 @@ class CanvasRepository:
         if current is None:
             raise DomainError('NOT_FOUND', f'Node {node_id} was not found')
         data = json.loads(current['data_json'])
+        previous_asset = data.get('assetId')
         data.update(payload.get('data', {}))
         values = (
             payload.get('x', current['x']),
@@ -374,6 +385,8 @@ class CanvasRepository:
             ''',
             values,
         )
+        if 'assetId' in payload.get('data', {}):
+            self._track_version(canvas_id, node_id, data, previous_asset)
 
     def delete_node(self, canvas_id: str, node_id: str) -> None:
         cursor = self._execute(

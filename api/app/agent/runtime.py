@@ -72,12 +72,18 @@ class AgentService:
         self.sessions: dict[str, SessionRuntime] = {}
         self.subscribers: dict[str, set[asyncio.Queue]] = {}
         self.memory = MemoryStore(repository.database)
+        # Called with (session_id, event) for every emitted event (the comment scheduler
+        # follows its sessions this way). Must not raise or block.
+        self.listeners: list[Callable[[str, dict], None]] = []
 
     # --------------------------------------------------------------- public
 
     async def send_message(
         self, session_id: str, text: str, focus_node_ids: list[str] | None = None, skill: str | None = None,
+        context: str | None = None,
     ) -> dict:
+        """Start a run. `context` is extra text for the model only (a comment's location),
+        put before the user's words; the panel shows just the words."""
         text = (text or '').strip()
         chosen = find_skill(skill) if skill else None
         if skill and chosen is None:
@@ -121,6 +127,7 @@ class AgentService:
             memory=self.memory.context_block(runtime.project_id),
             other_chats=self._other_chats(runtime),
             skill=(chosen.id, chosen.label) if chosen else None,
+            context=context,
         )
         model = settings.get('model') or self.config.model
         runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt, model))
@@ -162,6 +169,8 @@ class AgentService:
         for chat in self.store.list_sessions(runtime.project_id, runtime.canvas_id):
             if chat['id'] == runtime.session_id or chat.get('archived_at') or not chat.get('message_count'):
                 continue
+            if chat.get('kind') == 'comment':
+                continue  # comments reach other chats through the canvas task log instead
             last = chat.get('preview') or ''
             lines.append(f"「{chat.get('title') or '未命名对话'}」{str(chat.get('last_active_at') or '')[:10]}，最后一句：{last[:60]}")
             if len(lines) >= limit:
@@ -408,4 +417,9 @@ class AgentService:
         event = {'id': message_id, 'runId': run_id, **body}
         for queue in list(self.subscribers.get(session_id, ())):
             queue.put_nowait(event)
+        for listener in list(self.listeners):
+            try:
+                listener(session_id, event)
+            except Exception:
+                log.exception('agent event listener failed')
         return event

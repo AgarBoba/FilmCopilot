@@ -13,13 +13,15 @@ from .repositories import CanvasRepository
 from .agent.config import AgentConfig
 from .agent.runtime import AgentService
 from .agent.store import AgentStore
-from .routes import agent, assets, canvases, events, memories, models
+from .agent.comments import CommentService
+from .routes import agent, assets, canvases, comments, events, memories, models
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.settings.data_dir.mkdir(parents=True, exist_ok=True)
     app.state.database.init_schema()
+    await app.state.comment_service.recover()
     yield
     await app.state.agent_service.close()
 
@@ -45,6 +47,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
     app.state.agent_service = AgentService(
         repository, command_service, app.state.agent_store, agent_config or AgentConfig.from_env()
     )
+    app.state.comment_service = CommentService(app.state.agent_service)
 
     @app.exception_handler(DomainError)
     async def handle_domain_error(_: Request, error: DomainError) -> JSONResponse:
@@ -55,6 +58,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
             'RUN_ACTIVE': 409,
             'ALREADY_UNDONE': 409,
             'AGENT_NOT_CONFIGURED': 503,
+            'COMMENT_BUSY': 409,
         }.get(error.code, 422)
         return JSONResponse(
             status_code=status_code,
@@ -70,6 +74,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
     app.include_router(assets.router)
     app.include_router(agent.router)
     app.include_router(memories.router)
+    app.include_router(comments.router)
     app.include_router(models.router)
 
     return app

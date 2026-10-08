@@ -12,6 +12,7 @@ from .media_metadata import read_image_metadata, read_video_metadata
 from .models_registry import ModelRegistry, ModelSpec, registry as default_registry
 from .providers.base import GenerationProvider, GenerationRequest, PredictionStatus
 from .repositories import CanvasRepository
+from .versions import version_source
 from .config import resolve_project_path
 
 
@@ -142,11 +143,18 @@ class Worker:
         with self.repository.transaction():
             if status == 'completed':
                 node = self.repository.node_snapshot(job['canvas_id'], job['target_node_id'])
-                self.repository.update_node(
-                    job['canvas_id'],
-                    job['target_node_id'],
-                    {'data': {**node['data'], 'assetId': asset['id']}},
-                )
+                try:
+                    request = json.loads(job.get('request_json') or '{}')
+                except ValueError:
+                    request = {}
+                with version_source('generated', job_id=job['id'], prompt=request.get('prompt'),
+                                    parameters=request.get('parameters'), model=request.get('model'),
+                                    comment_id=request.get('commentId')):
+                    self.repository.update_node(
+                        job['canvas_id'],
+                        job['target_node_id'],
+                        {'data': {**node['data'], 'assetId': asset['id']}},
+                    )
             self.repository.update_generation_job(job['id'], status, output_asset_id=output_asset_id)
             revision = self.repository.bump_revision(job['canvas_id'])
             self.events.append(

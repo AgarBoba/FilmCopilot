@@ -62,6 +62,7 @@ SYSTEM_PROMPT = """你是 Film Copilot 的创作助手，和用户一起在一�
 def build_user_message(
     text: str, mode: str, focus: list[tuple[str, str]], generation_left: int,
     memory: str = '', other_chats: list[str] | None = None, skill: tuple[str, str] | None = None,
+    context: str | None = None,
 ) -> str:
     """Prefix the user's words with this turn's context: memory, other chats, mode, selection."""
     lines: list[str] = []
@@ -78,4 +79,6 @@ def build_user_message(
         lines.append('[用户选中的节点] ' + '、'.join(f'「{title}」[{node_id}]' for node_id, title in focus))
     if skill:
         lines.append(f'[用户指定的技能] 先用 Skill 工具加载 {skill[0]}（{skill[1]}），按它的做法完成这条消息')
+    if context:
+        lines.append(context)
     return '\n'.join(lines) + '\n\n' + text

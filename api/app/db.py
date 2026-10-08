@@ -187,6 +187,45 @@ class Database:
                     last_used_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS memories_scope ON memories (layer, project_id, status);
+
+                -- Every image / video a node has shown, oldest first (versions.py).
+                CREATE TABLE IF NOT EXISTS node_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    canvas_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    asset_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    job_id TEXT,
+                    prompt TEXT,
+                    parameters_json TEXT,
+                    model TEXT,
+                    comment_id TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (canvas_id, node_id, version)
+                );
+
+                -- Comments pinned on the canvas; each is worked on by its own agent session
+                -- (comments.py, spec 2026-10-08-canvas-comments-design.md).
+                CREATE TABLE IF NOT EXISTS canvas_comments (
+                    id TEXT PRIMARY KEY,
+                    canvas_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    anchor_kind TEXT NOT NULL CHECK (anchor_kind IN ('canvas', 'node', 'media')),
+                    node_id TEXT,
+                    version INTEGER,
+                    x REAL,
+                    y REAL,
+                    time REAL,
+                    text TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'waiting', 'done', 'failed', 'resolved')),
+                    outcome TEXT,
+                    pending_text TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS canvas_comments_canvas ON canvas_comments (canvas_id, status);
                 '''
             )
             columns = {
@@ -204,6 +243,9 @@ class Database:
             }
             if 'sdk_session_id' not in session_columns:
                 connection.execute('ALTER TABLE agent_sessions ADD COLUMN sdk_session_id TEXT')
+            if 'kind' not in session_columns:
+                # 'chat' (opened in the panel) or 'comment' (started by a comment on the canvas).
+                connection.execute("ALTER TABLE agent_sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'")
             if 'archived_at' not in session_columns:
                 # Archived chats leave the list but keep their transcript (never deleted).
                 connection.execute('ALTER TABLE agent_sessions ADD COLUMN archived_at TEXT')

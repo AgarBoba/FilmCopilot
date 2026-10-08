@@ -10,6 +10,7 @@ from typing import Any
 
 from ..domain import DomainError
 from ..repositories import CanvasRepository
+from ..versions import version_source
 
 
 def undo_agent_run(repository: CanvasRepository, canvas_id: str, run_id: str) -> dict[str, Any]:
@@ -63,7 +64,8 @@ def undo_agent_run(repository: CanvasRepository, canvas_id: str, run_id: str) ->
     # 2) Put back nodes the run changed or deleted, exactly as they were.
     for (entity_type, entity_id), original in to_restore.items():
         if entity_type == 'node' and original is not None:
-            repository.replace_node(canvas_id, original)
+            with version_source('restored'):
+                repository.replace_node(canvas_id, original)
             restored['restoredNodes'].append(entity_id)
 
     # 3) Re-create edges the run deleted, if both ends still exist and nothing duplicates them.

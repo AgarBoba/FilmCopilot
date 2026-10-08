@@ -8,6 +8,7 @@ from .graph_rules import validate_connection
 from .prompting import compose_prompt
 from .repositories import CanvasRepository
 from .schemas import CommandEnvelope, CommandResult
+from .versions import NodeVersions, version_source
 
 
 _NODE_TYPES = {'image', 'video', 'note'}
@@ -81,6 +82,7 @@ class CanvasCommandService:
             'disconnect_nodes': self._disconnect_nodes,
             'update_note': self._update_note,
             'attach_asset': self._attach_asset,
+            'restore_version': self._restore_version,
             'start_generation': self._start_generation,
             'update_canvas': self._update_canvas,
             'undo_agent_run': self._undo_agent_run,
@@ -218,16 +220,12 @@ class CanvasCommandService:
             title = str(data.get('title') or '').strip()
             if title:
                 data['title'] = f'{title}{suffix}'
-            self.repository.insert_node(
-                canvas_id,
-                new_id,
-                source['nodeType'],
-                float(item.get('x', source['x'] + 40)),
-                float(item.get('y', source['y'] + 40)),
-                source['width'],
-                source['height'],
-                data,
-            )
+            with version_source('copied', from_node=source_id):
+                self.repository.insert_node(
+                    canvas_id, new_id, source['nodeType'],
+                    float(item.get('x', source['x'] + 40)), float(item.get('y', source['y'] + 40)),
+                    source['width'], source['height'], data,
+                )
             id_map[source_id] = new_id
             created.append({'sourceNodeId': source_id, 'nodeId': new_id})
 
@@ -256,8 +254,27 @@ class CanvasCommandService:
     def _attach_asset(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         node_id = self._required(payload, 'nodeId')
         asset_id = self._required(payload, 'assetId')
-        self.repository.update_node(canvas_id, node_id, {'data': {'assetId': asset_id}})
+        with version_source('uploaded'):
+            self.repository.update_node(canvas_id, node_id, {'data': {'assetId': asset_id}})
         return {'nodeId': node_id, 'assetId': asset_id}
+
+    def _restore_version(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Show an earlier version again. Recorded as a new version; nothing is removed."""
+        node_id = self._required(payload, 'nodeId')
+        version = payload.get('version')
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise DomainError('INVALID_PAYLOAD', 'Missing payload field: version')
+        node = self.repository.node_snapshot(canvas_id, node_id)
+        versions = NodeVersions(self.repository.database)
+        versions.list(canvas_id, node_id, node['data'].get('assetId'))  # builds history for old nodes
+        target = versions.get(canvas_id, node_id, version)
+        if target is None:
+            raise DomainError('NOT_FOUND', f'Version {version} of node {node_id} was not found')
+        if target['assetId'] != node['data'].get('assetId'):
+            with version_source('restored', prompt=target['prompt'], parameters=target['parameters'],
+                                model=target['model']):
+                self.repository.update_node(canvas_id, node_id, {'data': {'assetId': target['assetId']}})
+        return {'nodeId': node_id, 'assetId': target['assetId'], 'restoredVersion': version}
 
     def _start_generation(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         node_id = str(payload.get('nodeId') or payload.get('targetNodeId') or '')
@@ -277,6 +294,8 @@ class CanvasCommandService:
             snapshot['parameters'] = payload['parameters']
         if 'model' in payload:
             snapshot['model'] = payload['model']
+        if payload.get('commentId'):
+            snapshot['commentId'] = str(payload['commentId'])
         from .models_registry import registry
         model = registry().for_node(node_type, snapshot.get('model'))
         if model is None:
