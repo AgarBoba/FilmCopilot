@@ -1455,7 +1455,8 @@ h1 {
   overflow: hidden;
 }
 
-.canvas-page.agent-open .react-flow__panel.react-flow__minimap { margin-right: calc(var(--agent-panel-width, 480px) + 32px); }
+/* The minimap sits above the bottom-left toolbar (folded with its button there or M). */
+.react-flow__panel.react-flow__minimap.canvas-minimap { margin-bottom: 72px; animation: popover-in 160ms ease-out; }
 
 .agent-header {
   display: flex;

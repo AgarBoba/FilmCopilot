@@ -4,6 +4,7 @@ import {
   EdgesIcon,
   EdgesOffIcon,
   HandIcon,
+  MapIcon,
   MinusIcon,
   MoonIcon,
   PlusIcon,
@@ -22,6 +23,9 @@ interface CanvasControlsProps {
   onToolChange: (tool: CanvasTool) => void;
   onThemeChange: (theme: 'light' | 'dark') => void;
   onEdgesChange: (showEdges: boolean) => void;
+  /** The minimap above this toolbar: shown or folded away. */
+  showMinimap?: boolean;
+  onMinimapChange?: (showMinimap: boolean) => void;
 }
 
 const ZOOM_DURATION = 200;
@@ -37,6 +41,8 @@ export function CanvasControls({
   onToolChange,
   onThemeChange,
   onEdgesChange,
+  showMinimap = true,
+  onMinimapChange,
 }: CanvasControlsProps) {
   const { zoomIn, zoomOut, zoomTo, fitView } = useReactFlow();
   const { zoom } = useViewport();
@@ -118,6 +124,19 @@ export function CanvasControls({
       >
         {showEdges ? <EdgesIcon /> : <EdgesOffIcon />}
       </button>
+      {onMinimapChange && (
+        <button
+          type="button"
+          className={`control-button ${showMinimap ? 'is-active' : ''}`}
+          aria-label={showMinimap ? '收起小地图' : '显示小地图'}
+          aria-pressed={showMinimap}
+          data-tooltip={showMinimap ? '收起小地图' : '显示小地图'}
+          data-tooltip-shortcut="M"
+          onClick={() => onMinimapChange(!showMinimap)}
+        >
+          <MapIcon />
+        </button>
+      )}
       <button
         type="button"
         className="control-button"

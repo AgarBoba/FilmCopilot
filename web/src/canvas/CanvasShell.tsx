@@ -89,6 +89,18 @@ interface PendingConnection {
 }
 
 
+const MINIMAP_KEY = 'film-copilot.minimap';
+
+/** Shown unless the user folded it away (remembered per browser). */
+function readMinimapSetting(): boolean {
+  try {
+    return window.localStorage.getItem(MINIMAP_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+
 function commandKey(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
@@ -136,6 +148,19 @@ export function CanvasShell() {
     return () => window.removeEventListener('focus', loadModels);
   }, []);
   const [tool, setTool] = useState<CanvasTool>('select');
+  const [showMinimap, setShowMinimap] = useState(readMinimapSetting);
+  const toggleMinimap = useCallback((next: boolean) => {
+    setShowMinimap(next);
+    try {
+      window.localStorage.setItem(MINIMAP_KEY, next ? '1' : '0');
+    } catch {
+      /* private mode: just not remembered */
+    }
+  }, []);
+  const minimapRef = useRef(showMinimap);
+  minimapRef.current = showMinimap;
+  const toggleMinimapRef = useRef(toggleMinimap);
+  toggleMinimapRef.current = toggleMinimap;
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [altHeld, setAltHeld] = useState(false);
   /** Set while an Option/Alt-drag is making copies: where the originals started. */
@@ -182,6 +207,8 @@ export function CanvasShell() {
         setTool('select');
       } else if (event.key.toLowerCase() === 'h') {
         setTool('hand');
+      } else if (event.key.toLowerCase() === 'm') {
+        toggleMinimapRef.current(!minimapRef.current);
       } else if (event.key.toLowerCase() === 'c') {
         const store = useCommentStore.getState();
         store.setMode(!store.mode);
@@ -924,7 +951,7 @@ export function CanvasShell() {
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={24} size={1} />
-          <MiniMap position="bottom-right" pannable zoomable />
+          {showMinimap && <MiniMap position="bottom-left" className="canvas-minimap" pannable zoomable />}
           <Panel position="center-left" className="canvas-panel">
             <CanvasRail
               onAddNode={(type) => void addNode(type)}
@@ -935,7 +962,7 @@ export function CanvasShell() {
               commentWaiting={comments.some((comment) => comment.status === 'waiting')}
             />
           </Panel>
-          <Panel position="top-right" className="canvas-panel">
+          <Panel position="bottom-right" className="canvas-panel">
             <button
               type="button"
               className="agent-launcher"
@@ -959,6 +986,8 @@ export function CanvasShell() {
               onToolChange={setTool}
               onThemeChange={setTheme}
               onEdgesChange={setShowEdges}
+              showMinimap={showMinimap}
+              onMinimapChange={toggleMinimap}
             />
           </Panel>
           {notice && !error && (

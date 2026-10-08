@@ -107,6 +107,9 @@ export const ArchiveIcon = (p: IconProps) => (
 export const MemoryIcon = (p: IconProps) => (
   <Icon {...p}><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-3.5L6 20V5a1 1 0 0 1 1-1z" /><path d="M10 9.5h4" /></Icon>
 );
+export const MapIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20z" /><path d="M9 4v13.5M15 6.5V20" /></Icon>
+);
 export const CommentIcon = (p: IconProps) => (
   <Icon {...p}><path d="M4 20V11a7 7 0 1 1 7 7H6" /><path d="M4 20l2-2" /></Icon>
 );
