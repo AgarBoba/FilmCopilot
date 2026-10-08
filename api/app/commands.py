@@ -259,7 +259,7 @@ class CanvasCommandService:
         return {'nodeId': node_id, 'assetId': asset_id}
 
     def _restore_version(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Show an earlier version again. Recorded as a new version; nothing is removed."""
+        """Show another version of the node. Adds no version: the node just points at it."""
         node_id = self._required(payload, 'nodeId')
         version = payload.get('version')
         if isinstance(version, bool) or not isinstance(version, int):
@@ -271,9 +271,7 @@ class CanvasCommandService:
         if target is None:
             raise DomainError('NOT_FOUND', f'Version {version} of node {node_id} was not found')
         if target['assetId'] != node['data'].get('assetId'):
-            with version_source('restored', prompt=target['prompt'], parameters=target['parameters'],
-                                model=target['model']):
-                self.repository.update_node(canvas_id, node_id, {'data': {'assetId': target['assetId']}})
+            self.repository.update_node(canvas_id, node_id, {'data': {'assetId': target['assetId']}})
         return {'nodeId': node_id, 'assetId': target['assetId'], 'restoredVersion': version}
 
     def _start_generation(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:

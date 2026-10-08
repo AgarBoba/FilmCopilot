@@ -184,9 +184,10 @@ class CanvasTools:
                 size = f"{asset.get('width')}×{asset.get('height')}"
                 duration = f"，{asset['duration_seconds']:.1f} 秒" if asset.get('duration_seconds') else ''
                 lines.append(f"内容：{KIND_LABELS[asset['kind']]} {size}{duration}（可用 view_asset 查看）")
-                count = len(NodeVersions(self.repository.database).list(self.canvas_id, node.id, asset['id']))
-                if count > 1:
-                    lines.append(f'版本：现在是第 {count} 版，共 {count} 版（以前的版本用 get_node_versions 看）')
+                history = NodeVersions(self.repository.database).list(self.canvas_id, node.id, asset['id'])
+                if len(history) > 1:
+                    shown = next((item['version'] for item in history if item['assetId'] == asset['id']), len(history))
+                    lines.append(f'版本：现在显示第 {shown} 版，共 {len(history)} 版（其他版本用 get_node_versions 看）')
             else:
                 lines.append('内容：无')
             job = self._latest_job(snapshot, node.id)
@@ -215,7 +216,7 @@ class CanvasTools:
         sources = {'generated': '生成', 'uploaded': '上传', 'restored': '切回旧版', 'copied': '复制', 'edited': '其他'}
         lines = [f'「{title}」共 {len(versions)} 版（旧的在前；要看某一版的画面用 view_asset 加 version）：']
         for item in versions:
-            mark = '（当前）' if item is versions[-1] and item['assetId'] == current else ''
+            mark = '（当前）' if item['assetId'] == current else ''
             line = f"- 第 {item['version']} 版{mark}：{sources.get(item['source'], item['source'])}，{str(item['createdAt'])[:16]}"
             if item['model']:
                 line += f"，模型 {item['model']}"

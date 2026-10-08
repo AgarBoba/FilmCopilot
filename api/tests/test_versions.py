@@ -17,7 +17,7 @@ def versions(client, canvas_id, node_id):
     return response.json()
 
 
-def test_every_new_asset_is_a_new_version_and_restoring_adds_one(client):
+def test_every_new_asset_is_a_new_version_and_switching_back_adds_none(client):
     canvas_id = create_canvas(client)
     node_id = create_node(client, canvas_id, 'image', 'n1')
     assert versions(client, canvas_id, node_id) == {'versions': [], 'current': None}
@@ -34,8 +34,12 @@ def test_every_new_asset_is_a_new_version_and_restoring_adds_one(client):
     response = command(client, canvas_id, 'restore_version', {'nodeId': node_id, 'version': 1}, 'k4')
     assert response.status_code == 200, response.text
     listed = versions(client, canvas_id, node_id)
-    assert [(v['version'], v['assetId'], v['source']) for v in listed['versions']][-1] == (3, 'a1', 'restored')
+    # Switching back adds no version: the node just shows version 1 again.
+    assert [(v['version'], v['assetId']) for v in listed['versions']] == [(1, 'a1'), (2, 'a2')]
     assert listed['current'] == 'a1'
+    command(client, canvas_id, 'restore_version', {'nodeId': node_id, 'version': 2}, 'k6')
+    command(client, canvas_id, 'attach_asset', {'nodeId': node_id, 'assetId': 'a1'}, 'k7')  # same picture again
+    assert len(versions(client, canvas_id, node_id)['versions']) == 2
 
     missing = command(client, canvas_id, 'restore_version', {'nodeId': node_id, 'version': 9}, 'k5')
     assert missing.status_code == 404
@@ -84,3 +88,25 @@ def test_generated_versions_carry_prompt_and_old_nodes_are_backfilled(repository
         ('up', 'edited'), ('new', 'edited')]
     assert latest == {**latest, 'version': 3, 'assetId': 'g3', 'source': 'generated', 'jobId': 'job9',
                       'prompt': '新的', 'parameters': {'b': 1}, 'model': 'm2', 'commentId': 'c1'}
+
+
+def test_old_switch_back_copies_are_cleaned_up(repository):
+    canvas_id = repository.create_canvas('V').canvasId
+    with repository.transaction() as connection:
+        # Before: 1 a, 2 b, 3 a (switched back), 4 b (switched back), 5 c.
+        for version, asset in enumerate(('a', 'b', 'a', 'b', 'c'), start=1):
+            connection.execute(
+                "INSERT INTO node_versions (canvas_id, node_id, version, asset_id, source) VALUES (?, 'n', ?, ?, 'edited')",
+                (canvas_id, version, asset))
+        for comment_id, version in (('on-a-copy', 3), ('on-c', 5)):
+            connection.execute(
+                "INSERT INTO canvas_comments (id, canvas_id, session_id, anchor_kind, node_id, version, x, y, text, status) "
+                "VALUES (?, ?, 's', 'media', 'n', ?, 0.5, 0.5, 't', 'done')", (comment_id, canvas_id, version))
+    versions = NodeVersions(repository.database)
+    versions.dedupe()
+    versions.dedupe()  # safe to run again
+    assert [(v['version'], v['assetId']) for v in versions.list(canvas_id, 'n')] == [(1, 'a'), (2, 'b'), (3, 'c')]
+    with repository.transaction() as connection:
+        pinned = dict(connection.execute('SELECT id, version FROM canvas_comments').fetchall())
+    assert pinned == {'on-a-copy': 1, 'on-c': 3}
+    assert versions.current(canvas_id, 'n', 'b') == 2

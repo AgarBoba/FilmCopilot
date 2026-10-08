@@ -228,7 +228,7 @@ class CommentService:
             return '\n'.join(lines), []
         where = f"画面内 ({row['x'] * 100:.0f}%, {row['y'] * 100:.0f}%) 处（从左上角量起，见附图里的红圈）"
         at = f"第 {row['time']:.1f} 秒那一帧，" if row['time'] is not None else ''
-        current = self.versions.latest(row['canvas_id'], row['node_id'], (node or {}).get('data', {}).get('assetId'))
+        current = self.versions.current(row['canvas_id'], row['node_id'], (node or {}).get('data', {}).get('assetId'))
         stale = f'（节点现在已经是第 {current} 版）' if current and current != row['version'] else ''
         lines.append(f"[留言位置] {label}「{title}」[{row['node_id']}] 第 {row['version']} 版{stale}，{at}{where}")
         try:
@@ -336,7 +336,7 @@ class CommentService:
             time = _number(anchor, 'time')
             if time < 0:
                 raise DomainError('INVALID_PAYLOAD', '时间点不能是负数')
-        version = self.versions.latest(canvas_id, node_id, asset_id)
+        version = self.versions.current(canvas_id, node_id, asset_id)
         return {'kind': kind, 'node_id': node_id, 'x': x, 'y': y, 'time': time, 'version': version}
 
     def _log(self, comment_id: str) -> None:
@@ -424,7 +424,7 @@ class CommentService:
             # Which picture the pin was put on, and whether the node has moved on since.
             pinned = self.versions.get(row['canvas_id'], row['node_id'], row['version'])
             comment['anchor']['assetId'] = pinned['assetId'] if pinned else None
-            comment['anchor']['currentVersion'] = self.versions.latest(
+            comment['anchor']['currentVersion'] = self.versions.current(
                 row['canvas_id'], row['node_id'], nodes[row['node_id']].get('assetId'))
             # A different picture than the one pinned (switching back to it counts as the same).
             comment['anchor']['stale'] = bool(pinned) and pinned['assetId'] != nodes[row['node_id']].get('assetId')

@@ -1,8 +1,9 @@
 """Version history of image / video nodes.
 
-A node shows one asset at a time (data.assetId). Whenever that changes - a generation lands,
-the user uploads, an agent run is undone, the user switches back to an older version - a new
-version is appended; nothing is ever removed. Reading the canvas only shows the current
+A node shows one asset at a time (data.assetId). Each new picture or video it gets - a
+generation lands, the user uploads one - is appended as a version; nothing is ever removed.
+Showing an earlier one again (switching back, undoing an agent run) adds nothing: the node
+just points at that version again, so "current" is the version whose asset the node shows. Reading the canvas only shows the current
 version; history is read on demand (get_node_versions tool, the node's version menu).
 
 Where the change comes from is passed through a context variable, so the repository can
@@ -58,18 +59,18 @@ class NodeVersions:
             return [dict(row) for row in connection.execute(query, params).fetchall()]
 
     def track(self, canvas_id: str, node_id: str, asset_id: str | None, previous: str | None = None) -> int | None:
-        """Called on every node write: append a version if the node now shows a different
-        asset than its latest version. `previous` is the asset it showed before this write,
-        so a node from before version tracking keeps what it showed. Returns the new
-        version number, or None."""
+        """Called on every node write: append a version if the node now shows an asset it
+        never had before. `previous` is the asset it showed before this write, so a node from
+        before version tracking keeps what it showed. Returns the new version number, or None."""
         if not asset_id:
             return None
         latest = self._latest(canvas_id, node_id)
         if latest is None and previous != asset_id:
             self._ensure_history(canvas_id, node_id, previous)
             latest = self._latest(canvas_id, node_id)
-        if latest is not None and latest['asset_id'] == asset_id:
-            return None
+        if self._rows('SELECT 1 FROM node_versions WHERE canvas_id = ? AND node_id = ? AND asset_id = ? LIMIT 1',
+                      (canvas_id, node_id, asset_id)):
+            return None  # an earlier version shown again
         version = (latest['version'] if latest else 0) + 1
         self._insert(canvas_id, node_id, version, asset_id, current_source())
         return version
@@ -136,9 +137,43 @@ class NodeVersions:
             'SELECT * FROM node_versions WHERE canvas_id = ? AND node_id = ? ORDER BY version',
             (canvas_id, node_id))]
 
-    def latest(self, canvas_id: str, node_id: str, current_asset: str | None = None) -> int | None:
+    def current(self, canvas_id: str, node_id: str, current_asset: str | None = None) -> int | None:
+        """The version the node shows now (the one with its asset), or None without content."""
         versions = self.list(canvas_id, node_id, current_asset)
-        return versions[-1]['version'] if versions else None
+        match = next((item for item in versions if item['assetId'] == current_asset), None)
+        return match['version'] if match else (versions[-1]['version'] if versions else None)
+
+    def dedupe(self) -> None:
+        """One-off clean-up: switching back used to append a copy of the old version. Drop
+        those copies, renumber without gaps and point comments at the surviving numbers."""
+        with self.database.transaction() as connection:
+            nodes = connection.execute(
+                'SELECT canvas_id, node_id FROM node_versions GROUP BY canvas_id, node_id '
+                'HAVING COUNT(*) > COUNT(DISTINCT asset_id)').fetchall()
+            for canvas_id, node_id in nodes:
+                rows = connection.execute(
+                    'SELECT version, asset_id FROM node_versions WHERE canvas_id = ? AND node_id = ? ORDER BY version',
+                    (canvas_id, node_id)).fetchall()
+                first: dict[str, int] = {}
+                renumber: dict[int, int] = {}
+                for version, asset_id in rows:
+                    if asset_id in first:
+                        connection.execute(
+                            'DELETE FROM node_versions WHERE canvas_id = ? AND node_id = ? AND version = ?',
+                            (canvas_id, node_id, version))
+                        renumber[version] = renumber[first[asset_id]]
+                        continue
+                    first[asset_id] = version
+                    renumber[version] = len(first)
+                    if renumber[version] != version:  # ascending, so the lower number is free
+                        connection.execute(
+                            'UPDATE node_versions SET version = ? WHERE canvas_id = ? AND node_id = ? AND version = ?',
+                            (renumber[version], canvas_id, node_id, version))
+                for old, new in renumber.items():
+                    if old != new:
+                        connection.execute(
+                            "UPDATE canvas_comments SET version = ? WHERE canvas_id = ? AND node_id = ? "
+                            "AND anchor_kind = 'media' AND version = ?", (new, canvas_id, node_id, old))
 
     def get(self, canvas_id: str, node_id: str, version: int) -> dict[str, Any] | None:
         rows = self._rows('SELECT * FROM node_versions WHERE canvas_id = ? AND node_id = ? AND version = ?',

@@ -10,6 +10,7 @@ from .db import Database
 from .domain import DomainError
 from .events import EventStore
 from .repositories import CanvasRepository
+from .versions import NodeVersions
 from .agent.config import AgentConfig
 from .agent.runtime import AgentService
 from .agent.store import AgentStore
@@ -31,6 +32,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     database = Database(settings.database_path)
     database.init_schema()
+    NodeVersions(database).dedupe()
     repository = CanvasRepository(database)
     event_store = EventStore(database)
     command_service = CanvasCommandService(repository, event_store)

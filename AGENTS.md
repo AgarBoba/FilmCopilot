@@ -133,7 +133,7 @@ python3 scripts/doctor.py --json     # 机器可读，ready=true 表示可以用
 
 ## 画布留言和版本历史
 
-用户可以在画布上钉留言（按 C），每条留言由画布 Agent 单独处理；图片 / 视频节点每换一次画面都记一版，节点「⋯ → 版本历史」可以切回。
+用户可以在画布上钉留言（按 C），每条留言由画布 Agent 单独处理；图片 / 视频节点每有一张新画面（生成或上传）就记一版，节点「⋯ → 版本历史」可以切回任意一版（切回不新增版本）。
 - 数据在 `data/canvas.sqlite3` 的 `canvas_comments`、`node_versions`、`canvas_task_log` 表里，和其他数据一样不要删。
 - 留言要视频截帧时用 ffmpeg；没装的话留言照样能用，只是 Agent 看不到那一帧（`doctor.py` 会提示）。
 

@@ -375,7 +375,7 @@ def test_version_tools(repository, tmp_path):
 
     listed = tools.get_node_versions('img')
     assert '共 2 版' in listed.text and '第 2 版（当前）' in listed.text
-    assert '现在是第 2 版，共 2 版' in tools.get_node('img').text
+    assert '现在显示第 2 版，共 2 版' in tools.get_node('img').text
     old = tools.view_asset('img', 1)
     assert old.text.startswith('「图片 img」第 1 版的图片') and decode(old.images[0]).getpixel((5, 5))[2] < 100
     assert tools.view_asset('img', 7).is_error

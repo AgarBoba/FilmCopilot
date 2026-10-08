@@ -19,8 +19,8 @@ interface VersionHistoryProps {
 }
 
 /**
- * Every picture / video this node has shown, newest first. Switching back to one adds it
- * again as the newest version; nothing is ever removed.
+ * Every picture / video this node has had, newest first. Switching back just shows that
+ * version again; it adds no new one, and nothing is ever removed.
  */
 export function VersionHistory({ nodeId, kind, title, onClose }: VersionHistoryProps) {
   const canvasId = useCanvasStore((state) => state.canvasId);
@@ -68,7 +68,6 @@ export function VersionHistory({ nodeId, kind, title, onClose }: VersionHistoryP
 
   const comments = useCommentStore((state) => state.comments);
   const newestFirst = [...(versions ?? [])].reverse();
-  const latest = versions?.at(-1);
 
   return createPortal(
     <div className="version-history-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
@@ -83,7 +82,7 @@ export function VersionHistory({ nodeId, kind, title, onClose }: VersionHistoryP
         {versions?.length === 0 && <div className="version-empty">还没有{kind === 'image' ? '图片' : '视频'}，没有版本。</div>}
         <ul>
           {newestFirst.map((item) => {
-            const isCurrent = item === latest && item.assetId === current;
+            const isCurrent = item.assetId === current;
             const comment = item.commentId ? comments.find((entry) => entry.id === item.commentId) : undefined;
             const time = parseTime(item.createdAt);
             return (
@@ -114,7 +113,7 @@ export function VersionHistory({ nodeId, kind, title, onClose }: VersionHistoryP
             );
           })}
         </ul>
-        <footer>切回旧版会把它作为最新的一版，其他版本都保留。</footer>
+        <footer>切回只是换成显示那一版，不会多出新的版本；只有新生成或上传的才算新版本。</footer>
       </div>
     </div>,
     document.querySelector('.canvas-page') ?? document.body,
