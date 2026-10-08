@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * The agent's face: a little line-drawn kitten. Its mood says what the agent is doing,
+ * The agent's face: a little line-drawn kitten working at a laptop. Its mood says what the agent is doing,
  * so the user can tell at a glance without opening the panel.
  *
  *   idle     eyes open, blink now and then, glance toward the pointer
- *   working  squints and looks left-right, ear twitches; a light runs round the edge
+ *   working  squints at the screen, paws type, the lid logo glows, an ear twitches; a light runs round the edge
  *   waiting  ears up, a small hop and an amber "?" — something needs your confirmation
  *   happy    "^ ^" eyes and pink cheeks for a moment after a round finished
  */
@@ -65,6 +65,7 @@ export function AgentAvatar({ mood = 'idle', size = 44, followPointer = false }:
     >
       <span className="agent-avatar-rim" />
       <svg className="agent-kitty" viewBox="0 0 100 100">
+        <g className="kitty-head" transform="translate(0 -9)">
         {/* Ears go first so the head covers their bases. */}
         <g className="kitty-ear kitty-ear-left">
           <path className="kitty-line kitty-fur" d="M20 52 L23 16 Q25 12 29 15 L47 33 Z" />
@@ -98,6 +99,13 @@ export function AgentAvatar({ mood = 'idle', size = 44, followPointer = false }:
 
         <path className="kitty-nose" d="M47 64.5 Q50 63 53 64.5 Q51.5 67.5 50 67.8 Q48.5 67.5 47 64.5 Z" />
         <path className="kitty-mouth kitty-line" d="M43.5 69.5 Q46.8 73.5 50 69.5 Q53.2 73.5 56.5 69.5" />
+        </g>
+
+        {/* The laptop: we see the back of its lid; paws rest on top and type while working. */}
+        <rect className="kitty-laptop kitty-line" x="16" y="67" width="68" height="31" rx="5" />
+        <path className="kitty-logo" d="M50 75 L52 80.5 L57.5 82.5 L52 84.5 L50 90 L48 84.5 L42.5 82.5 L48 80.5 Z" />
+        <ellipse className="kitty-paw kitty-paw-left kitty-line kitty-fur" cx="35" cy="67" rx="7.5" ry="5" />
+        <ellipse className="kitty-paw kitty-paw-right kitty-line kitty-fur" cx="65" cy="67" rx="7.5" ry="5" />
 
         <g className="kitty-ask">
           <circle cx="86" cy="18" r="11" />

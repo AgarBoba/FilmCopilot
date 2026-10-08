@@ -3511,6 +3511,10 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .kitty-mouth { stroke-width: 3; }
 .kitty-ear { transform-origin: 50% 100%; transition: transform 220ms ease; }
 
+.kitty-laptop { fill: #d9dee8; stroke-width: 3.6; }
+.kitty-logo { fill: #a9b1c2; transition: fill 220ms ease; }
+.kitty-paw { stroke-width: 3.4; transform-origin: center; }
+
 /* Eyes glance toward the pointer and blink now and then. */
 .kitty-look {
   transform: translate(var(--look-x, 0), var(--look-y, 0));
@@ -3537,6 +3541,13 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .agent-avatar.is-working .kitty-shine { display: none; }
 .agent-avatar.is-working .kitty-eyes { animation: kitty-scan 1.6s ease-in-out infinite; }
 .agent-avatar.is-working .kitty-ear-right { animation: kitty-twitch 1.8s ease-in-out infinite; }
+.agent-avatar.is-working .kitty-paw-left { animation: kitty-type 0.36s ease-in-out infinite; }
+.agent-avatar.is-working .kitty-paw-right { animation: kitty-type 0.36s ease-in-out infinite 0.18s; }
+.agent-avatar.is-working .kitty-logo { fill: var(--accent); filter: drop-shadow(0 0 2px var(--accent)); }
+@keyframes kitty-type {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
 @keyframes avatar-spin { to { transform: rotate(360deg); } }
 @keyframes kitty-scan {
   0%, 100% { transform: translateX(-4px); }
@@ -3571,6 +3582,8 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .agent-avatar.is-happy .kitty-eyes { display: none; }
 .agent-avatar.is-happy .kitty-happy { display: inline; }
 .agent-avatar.is-happy .kitty-cheek { opacity: 0.8; }
+.agent-avatar.is-happy .kitty-paw { transform: translateY(-4px) rotate(-8deg); }
+.agent-avatar.is-waiting .kitty-logo { fill: var(--amber); }
 
 /* Small sizes (panel header): fewer, bolder lines. */
 .agent-header .agent-avatar .kitty-whiskers { display: none; }
