@@ -91,7 +91,7 @@ class MemoryTools:
             lines.append('[以前的对话原话]')
             for hit in messages:
                 who = '用户' if hit['role'] == 'user' else '你'
-                lines.append(f"- {self._where(hit)} {hit['createdAt'][:10]} {who}说：{hit['snippet']}")
+                lines.append(f"- {self._where(hit)}{hit['createdAt'][:10]} {who}说：{hit['snippet']}")
         return ToolResult('\n'.join(lines), summary=f'翻了翻记录：{query}')
 
     def _where(self, hit: dict[str, Any]) -> str:
