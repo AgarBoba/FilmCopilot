@@ -3465,154 +3465,109 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .comment-thread .comment-undo { align-self: flex-start; margin-top: 2px; font-size: 12px; }
 
 /* ===================================================================== Agent face */
-/* A little line-drawn kitten (agent/AgentAvatar.tsx). Same colours in both themes: a sticker. */
+/* A plain dark ball with two eyes (agent/AgentAvatar.tsx). Flat, no gloss; same in both themes. */
 .agent-avatar {
   --s: var(--avatar-size, 44px);
-  --fur: #fffaf2;
-  --ink: #2b2522;
-  --pink: #ff9fae;
-  --amber: #f5b041;
+  --eye-w: calc(var(--s) * 0.12);
+  --eye-h: calc(var(--s) * 0.26);
+  --eye-color: #f5f5f7;
   --rim: transparent;
   position: relative;
   display: inline-block;
   flex: none;
   width: var(--s);
   height: var(--s);
+  border-radius: 50%;
 }
 .agent-avatar-rim {
   position: absolute;
-  inset: calc(var(--s) * -0.08);
+  inset: calc(var(--s) * -0.06);
   border-radius: 50%;
   background: var(--rim);
-  -webkit-mask: radial-gradient(circle, transparent 64%, #000 66%);
-          mask: radial-gradient(circle, transparent 64%, #000 66%);
+  -webkit-mask: radial-gradient(circle, transparent 66%, #000 68%);
+          mask: radial-gradient(circle, transparent 66%, #000 68%);
 }
-.agent-kitty {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.25));
+.agent-avatar-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #18181b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
-.agent-kitty * { transform-box: fill-box; }
-.kitty-line {
-  fill: none;
-  stroke: var(--ink);
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.kitty-fur { fill: var(--fur); }
-.kitty-inner { fill: var(--pink); opacity: 0.75; }
-.kitty-whiskers { stroke: #8f8883; stroke-width: 2.6; }
-.kitty-cheek { fill: var(--pink); opacity: 0.35; transition: opacity 220ms ease; }
-.kitty-nose { fill: #ff7d93; stroke: var(--ink); stroke-width: 1.4; stroke-linejoin: round; }
-.kitty-mouth { stroke-width: 3; }
-.kitty-ear { transform-origin: 50% 100%; transition: transform 220ms ease; }
-
-.kitty-laptop { fill: #d9dee8; stroke-width: 3.6; }
-.kitty-logo { fill: #a9b1c2; transition: fill 220ms ease; }
-.kitty-paw { stroke-width: 3.4; transform-origin: center; }
-
-/* Eyes glance toward the pointer and blink now and then. */
-.kitty-look {
+.agent-avatar-eyes {
+  display: flex;
+  gap: calc(var(--s) * 0.14);
   transform: translate(var(--look-x, 0), var(--look-y, 0));
   transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.kitty-eye { fill: var(--ink); transform-origin: center; transition: transform 220ms ease; animation: kitty-blink 5.2s infinite; }
-.kitty-eye + .kitty-eye { animation-delay: 30ms; }
-.kitty-shine { fill: #fff; }
-.kitty-happy { display: none; stroke-width: 4.4; }
-.kitty-ask { display: none; transform-origin: center; }
-.kitty-ask circle { fill: var(--amber); stroke: var(--ink); stroke-width: 3; }
-.kitty-ask text { fill: var(--ink); font: 800 16px/1 system-ui, sans-serif; }
-@keyframes kitty-blink {
+.agent-avatar-eye {
+  width: var(--eye-w);
+  height: var(--eye-h);
+  border-radius: calc(var(--eye-w) / 2);
+  background: var(--eye-color);
+  transition: height 220ms ease, background 220ms ease;
+  animation: avatar-blink 5.2s infinite;
+}
+@keyframes avatar-blink {
   0%, 93%, 100% { transform: scaleY(1); }
-  95.5% { transform: scaleY(0.1); }
+  95.5% { transform: scaleY(0.12); }
 }
 
-/* Working: squints and looks left and right, one ear twitches; a light runs round the edge. */
+/* Working: narrowed eyes scan left and right; a thin light runs round the edge. */
 .agent-avatar.is-working {
-  --rim: conic-gradient(from 0deg, transparent 0 62%, color-mix(in srgb, var(--accent) 40%, transparent) 78%, var(--accent) 100%);
+  --eye-h: calc(var(--s) * 0.07);
+  --rim: conic-gradient(from 0deg, transparent 0 70%, var(--accent) 100%);
 }
-.agent-avatar.is-working .agent-avatar-rim { animation: avatar-spin 1.3s linear infinite; }
-.agent-avatar.is-working .kitty-eye { animation: none; transform: scaleY(0.45); }
-.agent-avatar.is-working .kitty-shine { display: none; }
-.agent-avatar.is-working .kitty-eyes { animation: kitty-scan 1.6s ease-in-out infinite; }
-.agent-avatar.is-working .kitty-ear-right { animation: kitty-twitch 1.8s ease-in-out infinite; }
-.agent-avatar.is-working .kitty-paw-left { animation: kitty-type 0.36s ease-in-out infinite; }
-.agent-avatar.is-working .kitty-paw-right { animation: kitty-type 0.36s ease-in-out infinite 0.18s; }
-.agent-avatar.is-working .kitty-logo { fill: var(--accent); filter: drop-shadow(0 0 2px var(--accent)); }
-@keyframes kitty-type {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
-}
+.agent-avatar.is-working .agent-avatar-rim { animation: avatar-spin 1.2s linear infinite; }
+.agent-avatar.is-working .agent-avatar-eyes { animation: avatar-scan 1.6s ease-in-out infinite; }
+.agent-avatar.is-working .agent-avatar-eye { animation: none; }
 @keyframes avatar-spin { to { transform: rotate(360deg); } }
-@keyframes kitty-scan {
-  0%, 100% { transform: translateX(-4px); }
-  50% { transform: translateX(4px); }
-}
-@keyframes kitty-twitch {
-  0%, 70%, 100% { transform: rotate(0); }
-  78% { transform: rotate(14deg); }
-  86% { transform: rotate(-4deg); }
+@keyframes avatar-scan {
+  0%, 100% { transform: translateX(calc(var(--s) * -0.08)); }
+  50% { transform: translateX(calc(var(--s) * 0.08)); }
 }
 
-/* Waiting for you: ears up, wide eyes, an amber "?", a little hop. */
+/* Waiting for you: amber eyes and a steady amber ring. */
 .agent-avatar.is-waiting {
-  --rim: radial-gradient(circle, var(--amber) 0, rgba(245, 176, 65, 0.35) 100%);
-  animation: avatar-hop 1.6s ease-in-out infinite;
+  --eye-color: #f5b041;
+  --rim: #f5b041;
 }
-.agent-avatar.is-waiting .kitty-eye { animation: none; transform: scale(1.15); }
-.agent-avatar.is-waiting .kitty-ear-left { transform: rotate(-6deg); }
-.agent-avatar.is-waiting .kitty-ear-right { transform: rotate(6deg); }
-.agent-avatar.is-waiting .kitty-ask { display: inline; animation: kitty-pop 1.6s ease-in-out infinite; }
-@keyframes avatar-hop {
-  0%, 70%, 100% { transform: translateY(0); }
-  80% { transform: translateY(calc(var(--s) * -0.08)); }
-  90% { transform: translateY(0); }
-}
-@keyframes kitty-pop {
-  0%, 70%, 100% { transform: scale(1); }
-  80% { transform: scale(1.15); }
-}
+.agent-avatar.is-waiting .agent-avatar-eye { animation: avatar-blink 2.4s infinite; }
 
-/* Done: "^ ^" and pink cheeks. */
-.agent-avatar.is-happy .kitty-eyes { display: none; }
-.agent-avatar.is-happy .kitty-happy { display: inline; }
-.agent-avatar.is-happy .kitty-cheek { opacity: 0.8; }
-.agent-avatar.is-happy .kitty-paw { transform: translateY(-4px) rotate(-8deg); }
-.agent-avatar.is-waiting .kitty-logo { fill: var(--amber); }
-
-/* Small sizes (panel header): fewer, bolder lines. */
-.agent-header .agent-avatar .kitty-whiskers { display: none; }
-.agent-header .agent-avatar .kitty-ask { display: none; }
+/* Done: "^ ^". */
+.agent-avatar.is-happy .agent-avatar-eye {
+  width: calc(var(--s) * 0.16);
+  height: calc(var(--s) * 0.09);
+  border: calc(var(--s) * 0.04) solid var(--eye-color);
+  border-bottom: 0;
+  border-radius: calc(var(--s) * 0.12) calc(var(--s) * 0.12) 0 0;
+  background: transparent;
+  animation: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-avatar, .agent-avatar *, .agent-avatar-rim { animation: none !important; }
+  .agent-avatar, .agent-avatar-eye, .agent-avatar-eyes, .agent-avatar-rim { animation: none !important; }
 }
 
 /* Entry point: top right of the canvas. */
 .agent-launcher {
   display: grid;
   place-items: center;
-  width: 60px;
-  height: 60px;
+  width: 56px;
+  height: 56px;
   padding: 0;
-  border: 1px solid var(--chrome-border);
+  border: 0;
   border-radius: 50%;
-  background: var(--chrome-bg);
-  box-shadow: var(--chrome-shadow);
-  backdrop-filter: blur(12px);
+  background: transparent;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   cursor: pointer;
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  transition: transform 160ms ease;
 }
 .agent-launcher:hover { transform: translateY(-1px) scale(1.04); }
-.agent-launcher:hover .agent-avatar.is-idle .kitty-eye { animation: none; transform: scale(1.18); }
-.agent-launcher:hover .agent-avatar.is-idle .kitty-ear { transform: rotate(var(--perk, 0deg)); }
-.agent-launcher .kitty-ear-left { --perk: -7deg; }
-.agent-launcher .kitty-ear-right { --perk: 7deg; }
+.agent-launcher:hover .agent-avatar.is-idle { --eye-h: calc(var(--s) * 0.3); }
 .agent-launcher:active { transform: scale(0.97); }
 .canvas-page.agent-open .agent-launcher { display: none; }
 .agent-header .agent-avatar { margin: 0 2px 0 4px; }

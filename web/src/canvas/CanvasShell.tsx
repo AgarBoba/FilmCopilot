@@ -973,7 +973,7 @@ export function CanvasShell() {
               data-tooltip-side="left"
               onClick={() => useAgentStore.getState().setOpen(!agentOpen)}
             >
-              <AgentAvatar mood={agentMood} size={50} followPointer />
+              <AgentAvatar mood={agentMood} size={56} followPointer />
             </button>
           </Panel>
           <Panel position="bottom-left" className="canvas-panel">
