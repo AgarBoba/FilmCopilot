@@ -160,6 +160,18 @@ export function CommentLayer({
     };
   }, [mode, viewportRef, flowRef]);
 
+  // An open thread closes on a click anywhere else: empty canvas, another node, the panel.
+  useEffect(() => {
+    if (!openId) return undefined;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (!target || target.closest('.comment-ui, .canvas-tooltip')) return;
+      useCommentStore.getState().open(null);
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => window.removeEventListener('pointerdown', onPointerDown, true);
+  }, [openId]);
+
   // Esc: cancel the new pin, then close the popover, then leave comment mode.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -240,9 +252,7 @@ export function CommentLayer({
       })}
       {draft && positions.draft && (
         <>
-          <span className="comment-pin is-draft comment-ui" style={{ left: positions.draft.x, top: positions.draft.y }} aria-hidden="true">
-            <span className="comment-pin-initial">我</span>
-          </span>
+          <span className="comment-pin is-draft comment-ui" style={{ left: positions.draft.x, top: positions.draft.y }} aria-hidden="true" />
           <div
             className="comment-draft comment-ui"
             role="dialog"
@@ -318,7 +328,6 @@ function Pin({ comment, at, active, queue, onClick }: {
         onClick();
       }}
     >
-      <span className="comment-pin-initial">{initialOf(comment.author)}</span>
       {agent && (
         <span className="comment-pin-badge">
           {state === 'queued' && (queue > 0 ? queue : <SparkIcon width={9} height={9} />)}
@@ -399,9 +408,3 @@ function locate(
   return point.visible || forced ? point : null;
 }
 
-
-/** The letter on a pin: "我" for the user's own comments ("me"), otherwise the author's capital. */
-export function initialOf(author: string | null | undefined): string {
-  if (!author || author === 'me' || author === 'user') return '我';
-  return author.trim().charAt(0).toUpperCase() || '我';
-}

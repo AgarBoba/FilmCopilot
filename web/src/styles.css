@@ -3038,7 +3038,6 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .comment-pin.is-resolved:not(.is-active) { opacity: 0.4; }
 .comment-pin.is-old:not(.is-active) { opacity: 0.45; }
 .comment-pin.is-draft { cursor: default; }
-.comment-pin-initial { pointer-events: none; }
 .comment-pin-badge {
   position: absolute;
   top: -6px;

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SessionList } from '../agent/SessionList';
 import type { AgentSession } from '../agent/agentApi';
-import { anchorAt, initialOf } from '../comments/CommentLayer';
+import { anchorAt } from '../comments/CommentLayer';
 import { describeAnchor, pinState, type CanvasComment } from '../comments/commentApi';
 import { buildThread, timeAgo } from '../comments/thread';
 import { queuePosition, useCommentStore } from '../comments/commentStore';
@@ -114,8 +114,6 @@ describe('comment store', () => {
     expect(pinState(comment({ id: 'n', agentStatus: null }))).toBe('note');
     expect(pinState(comment({ id: 'w', agentStatus: 'waiting' }))).toBe('waiting');
     expect(pinState(comment({ id: 'r', agentStatus: 'done', status: 'resolved' }))).toBe('resolved');
-    expect(initialOf('me')).toBe('我');
-    expect(initialOf('hana')).toBe('H');
   });
 });
 
@@ -220,6 +218,36 @@ describe('comment mode', () => {
     fireEvent.pointerDown(pane, { button: 0, clientX: 30, clientY: 40 });
     expect(useCommentStore.getState().mode).toBe(false);
     expect(useCommentStore.getState().draft?.anchor).toEqual({ kind: 'canvas', x: 30, y: 40 }); // still typing
+    vi.unstubAllGlobals();
+    viewport.remove();
+  });
+});
+
+
+describe('closing a thread', () => {
+  it('a click on the canvas or another node closes it; a click inside does not', async () => {
+    const { CommentLayer } = await import('../comments/CommentLayer');
+    const viewport = document.createElement('div');
+    viewport.innerHTML = '<div class="react-flow__pane" id="pane"></div><div class="react-flow__node" data-id="n9" id="node"></div><div class="comment-ui" id="inside"></div>';
+    document.body.appendChild(viewport);
+    const flow = {
+      screenToFlowPosition: (point: { x: number; y: number }) => point,
+      flowToScreenPosition: (point: { x: number; y: number }) => point,
+      fitView: () => undefined, setCenter: () => undefined, getViewport: () => ({ zoom: 1 }),
+    };
+    vi.stubGlobal('EventSource', undefined);
+    vi.stubGlobal('PointerEvent', MouseEvent);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ comments: [] }))));
+    render(<CommentLayer canvasId="c" revision={0} viewportRef={{ current: viewport }} flowRef={{ current: flow }}
+      selectedNodeIds={[]} nodeTitles={{}} onOpenInPanel={vi.fn()} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} />);
+    act(() => useCommentStore.setState({ openId: 'x' }));
+    fireEvent.pointerDown(document.getElementById('inside')!);
+    expect(useCommentStore.getState().openId).toBe('x');
+    fireEvent.pointerDown(document.getElementById('pane')!);
+    expect(useCommentStore.getState().openId).toBeNull();
+    act(() => useCommentStore.setState({ openId: 'x' }));
+    fireEvent.pointerDown(document.getElementById('node')!);
+    expect(useCommentStore.getState().openId).toBeNull();
     vi.unstubAllGlobals();
     viewport.remove();
   });
