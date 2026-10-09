@@ -72,21 +72,38 @@ class MemoryTools:
 
     def recall(self, query: str) -> ToolResult:
         memories = self.memory.search(self.project_id, query)
+        chats = self.store.search_summaries(self.project_id, query, exclude_session=self.session_id)
         messages = self.store.search_messages(self.project_id, query, exclude_session=self.session_id)
-        if not memories and not messages:
-            return ToolResult(f'没有找到和「{query}」有关的记忆或以前的对话。', summary=f'翻了翻记录：{query}')
+        if not memories and not chats and not messages:
+            return ToolResult(f'没有找到和「{query}」有关的记忆或以前的对话。换几个更短的关键词再试。',
+                              summary=f'翻了翻记录：{query}')
         lines: list[str] = []
         if memories:
             lines.append('[记忆]')
             for item in memories:
                 state = '' if item['status'] == 'active' else '（旧版本，已被更新）'
                 lines.append(f"- #{item['id']} {LAYER_LABELS[item['layer']]} · {item['categoryLabel']}：{item['content']}{state}")
+        if chats:
+            lines.append('[相关的对话]（对话摘要）')
+            for hit in chats:
+                lines.append(f"- {self._where(hit)}：{hit['summary']}")
         if messages:
-            lines.append('[以前的对话]')
+            lines.append('[以前的对话原话]')
             for hit in messages:
                 who = '用户' if hit['role'] == 'user' else '你'
-                lines.append(f"- 「{hit['sessionTitle']}」{hit['createdAt'][:10]} {who}说：{hit['snippet']}")
+                lines.append(f"- {self._where(hit)} {hit['createdAt'][:10]} {who}说：{hit['snippet']}")
         return ToolResult('\n'.join(lines), summary=f'翻了翻记录：{query}')
+
+    def _where(self, hit: dict[str, Any]) -> str:
+        """「title」 plus what kind of chat it is, when that matters."""
+        notes = []
+        if hit.get('kind') == 'comment':
+            notes.append('画布留言')
+        if hit.get('canvasId') and hit['canvasId'] != self.canvas_id:
+            notes.append('另一张画布')
+        if hit.get('archived'):
+            notes.append('已归档')
+        return f"「{hit['sessionTitle']}」" + (f"（{'、'.join(notes)}）" if notes else '')
 
 
 def _brief(item: dict[str, Any]) -> dict[str, Any]:

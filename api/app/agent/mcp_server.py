@@ -104,8 +104,11 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
     ('forget', '用户要你忘掉某条记忆时用。',
      {'type': 'object', 'properties': {'memory_id': {'type': 'integer'}}, 'required': ['memory_id']}),
     ('recall',
-     '按关键词搜记忆和这个项目里以前的对话（包括同一画布上的其他对话）。用户提到「之前说的」「上次那个」时先用它。',
-     {'type': 'object', 'properties': {'query': {'type': 'string', 'description': '几个关键词，用空格分开'}},
+     '搜记忆和这个项目里以前的对话（对话摘要和原话；包括其他画布、已归档的对话和画布留言，结果里会注明）。'
+     '用户提到「之前说的」「上次那个」「另一个对话里」时先用它。',
+     {'type': 'object', 'properties': {'query': {'type': 'string', 'description': (
+         '几个关键词或短语，用空格分开，如「兔子 耳朵颜色」。中文短语会按片段匹配，不必和原话一字不差；'
+         '找不到时换更短、更具体的词再试')}},
       'required': ['query']}),
 ]
 

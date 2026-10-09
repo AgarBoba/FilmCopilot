@@ -27,6 +27,7 @@ from .prompts import SYSTEM_PROMPT, build_user_message
 from .store import AgentStore
 from .builtin_events import BuiltinToolTracker
 from .skills import BUILTIN_TOOLS, discover, find as find_skill, plugin_dirs
+from .summary import Summarizer, build_input, clean as clean_summary, sdk_summarizer
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class AgentService:
         store: AgentStore,
         config: AgentConfig | None = None,
         client_factory: ClientFactory = sdk_client_factory,
+        summarizer: Summarizer | None = None,
     ) -> None:
         self.repository = repository
         self.command_service = command_service
@@ -91,6 +93,12 @@ class AgentService:
         # Called with (session_id, event) for every emitted event (the comment scheduler
         # follows its sessions this way). Must not raise or block.
         self.listeners: list[Callable[[str, dict], None]] = []
+        # Chat summaries (summary.py). Off when the client is faked (tests) unless one is given.
+        if summarizer is None and client_factory is sdk_client_factory:
+            summarizer = sdk_summarizer(self.config.auth)
+        self.summarizer = summarizer
+        self._summary_runs: dict[str, list[str]] = {}  # session id -> runs waiting to be summarised
+        self._summary_tasks: dict[str, asyncio.Task] = {}
 
     # --------------------------------------------------------------- public
 
@@ -189,6 +197,7 @@ class AgentService:
         ))
         payload = {**result.payload, 'memoriesReverted': self.memory.undo_run(run_id)}
         self._emit(session['id'], run_id, 'run_undone', payload, role='system_event')
+        self.schedule_summary(session['id'], run_id)
         return payload
 
     def _other_chats(self, runtime: SessionRuntime, limit: int = 5) -> list[str]:
@@ -199,8 +208,11 @@ class AgentService:
                 continue
             if chat.get('kind') == 'comment':
                 continue  # comments reach other chats through the canvas task log instead
-            last = chat.get('preview') or ''
-            lines.append(f"「{chat.get('title') or '未命名对话'}」{str(chat.get('last_active_at') or '')[:10]}，最后一句：{last[:60]}")
+            name = f"「{chat.get('title') or '未命名对话'}」{str(chat.get('last_active_at') or '')[:10]}"
+            if chat.get('summary'):
+                lines.append(f"{name}：{chat['summary']}")
+            else:  # not summarised yet: the start of its last message
+                lines.append(f"{name}，最后一句：{(chat.get('preview') or '')[:60]}")
             if len(lines) >= limit:
                 break
         return lines
@@ -220,6 +232,8 @@ class AgentService:
         return None
 
     async def close(self) -> None:
+        for task in self._summary_tasks.values():
+            task.cancel()
         for runtime in self.sessions.values():
             if runtime.tools:
                 runtime.tools.stopped = True
@@ -435,6 +449,41 @@ class AgentService:
             }, role='system_event')
             runtime.tools = None
             runtime.run_id = None
+            if status in ('completed', 'stopped'):
+                self.schedule_summary(runtime.session_id, run_id)
+
+    # ------------------------------------------------------------ summaries
+
+    def schedule_summary(self, session_id: str, run_id: str) -> None:
+        """Update this chat's summary in the background (panel chats only; comments have the task log)."""
+        if self.summarizer is None:
+            return
+        try:
+            if self.store.get_session(session_id).get('kind') != 'chat':
+                return
+            loop = asyncio.get_running_loop()
+        except (DomainError, RuntimeError):
+            return
+        self._summary_runs.setdefault(session_id, []).append(run_id)
+        task = self._summary_tasks.get(session_id)
+        if task is None or task.done():
+            self._summary_tasks[session_id] = loop.create_task(self._summarize(session_id))
+
+    async def _summarize(self, session_id: str) -> None:
+        """One at a time per chat, in order, so each summary builds on the one before."""
+        pending = self._summary_runs.get(session_id, [])
+        while pending:
+            run_id = pending.pop(0)
+            try:
+                session = self.store.get_session(session_id)
+                text = build_input(session.get('summary'), session.get('title'), self.store.run_transcript(run_id))
+                summary = clean_summary(await asyncio.wait_for(self.summarizer(text), 90))
+                if summary:
+                    self.store.set_summary(session_id, summary)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # a summary is a nice-to-have: keep the old one
+                log.warning('summarising chat %s failed', session_id, exc_info=True)
 
     def _remember_sdk_session(self, runtime: SessionRuntime, sdk_session_id: str) -> None:
         if runtime.sdk_session_id != sdk_session_id:

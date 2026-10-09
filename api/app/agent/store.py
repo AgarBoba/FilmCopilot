@@ -121,38 +121,82 @@ class AgentStore:
     def search_messages(
         self, project_id: str, query: str, exclude_session: str | None = None, limit: int = 6,
     ) -> list[dict[str, Any]]:
-        """What the user and the agent said in other chats of this project, by keyword."""
-        from .memory import keywords
-        words = keywords(query)
-        if not words:
+        """What the user and the agent said in other chats of this project (any canvas, archived
+        and comment chats included, each labelled), by keyword. See memory.search_terms."""
+        from .memory import first_hit, like_patterns, match_score, search_terms
+        terms = search_terms(query)
+        if not terms:
             return []
-        clause = ' OR '.join('m.content_json LIKE ?' for _ in words)
+        patterns = like_patterns(terms)
+        clause = ' OR '.join('m.content_json LIKE ?' for _ in patterns)
         with self.database.connection() as connection:
             rows = connection.execute(
-                f'''SELECT m.id, m.session_id, m.role, m.content_json, m.created_at, s.title, s.canvas_id
+                f'''SELECT m.id, m.session_id, m.role, m.content_json, m.created_at, s.title, s.canvas_id,
+                           s.kind, s.archived_at
                     FROM agent_messages m JOIN agent_sessions s ON s.id = m.session_id
                     WHERE s.project_id = ? AND m.role IN ('user', 'assistant') AND ({clause})
-                    ORDER BY m.id DESC LIMIT 200''',
-                (project_id, *[f'%{word}%' for word in words]),
+                    ORDER BY m.id DESC LIMIT 400''',
+                (project_id, *[f'%{pattern}%' for pattern in patterns]),
             ).fetchall()
         hits = []
         for row in rows:
             if row['session_id'] == exclude_session:
                 continue
             text = str(json.loads(row['content_json']).get('text') or '')
-            lowered = text.lower()
-            score = sum(1 for word in words if word in lowered)
+            score = match_score(text, terms)
             if not score:
-                continue  # matched a JSON key, not the words
-            first = min(lowered.find(word) for word in words if word in lowered)
+                continue  # matched a JSON key or too few pieces of a phrase
+            first = first_hit(text, terms)
             start = max(0, first - 80)
             snippet = ('…' if start else '') + ' '.join(text[start:first + 220].split()) + ('…' if first + 220 < len(text) else '')
             hits.append({
                 'messageId': row['id'], 'sessionId': row['session_id'], 'sessionTitle': row['title'] or '未命名对话',
                 'role': row['role'], 'createdAt': row['created_at'], 'score': score, 'snippet': snippet,
+                'canvasId': row['canvas_id'], 'kind': row['kind'], 'archived': bool(row['archived_at']),
             })
         hits.sort(key=lambda hit: (-hit['score'], -hit['messageId']))
         return hits[:limit]
+
+    def search_summaries(
+        self, project_id: str, query: str, exclude_session: str | None = None, limit: int = 4,
+    ) -> list[dict[str, Any]]:
+        """Chats of this project whose title or summary matches: which chat was about what."""
+        from .memory import match_score, search_terms
+        terms = search_terms(query)
+        if not terms:
+            return []
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                '''SELECT id, title, summary, canvas_id, kind, archived_at, created_at FROM agent_sessions
+                   WHERE project_id = ? AND summary IS NOT NULL AND summary != '' ''',
+                (project_id,),
+            ).fetchall()
+        hits = []
+        for row in rows:
+            if row['id'] == exclude_session:
+                continue
+            score = match_score(f"{row['title'] or ''} {row['summary']}", terms)
+            if score:
+                hits.append({
+                    'sessionId': row['id'], 'sessionTitle': row['title'] or '未命名对话', 'summary': row['summary'],
+                    'canvasId': row['canvas_id'], 'kind': row['kind'], 'archived': bool(row['archived_at']),
+                    'score': score,
+                })
+        hits.sort(key=lambda hit: -hit['score'])
+        return hits[:limit]
+
+    def set_summary(self, session_id: str, summary: str) -> None:
+        with self.database.transaction() as connection:
+            connection.execute('UPDATE agent_sessions SET summary = ? WHERE id = ?', (summary, session_id))
+
+    def run_transcript(self, run_id: str) -> list[dict[str, Any]]:
+        """What one run said and did, oldest first: the user's words, the agent's replies, one line
+        per step. Used to update the chat summary."""
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                'SELECT role, content_json FROM agent_messages WHERE run_id = ? ORDER BY id', (run_id,),
+            ).fetchall()
+        return [json.loads(row['content_json']) for row in rows]
 
     def update_session(self, session_id: str, title: str | None = None, archived: bool | None = None) -> dict[str, Any]:
         self.get_session(session_id)

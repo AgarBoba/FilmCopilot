@@ -47,6 +47,55 @@ def keywords(query: str) -> list[str]:
     return [part for part in dict.fromkeys(p.strip().lower() for p in parts) if part][:8]
 
 
+_CJK_RUN = re.compile(r'^[㐀-鿿]{3,}$')
+PARTIAL = 0.3  # a long Chinese phrase counts when about a third of its two-character pieces appear
+
+
+def search_terms(query: str) -> list[tuple[str, list[str]]]:
+    """(term, pieces) per keyword. Chinese has no spaces, so a phrase like 主角兔子的耳朵颜色 would
+    almost never appear verbatim; its overlapping two-character pieces (主角, 角兔, 兔子 …) let it
+    match text that says the same thing in other words. Other terms have no pieces."""
+    result = []
+    for word in keywords(query):
+        pieces: list[str] = []
+        if _CJK_RUN.match(word):
+            pieces = list(dict.fromkeys(word[i:i + 2] for i in range(len(word) - 1)))[:12]
+        result.append((word, pieces))
+    return result
+
+
+def like_patterns(terms: list[tuple[str, list[str]]], limit: int = 24) -> list[str]:
+    """Substrings a database row must contain at least one of (to narrow before scoring)."""
+    found: list[str] = []
+    for word, pieces in terms:
+        for item in (word, *pieces):
+            if item not in found:
+                found.append(item)
+    return found[:limit]
+
+
+def match_score(text: str, terms: list[tuple[str, list[str]]]) -> float:
+    """1 per keyword found as is; a long Chinese phrase scores the share of its pieces found
+    (counted only from PARTIAL up). 0 means no match."""
+    lowered = (text or '').lower()
+    score = 0.0
+    for word, pieces in terms:
+        if word in lowered:
+            score += 1
+        elif pieces:
+            share = sum(1 for piece in pieces if piece in lowered) / len(pieces)
+            if share >= PARTIAL:
+                score += share
+    return score
+
+
+def first_hit(text: str, terms: list[tuple[str, list[str]]]) -> int:
+    """Where the first matching keyword or piece starts (for a snippet), or 0."""
+    lowered = (text or '').lower()
+    spots = [lowered.find(item) for word, pieces in terms for item in (word, *pieces) if item in lowered]
+    return min(spots) if spots else 0
+
+
 class MemoryStore:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -100,14 +149,13 @@ class MemoryStore:
         return '\n'.join(lines)
 
     def search(self, project_id: str, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        words = keywords(query)
-        if not words:
+        terms = search_terms(query)
+        if not terms:
             return []
         memories = self.list_all(project_id)
         scored = []
         for item in memories['project'] + memories['preference']:
-            text = f"{item['content']} {item['category']}".lower()
-            score = sum(1 for word in words if word in text)
+            score = match_score(f"{item['content']} {item['category']} {item['categoryLabel']}", terms)
             if score:
                 scored.append((score, item))
         scored.sort(key=lambda pair: (-pair[0], pair[1]['status'] != 'active'))
