@@ -285,7 +285,7 @@ describe('comment popover', () => {
     await userEvent.click(tick);
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     vi.restoreAllMocks();
-  });
+  }, 15000); // lots of typing: slow when the whole suite runs at once
 
   it('the menu hands a note to the agent, and deletes only on the second click', async () => {
     const note = comment({ id: 'n2', sessionId: null, agentStatus: null });

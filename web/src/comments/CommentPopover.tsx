@@ -165,15 +165,6 @@ export function CommentPopover({ comment, at, bounds, where, onClose, onOpenInPa
       <button type="button" className="comment-icon" aria-label="关闭" onClick={onClose}>
         <CloseIcon width={15} height={15} />
       </button>
-      {menu && (
-        <div className="comment-menu" role="menu">
-          {menuItems.map((entry) => (
-            <button key={entry.label} type="button" role="menuitem" className={entry.danger ? 'is-danger' : ''} onClick={entry.onClick}>
-              {entry.label}
-            </button>
-          ))}
-        </div>
-      )}
     </span>
   );
 
@@ -191,6 +182,16 @@ export function CommentPopover({ comment, at, bounds, where, onClose, onOpenInPa
         }
       }}
     >
+      {/* Outside the scrolling thread, so a short thread never cuts the menu off. */}
+      {menu && (
+        <div className="comment-menu" role="menu">
+          {menuItems.map((entry) => (
+            <button key={entry.label} type="button" role="menuitem" className={entry.danger ? 'is-danger' : ''} onClick={entry.onClick}>
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div ref={bodyRef} className="comment-thread">
         {thread.map((item, index) => (
           <ThreadMessage

@@ -82,7 +82,7 @@ export function CommentComposer({
         <textarea
           ref={inputRef}
           autoFocus={autoFocus}
-          rows={2}
+          rows={1}
           value={text}
           aria-label={label}
           disabled={disabled}
