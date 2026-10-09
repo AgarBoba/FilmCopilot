@@ -240,7 +240,9 @@ export function CommentLayer({
       })}
       {draft && positions.draft && (
         <>
-          <span className="comment-pin is-draft comment-ui" style={{ left: positions.draft.x, top: positions.draft.y }} aria-hidden="true" />
+          <span className="comment-pin is-draft comment-ui" style={{ left: positions.draft.x, top: positions.draft.y }} aria-hidden="true">
+            <span className="comment-pin-initial">我</span>
+          </span>
           <div
             className="comment-draft comment-ui"
             role="dialog"
@@ -301,7 +303,7 @@ function Pin({ comment, at, active, queue, onClick }: {
   const old = Boolean(comment.anchor.stale);
   const state = pinState(comment);
   const label = state === 'note' ? '留言' : state === 'resolved' ? '已解决' : `Agent · ${STATUS_LABELS[state]}`;
-  const count = 1 + comment.replies.length;
+  const replies = comment.replies.length;
   const agent = comment.agentStatus !== null && state !== 'resolved';
   return (
     <button
@@ -309,18 +311,22 @@ function Pin({ comment, at, active, queue, onClick }: {
       className={`comment-pin comment-ui is-${state} ${agent ? 'is-agent' : ''} ${old ? 'is-old' : ''} ${active ? 'is-active' : ''}`}
       style={{ left: at.x, top: at.y }}
       aria-label={`留言：${comment.text}（${label}）`}
-      data-tooltip={`${label}${old ? ' · 针对上一版' : ''}：${comment.text.slice(0, 40)}`}
+      data-tooltip={`${label}${old ? ' · 针对上一版' : ''}${replies ? ` · ${replies} 条回复` : ''}：${comment.text.slice(0, 40)}`}
       data-tooltip-side="top"
       onClick={(event) => {
         event.stopPropagation();
         onClick();
       }}
     >
-      {(state === 'note' || state === 'resolved') && count > 1 && <span>{count}</span>}
-      {state === 'queued' && <><SparkIcon width={11} height={11} />{queue > 0 && <span>{queue}</span>}</>}
-      {(state === 'running' || state === 'waiting') && <SparkIcon width={13} height={13} />}
-      {state === 'done' && <CheckIcon width={13} height={13} />}
-      {state === 'failed' && <span>!</span>}
+      <span className="comment-pin-initial">{initialOf(comment.author)}</span>
+      {agent && (
+        <span className="comment-pin-badge">
+          {state === 'queued' && (queue > 0 ? queue : <SparkIcon width={9} height={9} />)}
+          {(state === 'running' || state === 'waiting') && <SparkIcon width={9} height={9} />}
+          {state === 'done' && <CheckIcon width={9} height={9} />}
+          {state === 'failed' && '!'}
+        </span>
+      )}
     </button>
   );
 }
@@ -391,4 +397,11 @@ function locate(
   }
   const point = mediaToScreen(element.getBoundingClientRect(), natural, { x: anchor.x ?? 0.5, y: anchor.y ?? 0.5 });
   return point.visible || forced ? point : null;
+}
+
+
+/** The letter on a pin: "我" for the user's own comments ("me"), otherwise the author's capital. */
+export function initialOf(author: string | null | undefined): string {
+  if (!author || author === 'me' || author === 'user') return '我';
+  return author.trim().charAt(0).toUpperCase() || '我';
 }

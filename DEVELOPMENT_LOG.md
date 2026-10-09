@@ -43,6 +43,12 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-10-09 留言：勾选 = 打 @Agent，图钉改成头像气泡
+
+- 「@Agent 让它处理」勾选框和文字里的 @Agent 合成一件事：勾上在开头插入「@Agent 」，取消删掉，打 @Agent 自动勾上；输入框里的 @Agent 用紫色高亮（透明 textarea 后面垫一层同样排版的文字）。
+- 图钉改成 Figma 式头像气泡：紫底白边，里面是「我」（作者是别人时显示首字母大写）；交给 Agent 的加右上角状态角标。小窗和面板里「我」的头像也改成同样的紫色。
+- 验证：前端 vitest 90 通过；Playwright 截图核对图钉和勾选后的输入框。
+
 ### 2026-10-09 留言变成真正的评论；面板改成头像版式和新输入栏
 
 - 留言默认是普通留言（一串讨论，Agent 看得到但不动手），勾「@Agent 让它处理」或打 @Agent 才交给 Agent；一条留言里可以混着两种回复。后端：`canvas_comments` 拆成 `status`（open / resolved）和 `agent_status`（NULL = 普通留言），回复存 `comment_replies`，交给 Agent 时把它还没看过的内容按时间合成一条消息；新增 `POST /comments/{id}/agent`、`DELETE /comments/{id}`；`get_canvas` / `get_node` 带上用户备注。

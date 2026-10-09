@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SessionList } from '../agent/SessionList';
 import type { AgentSession } from '../agent/agentApi';
-import { anchorAt } from '../comments/CommentLayer';
+import { anchorAt, initialOf } from '../comments/CommentLayer';
 import { describeAnchor, pinState, type CanvasComment } from '../comments/commentApi';
 import { buildThread, timeAgo } from '../comments/thread';
 import { queuePosition, useCommentStore } from '../comments/commentStore';
@@ -16,7 +16,7 @@ import { VideoPlayer } from '../nodes/VideoPlayer';
 
 function comment(overrides: Partial<CanvasComment> & { id: string }): CanvasComment {
   return {
-    canvasId: 'c', sessionId: `s-${overrides.id}`, anchor: { kind: 'canvas', x: 0, y: 0 }, text: '留言', author: 'user',
+    canvasId: 'c', sessionId: `s-${overrides.id}`, anchor: { kind: 'canvas', x: 0, y: 0 }, text: '留言', author: 'me',
     status: 'open', agentStatus: 'done', outcome: null, replies: [], nodeMissing: false, createdAt: '2026-10-08 06:00:00',
     updatedAt: '2026-10-08 06:00:00', resolvedAt: null, ...overrides,
   };
@@ -114,6 +114,8 @@ describe('comment store', () => {
     expect(pinState(comment({ id: 'n', agentStatus: null }))).toBe('note');
     expect(pinState(comment({ id: 'w', agentStatus: 'waiting' }))).toBe('waiting');
     expect(pinState(comment({ id: 'r', agentStatus: 'done', status: 'resolved' }))).toBe('resolved');
+    expect(initialOf('me')).toBe('我');
+    expect(initialOf('hana')).toBe('H');
   });
 });
 
@@ -264,17 +266,24 @@ describe('comment popover', () => {
     expect(tick).not.toBeChecked();
     await userEvent.type(box, '回头再说{Enter}');
     expect(reply).toHaveBeenLastCalledWith('n1', '回头再说', false);
-    // Ticked by hand: "@Agent" goes in front.
+    // Ticking puts "@Agent " in the text (highlighted); unticking takes it out again.
+    await userEvent.click(tick);
+    expect(box).toHaveValue('@Agent ');
+    expect(document.querySelector('.comment-input-mirror .comment-mention')).toHaveTextContent('@Agent');
+    await userEvent.click(tick);
+    expect(box).toHaveValue('');
     await userEvent.click(tick);
     await userEvent.type(box, '再亮一点{Enter}');
     expect(reply).toHaveBeenLastCalledWith('n1', '@Agent 再亮一点', true);
-    await userEvent.click(tick);
     expect(tick).not.toBeChecked();
-    // Typing "@Agent" ticks the box; the text goes as typed.
-    await userEvent.type(box, '@Agent 换成暖色');
+    // Typing "@Agent" ticks the box, same as ticking it.
+    await userEvent.type(box, '换成暖色 @Agent');
     expect(tick).toBeChecked();
     await userEvent.keyboard('{Enter}');
-    expect(reply).toHaveBeenLastCalledWith('n1', '@Agent 换成暖色', true);
+    expect(reply).toHaveBeenLastCalledWith('n1', '换成暖色 @Agent', true);
+    // "@Agent" alone is not something to send.
+    await userEvent.click(tick);
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
     vi.restoreAllMocks();
   });
 

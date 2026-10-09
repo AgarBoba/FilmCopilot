@@ -16,67 +16,93 @@ interface CommentComposerProps {
   onCancel?: () => void;
 }
 
-const AGENT_HINT = '勾上后交给 Agent 处理；直接打 @Agent 也会自动勾上。不勾就是普通留言，Agent 看得到但不会动手';
+const AGENT_HINT = '勾上会在开头加上 @Agent，交给 Agent 处理；直接打 @Agent 效果一样。不勾就是普通留言，Agent 看得到但不会动手';
+const MENTION_ALL = /[@＠]\s*agent(?![a-z])\s?/gi;
+const PREFIX = '@Agent ';
+
+/** The text without any "@Agent" in it. */
+function withoutMention(text: string): string {
+  return text.replace(MENTION_ALL, '').replace(/^\s+/, '');
+}
 
 /**
  * The reply box shared by a new comment and a thread: text, an "@Agent 让它处理" tick on
- * the left and a round send button on the right. Ticked, the text goes out with "@Agent"
- * in front, so the thread shows who it was for.
+ * the left and a round send button on the right. The tick and "@Agent" in the text are the
+ * same thing: ticking puts "@Agent" at the front, unticking takes it out, typing it ticks
+ * the box. "@Agent" shows in the accent colour while typing (a mirror behind the textarea).
  */
 export function CommentComposer({
   placeholder, defaultAgent = false, agentDisabled = false, disabled = false, autoFocus = false, label, onSubmit, onCancel,
 }: CommentComposerProps) {
-  const [text, setText] = useState('');
-  const [agent, setAgent] = useState(defaultAgent);
+  const start = defaultAgent && !agentDisabled ? PREFIX : '';
+  const [text, setText] = useState(start);
   const [sending, setSending] = useState(false);
-  const mentioned = useRef(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setAgent(defaultAgent), [defaultAgent]);
+  // Opened with "@Agent " already in: type after it.
+  useEffect(() => {
+    const input = inputRef.current;
+    if (autoFocus && input) input.setSelectionRange(input.value.length, input.value.length);
+  }, [autoFocus]);
 
-  const toAgent = agent && !agentDisabled;
-  const canSend = Boolean(text.trim()) && !sending && !disabled && !(agentDisabled && MENTION.test(text));
+  // A new default (handed off, or the agent got busy / finished): start from it if nothing was typed.
+  useEffect(() => {
+    setText((current) => (withoutMention(current).trim() ? current : start));
+  }, [start]);
+
+  const toAgent = MENTION.test(text) && !agentDisabled;
+  const body = withoutMention(text).trim();
+  const canSend = Boolean(body) && !sending && !disabled && !(agentDisabled && MENTION.test(text));
+
+  function setAgent(on: boolean) {
+    const next = on ? PREFIX + withoutMention(text) : withoutMention(text);
+    setText(next);
+    const input = inputRef.current;
+    if (input) {
+      input.focus();
+      requestAnimationFrame(() => input.setSelectionRange(next.length, next.length));
+    }
+  }
 
   async function send() {
     if (!canSend) return;
-    let body = text.trim();
-    if (toAgent && !MENTION.test(body)) body = `@Agent ${body}`;
     setSending(true);
-    const ok = await onSubmit(body, toAgent);
+    const ok = await onSubmit(text.trim(), toAgent);
     setSending(false);
-    if (ok) {
-      setText('');
-      mentioned.current = false;
-    }
+    if (ok) setText(start);
   }
 
   return (
     <div className={`comment-composer ${toAgent ? 'is-agent' : ''}`}>
-      <textarea
-        autoFocus={autoFocus}
-        rows={2}
-        value={text}
-        aria-label={label}
-        disabled={disabled}
-        placeholder={placeholder}
-        onChange={(event) => {
-          const value = event.target.value;
-          setText(value);
-          // Typing "@Agent" ticks the box (once; unticking afterwards is respected).
-          const has = MENTION.test(value);
-          if (has && !mentioned.current && !agentDisabled) setAgent(true);
-          mentioned.current = has;
-        }}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing) return;
-          if (event.key === 'Escape' && onCancel) {
-            event.preventDefault();
-            onCancel();
-          } else if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            void send();
-          }
-        }}
-      />
+      <div className="comment-input">
+        <div ref={mirrorRef} className="comment-input-mirror" aria-hidden="true">
+          <MentionText text={text} />{'\u200b'}
+        </div>
+        <textarea
+          ref={inputRef}
+          autoFocus={autoFocus}
+          rows={2}
+          value={text}
+          aria-label={label}
+          disabled={disabled}
+          placeholder={placeholder}
+          onScroll={(event) => {
+            if (mirrorRef.current) mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
+          }}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === 'Escape' && onCancel) {
+              event.preventDefault();
+              onCancel();
+            } else if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              void send();
+            }
+          }}
+        />
+      </div>
       <div className="comment-composer-foot">
         <label
           className={`comment-agent-tick ${agentDisabled ? 'is-disabled' : ''}`}
