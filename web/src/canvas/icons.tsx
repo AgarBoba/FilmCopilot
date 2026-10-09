@@ -116,3 +116,12 @@ export const CommentIcon = (p: IconProps) => (
 export const HistoryIcon = (p: IconProps) => (
   <Icon {...p}><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.5" /><path d="M4 4v4.5h4.5" /><path d="M12 8v4.5l3 2" /></Icon>
 );
+export const ResolveIcon = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="m8.4 12.4 2.5 2.5 4.8-5.2" /></Icon>;
+export const ReopenIcon = (p: IconProps) => <Icon {...p}><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4.5V9h4.5" /></Icon>;
+/** Permission modes: a shield, solid / half / outline. */
+export const ShieldIcon = ({ fill = 'none', half = false, ...p }: IconProps & { half?: boolean }) => (
+  <Icon {...p}>
+    {half && <path d="M12 3.5v17c-4-1.6-7-4.8-7-9.2V6.4z" fill="currentColor" stroke="none" />}
+    <path d="M12 3.5 19 6.4v4.9c0 4.4-3 7.6-7 9.2-4-1.6-7-4.8-7-9.2V6.4z" fill={fill} />
+  </Icon>
+);

@@ -2,7 +2,12 @@ import { ApiError } from '../api/client';
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
-export type CommentStatus = 'queued' | 'running' | 'waiting' | 'done' | 'failed' | 'resolved';
+/** open / resolved, like any comment thread. */
+export type CommentStatus = 'open' | 'resolved';
+/** null: a plain note. Otherwise the agent's progress on it. */
+export type AgentProgress = 'queued' | 'running' | 'waiting' | 'done' | 'failed';
+/** What a pin shows: the comment's state in one word. */
+export type PinState = 'note' | AgentProgress | 'resolved';
 
 /**
  * Where a comment is pinned. canvas: x, y in canvas coordinates. node: the node itself.
@@ -22,17 +27,28 @@ export interface CommentAnchor {
   stale?: boolean;
 }
 
+export interface CommentReply {
+  id: number;
+  text: string;
+  author: string;
+  /** This reply was handed to the agent. */
+  toAgent: boolean;
+  createdAt: string;
+}
+
 export interface CanvasComment {
   id: string;
   canvasId: string;
-  sessionId: string;
+  /** The agent conversation behind it; null until the comment is first handed to the agent. */
+  sessionId: string | null;
   anchor: CommentAnchor;
   text: string;
+  author: string;
   status: CommentStatus;
+  agentStatus: AgentProgress | null;
   /** The agent's last reply when it finished, or why it failed. */
   outcome: string | null;
-  /** A reply waiting for its turn in the queue. */
-  pendingReply: string | null;
+  replies: CommentReply[];
   nodeMissing: boolean;
   createdAt: string;
   updatedAt: string;
@@ -69,6 +85,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
     );
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -77,9 +94,11 @@ const post = (body?: unknown): RequestInit => ({ method: 'POST', body: body === 
 export const commentApi = {
   list: (canvasId: string) =>
     call<{ comments: CanvasComment[] }>(`/canvases/${encodeURIComponent(canvasId)}/comments`),
-  create: (canvasId: string, anchor: CommentAnchor, text: string) =>
-    call<CanvasComment>(`/canvases/${encodeURIComponent(canvasId)}/comments`, post({ anchor, text })),
-  reply: (id: string, text: string) => call<CanvasComment>(`/comments/${id}/reply`, post({ text })),
+  create: (canvasId: string, anchor: CommentAnchor, text: string, toAgent = false) =>
+    call<CanvasComment>(`/canvases/${encodeURIComponent(canvasId)}/comments`, post({ anchor, text, toAgent })),
+  reply: (id: string, text: string, toAgent = false) => call<CanvasComment>(`/comments/${id}/reply`, post({ text, toAgent })),
+  handOff: (id: string) => call<CanvasComment>(`/comments/${id}/agent`, post()),
+  remove: (id: string) => call<void>(`/comments/${id}`, { method: 'DELETE' }),
   resolve: (id: string) => call<CanvasComment>(`/comments/${id}/resolve`, post()),
   reopen: (id: string) => call<CanvasComment>(`/comments/${id}/reopen`, post()),
   versions: (canvasId: string, nodeId: string) =>
@@ -88,7 +107,12 @@ export const commentApi = {
     ),
 
   /** Every change to a comment on this canvas; reconnects on its own. */
-  stream(canvasId: string, onComment: (comment: CanvasComment) => void, onReconnect?: () => void): () => void {
+  stream(
+    canvasId: string,
+    onComment: (comment: CanvasComment) => void,
+    onReconnect?: () => void,
+    onDeleted?: (id: string) => void,
+  ): () => void {
     let source: EventSource | null = null;
     let closed = false;
     let retry: ReturnType<typeof setTimeout> | null = null;
@@ -97,7 +121,9 @@ export const commentApi = {
       source = new EventSource(`${apiBase}/canvases/${encodeURIComponent(canvasId)}/comments/stream`);
       source.addEventListener('comment', ((message: MessageEvent<string>) => {
         try {
-          onComment(JSON.parse(message.data) as CanvasComment);
+          const data = JSON.parse(message.data) as CanvasComment & { deleted?: boolean };
+          if (data.deleted) onDeleted?.(data.id);
+          else onComment(data);
         } catch {
           // ignore a malformed event; the next list refresh repairs it
         }
@@ -123,7 +149,8 @@ export const commentApi = {
 
 export const assetFileUrl = (assetId: string) => `${apiBase}/assets/${encodeURIComponent(assetId)}/file`;
 
-export const STATUS_LABELS: Record<CommentStatus, string> = {
+export const STATUS_LABELS: Record<PinState, string> = {
+  note: '留言',
   queued: '排队中',
   running: '处理中',
   waiting: '等你确认',
@@ -131,6 +158,20 @@ export const STATUS_LABELS: Record<CommentStatus, string> = {
   failed: '没做完',
   resolved: '已解决',
 };
+
+/** The comment's state in one word: resolved wins, then the agent's progress, else a plain note. */
+export function pinState(comment: Pick<CanvasComment, 'status' | 'agentStatus'>): PinState {
+  if (comment.status === 'resolved') return 'resolved';
+  return comment.agentStatus ?? 'note';
+}
+
+/** Handed to the agent and not finished yet. */
+export function agentBusy(comment: Pick<CanvasComment, 'agentStatus'>): boolean {
+  return comment.agentStatus === 'queued' || comment.agentStatus === 'running' || comment.agentStatus === 'waiting';
+}
+
+/** "@Agent" in the text hands it to the agent (same rule as the server). */
+export const MENTION = /[@＠]\s*agent(?![a-z])/i;
 
 /** "0:03" for a video moment. */
 export function formatMoment(seconds: number): string {

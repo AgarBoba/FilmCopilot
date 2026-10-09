@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SessionList } from '../agent/SessionList';
 import type { AgentSession } from '../agent/agentApi';
 import { anchorAt } from '../comments/CommentLayer';
-import { describeAnchor, type CanvasComment } from '../comments/commentApi';
+import { describeAnchor, pinState, type CanvasComment } from '../comments/commentApi';
+import { buildThread, timeAgo } from '../comments/thread';
 import { queuePosition, useCommentStore } from '../comments/commentStore';
 import { mediaToScreen, screenToMedia, sideOf } from '../comments/mediaGeometry';
 import { CommentBadge } from '../nodes/CommentBadge';
@@ -15,8 +16,8 @@ import { VideoPlayer } from '../nodes/VideoPlayer';
 
 function comment(overrides: Partial<CanvasComment> & { id: string }): CanvasComment {
   return {
-    canvasId: 'c', sessionId: `s-${overrides.id}`, anchor: { kind: 'canvas', x: 0, y: 0 }, text: '留言', status: 'done',
-    outcome: null, pendingReply: null, nodeMissing: false, createdAt: '2026-10-08 06:00:00',
+    canvasId: 'c', sessionId: `s-${overrides.id}`, anchor: { kind: 'canvas', x: 0, y: 0 }, text: '留言', author: 'user',
+    status: 'open', agentStatus: 'done', outcome: null, replies: [], nodeMissing: false, createdAt: '2026-10-08 06:00:00',
     updatedAt: '2026-10-08 06:00:00', resolvedAt: null, ...overrides,
   };
 }
@@ -98,13 +99,21 @@ describe('placing a pin', () => {
 describe('comment store', () => {
   it('keeps the newer copy and numbers the queue', () => {
     const store = useCommentStore.getState();
-    store.upsert(comment({ id: 'a', status: 'running', updatedAt: '2026-10-08 06:00:05' }));
-    store.upsert(comment({ id: 'a', status: 'queued', updatedAt: '2026-10-08 06:00:01' }));
-    expect(useCommentStore.getState().comments[0].status).toBe('running');
-    store.upsert(comment({ id: 'b', status: 'queued', updatedAt: '2026-10-08 06:00:03' }));
-    store.upsert(comment({ id: 'c', status: 'queued', updatedAt: '2026-10-08 06:00:02' }));
+    store.upsert(comment({ id: 'a', agentStatus: 'running', updatedAt: '2026-10-08 06:00:05' }));
+    store.upsert(comment({ id: 'a', agentStatus: 'queued', updatedAt: '2026-10-08 06:00:01' }));
+    expect(useCommentStore.getState().comments[0].agentStatus).toBe('running');
+    store.upsert(comment({ id: 'b', agentStatus: 'queued', updatedAt: '2026-10-08 06:00:03' }));
+    store.upsert(comment({ id: 'c', agentStatus: 'queued', updatedAt: '2026-10-08 06:00:02' }));
     expect(queuePosition(useCommentStore.getState().comments, 'b')).toBe(2);
     expect(queuePosition(useCommentStore.getState().comments, 'c')).toBe(1);
+    store.drop('b');
+    expect(useCommentStore.getState().comments.map((item) => item.id)).toEqual(['a', 'c']);
+  });
+
+  it('says what a pin shows: note, agent progress, or resolved', () => {
+    expect(pinState(comment({ id: 'n', agentStatus: null }))).toBe('note');
+    expect(pinState(comment({ id: 'w', agentStatus: 'waiting' }))).toBe('waiting');
+    expect(pinState(comment({ id: 'r', agentStatus: 'done', status: 'resolved' }))).toBe('resolved');
   });
 });
 
@@ -115,8 +124,8 @@ describe('panel list', () => {
     { id: 's-w', project_id: 'p', canvas_id: 'c', title: '把天空换成黄昏', created_at: '2026-10-08 05:00:00', message_count: 2, kind: 'comment' },
   ];
   const comments = [
-    comment({ id: 'w', text: '把天空换成黄昏', status: 'waiting', anchor: { kind: 'media', nodeId: 'n1', version: 1, x: 0.5, y: 0.5 } }),
-    comment({ id: 'r', text: '已经改好的那条', status: 'resolved', resolvedAt: '2026-10-08 06:10:00', anchor: { kind: 'node', nodeId: 'n2' } }),
+    comment({ id: 'w', text: '把天空换成黄昏', agentStatus: 'waiting', anchor: { kind: 'media', nodeId: 'n1', version: 1, x: 0.5, y: 0.5 } }),
+    comment({ id: 'r', text: '已经改好的那条', status: 'resolved', agentStatus: null, resolvedAt: '2026-10-08 06:10:00', anchor: { kind: 'node', nodeId: 'n2' } }),
   ];
 
   it('mixes chats and comments, filters them and folds resolved ones away', async () => {
@@ -227,10 +236,106 @@ describe('comment popover', () => {
     vi.spyOn(agentApi, 'messages').mockResolvedValue(history);
     vi.spyOn(agentApi, 'stream').mockReturnValue(() => undefined);
     const undo = vi.spyOn(agentApi, 'undo').mockResolvedValue({ id: 4, runId: 'r1', kind: 'run_undone' });
-    render(<CommentPopover comment={comment({ id: 'c1', status: 'done' })} at={{ x: 10, y: 10 }} bounds={{ width: 1000, height: 800 }}
+    render(<CommentPopover comment={comment({ id: 'c1' })} at={{ x: 10, y: 10 }} bounds={{ width: 1000, height: 800 }}
       where="画布空白处" onClose={vi.fn()} onOpenInPanel={vi.fn()} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} />);
-    await userEvent.click(await screen.findByRole('button', { name: /撤销这一轮的改动/ }));
+    await userEvent.click(await screen.findByRole('button', { name: '撤销' }));
     expect(undo).toHaveBeenCalledWith('r1');
+    expect(screen.getByRole('button', { name: '看过程（1 步）' })).toBeInTheDocument();
     vi.restoreAllMocks();
+  });
+
+  function popover(target: CanvasComment) {
+    return import('../comments/CommentPopover').then(({ CommentPopover }) => render(
+      <CommentPopover comment={target} at={{ x: 10, y: 10 }} bounds={{ width: 1000, height: 800 }}
+        where="画布空白处" onClose={vi.fn()} onOpenInPanel={vi.fn()} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} />,
+    ));
+  }
+
+  it('a plain note is a thread: replies stay notes unless @Agent is ticked or typed', async () => {
+    const note = comment({ id: 'n1', sessionId: null, agentStatus: null, text: '光线有点冷',
+      replies: [{ id: 1, text: '暖一点', author: 'user', toAgent: false, createdAt: '2026-10-08 06:01:00' }] });
+    useCommentStore.setState({ comments: [note] });
+    const reply = vi.spyOn(useCommentStore.getState(), 'reply').mockResolvedValue(true);
+    await popover(note);
+    expect(screen.getByText('光线有点冷')).toBeInTheDocument();
+    expect(screen.getByText('暖一点')).toBeInTheDocument();
+    const box = screen.getByRole('textbox', { name: '回复留言' });
+    const tick = screen.getByRole('checkbox', { name: /@Agent 让它处理/ });
+    expect(tick).not.toBeChecked();
+    await userEvent.type(box, '回头再说{Enter}');
+    expect(reply).toHaveBeenLastCalledWith('n1', '回头再说', false);
+    // Ticked by hand: "@Agent" goes in front.
+    await userEvent.click(tick);
+    await userEvent.type(box, '再亮一点{Enter}');
+    expect(reply).toHaveBeenLastCalledWith('n1', '@Agent 再亮一点', true);
+    await userEvent.click(tick);
+    expect(tick).not.toBeChecked();
+    // Typing "@Agent" ticks the box; the text goes as typed.
+    await userEvent.type(box, '@Agent 换成暖色');
+    expect(tick).toBeChecked();
+    await userEvent.keyboard('{Enter}');
+    expect(reply).toHaveBeenLastCalledWith('n1', '@Agent 换成暖色', true);
+    vi.restoreAllMocks();
+  });
+
+  it('the menu hands a note to the agent, and deletes only on the second click', async () => {
+    const note = comment({ id: 'n2', sessionId: null, agentStatus: null });
+    useCommentStore.setState({ comments: [note] });
+    const handOff = vi.spyOn(useCommentStore.getState(), 'handOff').mockResolvedValue();
+    const remove = vi.spyOn(useCommentStore.getState(), 'remove').mockResolvedValue(true);
+    await popover(note);
+    await userEvent.click(screen.getByRole('button', { name: '更多' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: '让 Agent 处理' }));
+    expect(handOff).toHaveBeenCalledWith('n2');
+    await userEvent.click(screen.getByRole('button', { name: '更多' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: '删除' }));
+    expect(remove).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('menuitem', { name: '确认删除？' }));
+    expect(remove).toHaveBeenCalledWith('n2');
+    vi.restoreAllMocks();
+  });
+
+  it('while the agent works: no resolve, the tick is off, plain replies still go', async () => {
+    const { agentApi } = await import('../agent/agentApi');
+    vi.spyOn(agentApi, 'messages').mockResolvedValue([
+      { id: 1, runId: 'r1', kind: 'user_message', text: '换成抹茶', createdAt: '2026-10-08 06:00:01' },
+      { id: 2, runId: 'r1', kind: 'confirm_request', requestId: 'q1', summary: '生成 1 张', createdAt: '2026-10-08 06:00:03' },
+    ]);
+    vi.spyOn(agentApi, 'stream').mockReturnValue(() => undefined);
+    const busy = comment({ id: 'b1', agentStatus: 'waiting', text: '@Agent 换成抹茶' });
+    useCommentStore.setState({ comments: [busy] });
+    await popover(busy);
+    expect(await screen.findByText('· 等你确认')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '解决' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /@Agent 让它处理/ })).toBeDisabled();
+    // The conversation's own copy of the user's message is not shown twice.
+    expect(screen.getAllByText(/换成抹茶/)).toHaveLength(1);
+    vi.restoreAllMocks();
+  });
+});
+
+
+describe('comment thread', () => {
+  it('merges replies and agent rounds by time, skipping the agent copy of user messages', () => {
+    const items = buildThread(
+      { id: 'c', text: '@Agent 换成抹茶', createdAt: '2026-10-08 06:00:00',
+        replies: [{ id: 1, text: '谢谢', author: 'user', toAgent: false, createdAt: '2026-10-08 06:05:00' }] },
+      [
+        { id: 1, runId: 'r1', kind: 'user_message', text: '@Agent 换成抹茶', createdAt: '2026-10-08 06:00:01' },
+        { id: 2, runId: 'r1', kind: 'tool_step', summary: '重画「咖啡杯」', createdAt: '2026-10-08 06:00:04' },
+        { id: 3, runId: 'r1', kind: 'assistant_text', text: '换好了', createdAt: '2026-10-08 06:01:00' },
+        { id: 4, runId: 'r1', kind: 'run_finished', status: 'completed', createdAt: '2026-10-08 06:01:00' },
+      ],
+    );
+    expect(items.map((item) => item.type)).toEqual(['user', 'agent', 'user']);
+    const round = items[1];
+    expect(round.type === 'agent' && [round.text, round.steps, round.live]).toEqual(['换好了', 1, false]);
+  });
+
+  it('says how long ago', () => {
+    const now = new Date('2026-10-08T06:10:00Z');
+    expect(timeAgo('2026-10-08 06:09:30', now)).toBe('刚刚');
+    expect(timeAgo('2026-10-08 06:00:00', now)).toBe('10 分钟前');
+    expect(timeAgo('2026-10-08 03:00:00', now)).toBe('3 小时前');
   });
 });

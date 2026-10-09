@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArchiveIcon, ChevronLeftIcon, PencilIcon, PlusIcon, SearchIcon } from '../canvas/icons';
 import type { AgentSession } from './agentApi';
 import type { SessionFilter } from './agentStore';
-import { assetFileUrl, describeAnchor, STATUS_LABELS, type CanvasComment } from '../comments/commentApi';
+import { assetFileUrl, describeAnchor, pinState, STATUS_LABELS, type CanvasComment } from '../comments/commentApi';
 
 interface SessionListProps {
   sessions: AgentSession[];
@@ -113,20 +113,22 @@ export function SessionList({
 
   const commentRow = (comment: CanvasComment) => {
     const where = describeAnchor(comment.anchor, nodeTitles);
+    const state = pinState(comment);
+    const replies = comment.replies.length;
     const thumb = comment.anchor.kind === 'media' && comment.anchor.assetId && comment.anchor.time == null
       ? assetFileUrl(comment.anchor.assetId) : null;
     return (
-      <li key={comment.id} className={`session-item is-comment is-${comment.status} ${comment.sessionId === currentId ? 'is-current' : ''}`}>
+      <li key={comment.id} className={`session-item is-comment is-${state} ${comment.sessionId === currentId ? 'is-current' : ''}`}>
         <button type="button" className="session-open" onClick={() => onOpenComment?.(comment)}>
-          <span className={`session-pin is-${comment.status}`} aria-hidden="true" />
+          <span className={`session-pin is-${state}`} aria-hidden="true" />
           <span className="session-main">
             <span className="session-title-row">
               <span className="session-title">{comment.text}</span>
-              <span className="session-status">{STATUS_LABELS[comment.status]}</span>
+              {state !== 'note' && <span className="session-status">{STATUS_LABELS[state]}</span>}
               <span className="session-time">{shortTime(parseTime(comment.updatedAt), now)}</span>
             </span>
             <span className="session-preview">
-              {where}{comment.nodeMissing ? '（节点已删除）' : ''}{comment.outcome ? ` · ${comment.outcome}` : ''}
+              {where}{comment.nodeMissing ? '（节点已删除）' : ''}{replies > 0 ? ` · ${replies} 条回复` : ''}{comment.outcome ? ` · ${comment.outcome}` : ''}
             </span>
           </span>
           {thumb && <img className="session-thumb" src={thumb} alt="" loading="lazy" />}

@@ -16,7 +16,7 @@ from ..repositories import CanvasRepository
 from ..models_registry import ModelSpec, registry as model_registry
 from ..schemas import CommandEnvelope
 from ..versions import NodeVersions
-from . import conflicts, media
+from . import conflicts, media, notes
 from .config import AgentConfig
 from .store import AgentStore
 
@@ -102,6 +102,11 @@ class CanvasTools:
                 wanted.update(downstream[node_id])
         conflicts.refresh(self.seen, self.repository.canvas_state(self.canvas_id), set(wanted) if wanted else None)
         lines = [f'画布共 {len(snapshot.nodes)} 个节点、{len(snapshot.edges)} 条连线。']
+        open_notes = notes.open_notes(self.repository.database, self.canvas_id)
+        note_counts: dict[str, int] = {}
+        for note in open_notes:
+            if note['node_id']:
+                note_counts[note['node_id']] = note_counts.get(note['node_id'], 0) + 1
         for node in snapshot.nodes:
             if wanted and node.id not in wanted:
                 continue
@@ -125,7 +130,13 @@ class CanvasTools:
                 parts.append(f"上游：{', '.join(upstream[node.id])}")
             if node.id in snapshot.upstreamChanges:
                 parts.append('上游有更新')
+            if note_counts.get(node.id):
+                parts.append(f'用户备注 {note_counts[node.id]} 条（get_node 看内容）')
             lines.append('；'.join(parts))
+        loose = [note for note in open_notes if note['anchor_kind'] == 'canvas']
+        if loose and not wanted:
+            lines.append('[画布空白处的用户备注] ' + notes.HINT)
+            lines.extend(f'- {notes.describe(note)}' for note in loose[:10])
         return ToolResult('\n'.join(lines), summary='查看画布')
 
     def list_models(self, kind: str | None = None) -> ToolResult:
@@ -202,6 +213,10 @@ class CanvasTools:
             lines.append('下游：' + '、'.join(f"{KIND_LABELS[kinds[out]]}「{titles[out]}」[{out}]" for out in outs))
         if node.id in snapshot.upstreamChanges:
             lines.append('上游有更新：' + '；'.join(snapshot.upstreamChanges[node.id]))
+        mine = [note for note in notes.open_notes(self.repository.database, self.canvas_id) if note['node_id'] == node.id]
+        if mine:
+            lines.append(f'用户备注（{len(mine)} 条未解决）：{notes.HINT}')
+            lines.extend(f'- {notes.describe(note)}' for note in mine[:8])
         return ToolResult('\n'.join(lines), summary=f"查看「{data.get('title', '')}」", touched=[node.id])
 
     def get_node_versions(self, node_id: str) -> ToolResult:

@@ -52,7 +52,7 @@ import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM, useTrackpadGestures } from './useTrac
 import { ConnectionChooser, type ChooserNodeType } from './ConnectionChooser';
 import { CommentLayer, type CommentFlow } from '../comments/CommentLayer';
 import { openComments, useCommentStore } from '../comments/commentStore';
-import type { CanvasComment } from '../comments/commentApi';
+import { pinState, type CanvasComment } from '../comments/commentApi';
 
 
 const nodeTypes = { image: ImageNode, video: VideoNode, note: NoteNode };
@@ -361,11 +361,11 @@ export function CanvasShell() {
           ...node,
           data: {
             ...node.data,
-            comments: { count: pinned.length, waiting: pinned.some((comment) => comment.status === 'waiting') },
+            comments: { count: pinned.length, waiting: pinned.some((comment) => comment.agentStatus === 'waiting') },
             onOpenComments: () => openCommentList(node.id),
             commentMarks: pinned
               .filter((comment) => comment.anchor.kind === 'media' && comment.anchor.time != null)
-              .map((comment) => ({ id: comment.id, time: comment.anchor.time ?? 0, status: comment.status, text: comment.text })),
+              .map((comment) => ({ id: comment.id, time: comment.anchor.time ?? 0, status: pinState(comment), text: comment.text })),
             onOpenComment: (commentId: string) => useCommentStore.getState().open(commentId),
           },
         };
@@ -386,8 +386,8 @@ export function CanvasShell() {
 
   /** The agent's face (top right): busy in any chat or comment, waiting on you, or just done. */
   const agentMood: AgentMood = useMemo(() => {
-    if (pendingConfirmations(agentEvents).length || comments.some((c) => c.status === 'waiting')) return 'waiting';
-    if (agentActiveRun || comments.some((c) => c.status === 'running')) return 'working';
+    if (pendingConfirmations(agentEvents).length || comments.some((c) => c.agentStatus === 'waiting')) return 'waiting';
+    if (agentActiveRun || comments.some((c) => c.agentStatus === 'running')) return 'working';
     if (agentRecentRun) return 'happy';
     return 'idle';
   }, [agentEvents, agentActiveRun, agentRecentRun, comments]);
@@ -401,6 +401,7 @@ export function CanvasShell() {
 
   /** "在面板中打开" on a comment: its conversation in the agent panel. */
   function openCommentInPanel(comment: CanvasComment) {
+    if (!comment.sessionId) return;
     const agent = useAgentStore.getState();
     agent.setOpen(true);
     agent.requestSession(comment.sessionId);
@@ -959,7 +960,7 @@ export function CanvasShell() {
               commentMode={commentMode}
               onToggleComments={() => useCommentStore.getState().setMode(!commentMode)}
               commentCount={openComments(comments).length}
-              commentWaiting={comments.some((comment) => comment.status === 'waiting')}
+              commentWaiting={comments.some((comment) => comment.agentStatus === 'waiting')}
             />
           </Panel>
           <Panel position="bottom-right" className="canvas-panel">

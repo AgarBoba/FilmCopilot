@@ -1,13 +1,22 @@
-"""Canvas comments: pin a note anywhere on the canvas and the agent takes it on (spec:
-docs/superpowers/specs/2026-10-08-canvas-comments-design.md).
+"""Canvas comments: pin a note anywhere on the canvas (spec:
+docs/superpowers/specs/2026-10-08-canvas-comments-design.md, revised 2026-10-09).
 
-Each comment owns one agent session (kind='comment'). Comments queue per canvas: at most
-MAX_PARALLEL run at once, and comments on the same node run one after another, in the order
-they were queued. A comment's status follows its session's events:
+A comment is a thread the user writes for themselves: the first message (`text`) and replies
+(`comment_replies`). It is open or resolved. By default nothing else happens.
 
-    queued -> running <-> waiting (a confirmation card is open) -> done | failed -> resolved
+The user can hand a comment to the agent: when writing it ("交给 Agent" / ⌘↵, or "@Agent" in
+the text), later from the comment ("让 Agent 处理"), or with any reply. Only then does the
+comment get its own agent session (kind='comment'), created on first use, and an agent status
+that follows that session's events:
 
-Replying to a finished comment queues it again with the reply as the next message.
+    queued -> running <-> waiting (a confirmation card is open) -> done | failed
+
+Whatever in the thread the agent has not seen yet (the first message, plain replies written
+since) is passed along with the hand-off, oldest first. Agent comments queue per canvas: at
+most MAX_PARALLEL run at once, and comments on the same node run one after another.
+
+The agent also sees open plain comments as reference (notes.py, get_canvas / get_node), but
+does not act on them unless asked.
 """
 from __future__ import annotations
 
@@ -16,6 +25,7 @@ from collections.abc import Iterable
 import json
 import logging
 import math
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -30,9 +40,24 @@ from .runtime import AgentService
 log = logging.getLogger(__name__)
 
 MAX_PARALLEL = 2
-ACTIVE = ('running', 'waiting')
-OPEN = ('queued', 'running', 'waiting', 'done', 'failed')
+ACTIVE = ('running', 'waiting')          # the agent is working on it right now
+PENDING = ('queued', 'running', 'waiting')  # handed to the agent and not finished
 MAX_TEXT = 4000
+MENTION = re.compile(r'[@＠]\s*agent(?![a-z])', re.IGNORECASE)
+
+
+def mentions_agent(text: str) -> bool:
+    """"@Agent" anywhere in the text hands the comment (or reply) to the agent."""
+    return bool(MENTION.search(text or ''))
+
+
+def _check_text(text: str, what: str = '留言') -> str:
+    text = (text or '').strip()
+    if not text:
+        raise DomainError('INVALID_PAYLOAD', f'{what}不能为空')
+    if len(text) > MAX_TEXT:
+        raise DomainError('INVALID_PAYLOAD', f'{what}太长了（最多 {MAX_TEXT} 字）')
+    return text
 
 
 class CommentService:
@@ -49,47 +74,48 @@ class CommentService:
 
     # --------------------------------------------------------------- public
 
-    async def create(self, canvas_id: str, anchor: dict[str, Any], text: str) -> dict[str, Any]:
-        text = (text or '').strip()
-        if not text:
-            raise DomainError('INVALID_PAYLOAD', '留言不能为空')
-        if len(text) > MAX_TEXT:
-            raise DomainError('INVALID_PAYLOAD', f'留言太长了（最多 {MAX_TEXT} 字）')
+    async def create(self, canvas_id: str, anchor: dict[str, Any], text: str, to_agent: bool = False) -> dict[str, Any]:
+        """A plain comment unless `to_agent` (or "@Agent" in the text)."""
+        text = _check_text(text)
         self.repository.assert_canvas(canvas_id)
-        if not self.agent.config.configured:
-            raise DomainError(
-                'AGENT_NOT_CONFIGURED',
-                '没有配置 Agent 的模型登录：在 .env 里填 ANTHROPIC_API_KEY，然后重启',
-            )
+        to_agent = to_agent or mentions_agent(text)
+        if to_agent:
+            self._check_configured()
         fields = self._validate_anchor(canvas_id, anchor)
-        session = self.store.create_session(canvas_id, title=text[:30], kind='comment')
         comment_id = str(uuid4())
         with self.database.transaction() as connection:
             connection.execute(
                 '''
                 INSERT INTO canvas_comments
-                    (id, canvas_id, session_id, anchor_kind, node_id, version, x, y, time, text, status, pending_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
+                    (id, canvas_id, anchor_kind, node_id, version, x, y, time, text, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')
                 ''',
-                (comment_id, canvas_id, session['id'], fields['kind'], fields.get('node_id'), fields.get('version'),
-                 fields.get('x'), fields.get('y'), fields.get('time'), text, text),
+                (comment_id, canvas_id, fields['kind'], fields.get('node_id'), fields.get('version'),
+                 fields.get('x'), fields.get('y'), fields.get('time'), text),
             )
-        self._publish(comment_id)
-        await self.pump(canvas_id)
+        if to_agent:
+            await self._hand_off(comment_id)
+        else:
+            self._publish(comment_id)
         return self.get(comment_id)
 
     def get(self, comment_id: str) -> dict[str, Any]:
         row = self._row(comment_id)
         return self._public(row, self._nodes(row['canvas_id']))
 
-    def list(self, canvas_id: str, status: str = 'all', node_id: str | None = None) -> list[dict[str, Any]]:
+    def list(self, canvas_id: str, status: str = 'all', node_id: str | None = None,
+             kind: str = 'all') -> list[dict[str, Any]]:
+        """status: all / open / resolved. kind: all / agent (handed to the agent) / note (plain)."""
         self.repository.assert_canvas(canvas_id)
         query = 'SELECT * FROM canvas_comments WHERE canvas_id = ?'
         params: list[Any] = [canvas_id]
-        if status == 'open':
-            query += " AND status != 'resolved'"
-        elif status == 'resolved':
-            query += " AND status = 'resolved'"
+        if status in ('open', 'resolved'):
+            query += ' AND status = ?'
+            params.append(status)
+        if kind == 'agent':
+            query += ' AND agent_status IS NOT NULL'
+        elif kind == 'note':
+            query += ' AND agent_status IS NULL'
         if node_id:
             query += ' AND node_id = ?'
             params.append(node_id)
@@ -104,34 +130,63 @@ class CommentService:
             row = connection.execute('SELECT * FROM canvas_comments WHERE session_id = ?', (session_id,)).fetchone()
         return dict(row) if row else None
 
-    async def reply(self, comment_id: str, text: str) -> dict[str, Any]:
-        """Continue a finished (or resolved) comment: the reply becomes its next message."""
-        text = (text or '').strip()
-        if not text:
-            raise DomainError('INVALID_PAYLOAD', '回复不能为空')
-        if len(text) > MAX_TEXT:
-            raise DomainError('INVALID_PAYLOAD', f'回复太长了（最多 {MAX_TEXT} 字）')
+    async def reply(self, comment_id: str, text: str, to_agent: bool = False) -> dict[str, Any]:
+        """Add to the thread. With `to_agent` (or "@Agent"), the agent takes it from here: it gets
+        this reply and anything else in the thread it hasn't seen yet. Replying reopens a resolved
+        comment."""
+        text = _check_text(text, '回复')
         row = self._row(comment_id)
-        if row['status'] in ('queued', *ACTIVE):
-            raise DomainError('COMMENT_BUSY', 'Agent 还在处理这条留言，等它做完再回复')
-        self._update(comment_id, status='queued', pending_text=text, resolved_at=None)
-        await self.pump(row['canvas_id'])
+        to_agent = to_agent or mentions_agent(text)
+        if to_agent:
+            self._check_can_hand_off(row)
+        with self.database.transaction() as connection:
+            connection.execute(
+                'INSERT INTO comment_replies (comment_id, text, to_agent) VALUES (?, ?, ?)',
+                (comment_id, text, 1 if to_agent else 0),
+            )
+        if row['status'] == 'resolved':
+            self._update(comment_id, status='open', resolved_at=None, publish=False)
+        if to_agent:
+            await self._hand_off(comment_id)
+        else:
+            self._update(comment_id)
+        return self.get(comment_id)
+
+    async def hand_off(self, comment_id: str) -> dict[str, Any]:
+        """"让 Agent 处理": the agent takes the comment with everything in it so far."""
+        self._check_can_hand_off(self._row(comment_id))
+        await self._hand_off(comment_id)
         return self.get(comment_id)
 
     def resolve(self, comment_id: str) -> dict[str, Any]:
         row = self._row(comment_id)
-        if row['status'] in ACTIVE:
+        if row['agent_status'] in PENDING:
             raise DomainError('COMMENT_BUSY', 'Agent 还在处理这条留言，先等它做完或停止')
         if row['status'] != 'resolved':
-            self._update(comment_id, status='resolved', pending_text=None, resolved_at='now')
+            self._update(comment_id, status='resolved', resolved_at='now')
             self._log(comment_id)
         return self.get(comment_id)
 
     def reopen(self, comment_id: str) -> dict[str, Any]:
         row = self._row(comment_id)
         if row['status'] == 'resolved':
-            self._update(comment_id, status='done', resolved_at=None)
+            self._update(comment_id, status='open', resolved_at=None)
+            self._log(comment_id)
         return self.get(comment_id)
+
+    def delete(self, comment_id: str) -> None:
+        """Remove a comment and its replies. Its agent chat, if any, is archived (never deleted)."""
+        row = self._row(comment_id)
+        if row['agent_status'] in PENDING:
+            raise DomainError('COMMENT_BUSY', 'Agent 还在处理这条留言，先等它做完或停止')
+        with self.database.transaction() as connection:
+            connection.execute('DELETE FROM comment_replies WHERE comment_id = ?', (comment_id,))
+            connection.execute('DELETE FROM canvas_task_log WHERE comment_id = ?', (comment_id,))
+            connection.execute('DELETE FROM canvas_comments WHERE id = ?', (comment_id,))
+        if row['session_id']:
+            self.store.update_session(row['session_id'], archived=True)
+        for queue in list(self.subscribers.get(row['canvas_id'], ())):
+            queue.put_nowait({'id': comment_id, 'canvasId': row['canvas_id'], 'deleted': True})
 
     def subscribe(self, canvas_id: str) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
@@ -145,11 +200,11 @@ class CommentService:
         """After a restart: runs that were in flight are gone; queued comments start again."""
         with self.database.connection() as connection:
             stale = [row['id'] for row in connection.execute(
-                "SELECT id FROM canvas_comments WHERE status IN ('running', 'waiting')").fetchall()]
+                "SELECT id FROM canvas_comments WHERE agent_status IN ('running', 'waiting')").fetchall()]
             canvases = [row['canvas_id'] for row in connection.execute(
-                "SELECT DISTINCT canvas_id FROM canvas_comments WHERE status = 'queued'").fetchall()]
+                "SELECT DISTINCT canvas_id FROM canvas_comments WHERE agent_status = 'queued'").fetchall()]
         for comment_id in stale:
-            self._update(comment_id, status='failed', outcome='服务重启，这一轮被中断了。回复它可以接着做。')
+            self._update(comment_id, agent_status='failed', outcome='服务重启，这一轮被中断了。回复它可以接着做。')
         for canvas_id in canvases:
             await self.pump(canvas_id)
 
@@ -162,23 +217,23 @@ class CommentService:
             await asyncio.sleep(0)  # let a just-finished run's task complete first
             with self.database.connection() as connection:
                 rows = [dict(row) for row in connection.execute(
-                    "SELECT * FROM canvas_comments WHERE canvas_id = ? AND status IN ('queued', 'running', 'waiting') "
+                    "SELECT * FROM canvas_comments WHERE canvas_id = ? AND agent_status IN ('queued', 'running', 'waiting') "
                     'ORDER BY updated_at, rowid', (canvas_id,)).fetchall()]
-            active = [row for row in rows if row['status'] in ACTIVE]
+            active = [row for row in rows if row['agent_status'] in ACTIVE]
             busy_nodes = {row['node_id'] for row in active if row['node_id']}
             slots = MAX_PARALLEL - len(active)
             nodes = self._node_ids(canvas_id)
             for row in rows:
                 if slots <= 0:
                     break
-                if row['status'] != 'queued':
+                if row['agent_status'] != 'queued':
                     continue
                 if row['node_id'] and row['node_id'] in busy_nodes:
                     continue
                 if row['node_id']:
                     busy_nodes.add(row['node_id'])  # later comments on this node wait for this one
                 if row['node_id'] and row['node_id'] not in nodes:
-                    self._update(row['id'], status='failed', pending_text=None, outcome='节点已经删除了，没法再处理。')
+                    self._update(row['id'], agent_status='failed', pending_text=None, outcome='节点已经删除了，没法再处理。')
                     continue
                 if await self._start(row):
                     slots -= 1
@@ -186,7 +241,7 @@ class CommentService:
     async def _start(self, row: dict[str, Any]) -> bool:
         text = row['pending_text'] or row['text']
         first = not self._has_runs(row['session_id'])
-        self._update(row['id'], status='running', pending_text=None, outcome=None)
+        self._update(row['id'], agent_status='running', pending_text=None, outcome=None)
         self._last_text.pop(row['id'], None)
         context, images = (None, None)
         if first:
@@ -199,18 +254,18 @@ class CommentService:
                 context=context, images=images, comment_id=row['id'],
             )
         except DomainError as error:
-            self._update(row['id'], status='failed', outcome=error.message)
+            self._update(row['id'], agent_status='failed', outcome=error.message)
             return False
         except Exception as error:  # never leave a comment stuck in "running"
             log.exception('starting comment %s failed', row['id'])
-            self._update(row['id'], status='failed', outcome=f'没能开始：{error}')
+            self._update(row['id'], agent_status='failed', outcome=f'没能开始：{error}')
             return False
         return True
 
     def location(self, row: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
         """What the agent gets with a comment's first message: a text block saying what the
         comment is pinned to, and pictures of the spot (spec 4.2)."""
-        lines = ['[画布留言] 这条消息是用户钉在画布上的一条留言，按它的意思去做；做完用一两句话说明改了什么。']
+        lines = ['[画布留言] 这条消息来自用户钉在画布上的一条留言，用户把它交给了你：按它的意思去做，做完用一两句话说明改了什么。']
         kind = row['anchor_kind']
         if kind == 'canvas':
             near = self._nearest_nodes(row['canvas_id'], row['x'], row['y'])
@@ -291,29 +346,71 @@ class CommentService:
             self._last_text[row['id']] = str(event.get('text') or '')
         elif kind == 'error':
             self._last_text[row['id']] = str(event.get('message') or '')
-        elif kind == 'run_undone' and row['status'] in ('done', 'failed', 'resolved'):
+        elif kind == 'run_undone' and row['agent_status'] in ('done', 'failed'):
             # The canvas is back to how it was; say so on the comment and in the task log.
             self._update(row['id'], outcome='已撤销这一轮的改动，画布回到了留言前的样子。')
             self._log(row['id'])
-        elif kind == 'confirm_request' and row['status'] == 'running':
-            self._update(row['id'], status='waiting')
-        elif kind == 'confirm_resolved' and row['status'] == 'waiting':
-            self._update(row['id'], status='running')
-        elif kind == 'run_finished' and row['status'] in ACTIVE:
+        elif kind == 'confirm_request' and row['agent_status'] == 'running':
+            self._update(row['id'], agent_status='waiting')
+        elif kind == 'confirm_resolved' and row['agent_status'] == 'waiting':
+            self._update(row['id'], agent_status='running')
+        elif kind == 'run_finished' and row['agent_status'] in ACTIVE:
             status = event.get('status')
             last = ' '.join(self._last_text.pop(row['id'], '').split())[:300]
             if status == 'completed':
-                self._update(row['id'], status='done', outcome=last or None)
+                self._update(row['id'], agent_status='done', outcome=last or None)
                 self._log(row['id'])
             else:
                 outcome = '已停止。' if status == 'stopped' else (last or 'Agent 出错了。')
-                self._update(row['id'], status='failed', outcome=outcome)
+                self._update(row['id'], agent_status='failed', outcome=outcome)
             try:
                 asyncio.get_running_loop().create_task(self.pump(row['canvas_id']))
             except RuntimeError:  # no loop (sync tests): nothing to schedule
                 pass
 
     # -------------------------------------------------------------- helpers
+
+    def _check_configured(self) -> None:
+        if not self.agent.config.configured:
+            raise DomainError(
+                'AGENT_NOT_CONFIGURED',
+                '没有配置 Agent 的模型登录：在 .env 里填 ANTHROPIC_API_KEY，然后重启',
+            )
+
+    def _check_can_hand_off(self, row: dict[str, Any]) -> None:
+        if row['agent_status'] in PENDING:
+            raise DomainError('COMMENT_BUSY', 'Agent 还在处理这条留言，等它做完再交给它')
+        if row['node_id'] and row['node_id'] not in self._node_ids(row['canvas_id']):
+            raise DomainError('INVALID_PAYLOAD', '节点已经删除了，这条留言不能再交给 Agent')
+        self._check_configured()
+
+    async def _hand_off(self, comment_id: str) -> None:
+        """Queue the comment for the agent with what it hasn't seen of the thread yet."""
+        row = self._row(comment_id)
+        items: list[str] = []
+        if not row['text_seen_by_agent']:
+            items.append(row['text'])
+        with self.database.transaction() as connection:
+            replies = connection.execute(
+                'SELECT id, text FROM comment_replies WHERE comment_id = ? AND seen_by_agent = 0 ORDER BY id',
+                (comment_id,)).fetchall()
+            items.extend(reply['text'] for reply in replies)
+            connection.execute('UPDATE comment_replies SET seen_by_agent = 1 WHERE comment_id = ?', (comment_id,))
+        session_id = row['session_id']
+        if not session_id:
+            session_id = self.store.create_session(row['canvas_id'], title=row['text'][:30], kind='comment')['id']
+        self._update(comment_id, publish=False, session_id=session_id, agent_status='queued', text_seen_by_agent=1,
+                     pending_text=compose_for_agent(items), outcome=None, status='open', resolved_at=None)
+        self._publish(comment_id)
+        await self.pump(row['canvas_id'])
+
+    def _replies(self, comment_id: str) -> list[dict[str, Any]]:
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                'SELECT id, text, author, to_agent, created_at FROM comment_replies WHERE comment_id = ? ORDER BY id',
+                (comment_id,)).fetchall()
+        return [{'id': row['id'], 'text': row['text'], 'author': row['author'], 'toAgent': bool(row['to_agent']),
+                 'createdAt': row['created_at']} for row in rows]
 
     def _validate_anchor(self, canvas_id: str, anchor: dict[str, Any]) -> dict[str, Any]:
         kind = anchor.get('kind')
@@ -346,7 +443,9 @@ class CommentService:
     def _log(self, comment_id: str) -> None:
         """One line per comment in the canvas task log, kept up to date (spec 5)."""
         row = self._row(comment_id)
-        if row['status'] not in ('done', 'resolved'):
+        if row['agent_status'] is None:
+            return  # a plain comment: not a task for the agent
+        if row['agent_status'] != 'done' and row['status'] != 'resolved':
             return
         where = '画布'
         version = None
@@ -396,7 +495,7 @@ class CommentService:
             raise DomainError('NOT_FOUND', f'Comment {comment_id} was not found')
         return dict(row)
 
-    def _update(self, comment_id: str, **fields: Any) -> None:
+    def _update(self, comment_id: str, publish: bool = True, **fields: Any) -> None:
         sets, params = ['updated_at = CURRENT_TIMESTAMP'], []
         for key, value in fields.items():
             if key == 'resolved_at' and value == 'now':
@@ -406,7 +505,8 @@ class CommentService:
             params.append(value)
         with self.database.transaction() as connection:
             connection.execute(f"UPDATE canvas_comments SET {', '.join(sets)} WHERE id = ?", (*params, comment_id))
-        self._publish(comment_id)
+        if publish:
+            self._publish(comment_id)
 
     def _publish(self, comment_id: str) -> None:
         row = self._row(comment_id)
@@ -424,6 +524,7 @@ class CommentService:
 
     def _public(self, row: dict[str, Any], nodes: dict[str, dict[str, Any]]) -> dict[str, Any]:
         comment = self._fields(row, set(nodes))
+        comment['replies'] = self._replies(row['id'])
         if row['anchor_kind'] == 'media' and row['node_id'] in nodes:
             # Which picture the pin was put on, and whether the node has moved on since.
             pinned = self.versions.get(row['canvas_id'], row['node_id'], row['version'])
@@ -449,9 +550,11 @@ class CommentService:
             'sessionId': row['session_id'],
             'anchor': anchor,
             'text': row['text'],
+            'author': row['author'],
             'status': row['status'],
+            # None: a plain comment. Otherwise the agent's progress on it.
+            'agentStatus': row['agent_status'],
             'outcome': row['outcome'],
-            'pendingReply': row['pending_text'] if row['pending_text'] != row['text'] else None,
             'nodeMissing': bool(row['node_id']) and row['node_id'] not in node_ids,
             'createdAt': row['created_at'],
             'updatedAt': row['updated_at'],
@@ -468,3 +571,13 @@ def _number(anchor: dict[str, Any], key: str) -> float:
 
 def comment_json(comment: dict[str, Any]) -> str:
     return json.dumps(comment, ensure_ascii=False)
+
+
+def compose_for_agent(items: list[str]) -> str:
+    """What the agent gets when a comment is handed to it: one message as is, several in order."""
+    if not items:
+        return '接着处理这条留言。'
+    if len(items) == 1:
+        return items[0]
+    lines = '\n'.join(f'- {item}' for item in items)
+    return f'这条留言里还没交给你的内容（按时间顺序，最后一条最新）：\n{lines}'

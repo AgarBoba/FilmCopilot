@@ -96,6 +96,9 @@ export interface AgentEvent {
   message?: string;
   status?: 'completed' | 'stopped' | 'failed';
   costUsd?: number | null;
+  /** run_finished: tokens the model saw on its last request, and its context window. */
+  contextTokens?: number | null;
+  contextWindow?: number | null;
   skipped?: { type: string; id: string; reason: string }[];
   deletedNodes?: string[];
   restoredNodes?: string[];

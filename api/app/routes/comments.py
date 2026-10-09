@@ -21,10 +21,13 @@ class CreateCommentRequest(BaseModel):
     # {"kind": "media", "nodeId", "x", "y" (0-1 inside the picture), "time" (videos)}
     anchor: dict[str, Any]
     text: str = Field(max_length=4000)
+    # Hand it to the agent right away ("@Agent" in the text does the same). Default: a plain comment.
+    toAgent: bool = False
 
 
 class ReplyRequest(BaseModel):
     text: str = Field(max_length=4000)
+    toAgent: bool = False
 
 
 def _comments(request: Request) -> CommentService:
@@ -33,20 +36,22 @@ def _comments(request: Request) -> CommentService:
 
 @router.post('/canvases/{canvas_id}/comments')
 async def create_comment(request: Request, canvas_id: str, body: CreateCommentRequest) -> dict:
-    return await _comments(request).create(canvas_id, body.anchor, body.text)
+    return await _comments(request).create(canvas_id, body.anchor, body.text, body.toAgent)
 
 
 @router.get('/canvases/{canvas_id}/comments')
 def list_comments(
     request: Request, canvas_id: str,
     status: Literal['all', 'open', 'resolved'] = 'all', nodeId: str | None = None,
+    kind: Literal['all', 'agent', 'note'] = 'all',
 ) -> dict:
-    return {'comments': _comments(request).list(canvas_id, status, nodeId)}
+    return {'comments': _comments(request).list(canvas_id, status, nodeId, kind)}
 
 
 @router.get('/canvases/{canvas_id}/comments/stream')
 async def stream_comments(request: Request, canvas_id: str) -> StreamingResponse:
-    """Every change to a comment on this canvas, as the full comment (event: comment)."""
+    """Every change to a comment on this canvas, as the full comment (event: comment).
+    A deleted comment comes as {id, canvasId, deleted: true}."""
     service = _comments(request)
     request.app.state.canvas_repository.assert_canvas(canvas_id)
 
@@ -76,7 +81,18 @@ def get_comment(request: Request, comment_id: str) -> dict:
 
 @router.post('/comments/{comment_id}/reply')
 async def reply_comment(request: Request, comment_id: str, body: ReplyRequest) -> dict:
-    return await _comments(request).reply(comment_id, body.text)
+    return await _comments(request).reply(comment_id, body.text, body.toAgent)
+
+
+@router.post('/comments/{comment_id}/agent')
+async def hand_off_comment(request: Request, comment_id: str) -> dict:
+    """让 Agent 处理: the agent takes the comment with everything in it so far."""
+    return await _comments(request).hand_off(comment_id)
+
+
+@router.delete('/comments/{comment_id}', status_code=204)
+def delete_comment(request: Request, comment_id: str) -> None:
+    _comments(request).delete(comment_id)
 
 
 @router.post('/comments/{comment_id}/resolve')

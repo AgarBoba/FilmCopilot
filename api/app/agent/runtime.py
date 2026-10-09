@@ -394,6 +394,7 @@ class AgentService:
                 self._emit(runtime.session_id, run_id, kind, payload, role='tool_call')
 
         status, cost, error_text = 'completed', None, None
+        context_tokens, context_window = None, None
         try:
             client = await self._client(runtime, model)
             await client.query(user_input(prompt, images) if images else prompt)
@@ -410,6 +411,8 @@ class AgentService:
                         error_text = explain_error('401 authentication', auth)
                         await client.interrupt()
                 elif isinstance(message, AssistantMessage):
+                    if message.usage and not message.parent_tool_use_id:
+                        context_tokens = context_size(message.usage) or context_tokens
                     if message.error:
                         error_text = explain_error(f'模型调用出错：{message.error}', auth)
                     text = ''.join(block.text for block in message.content if isinstance(block, TextBlock))
@@ -424,6 +427,7 @@ class AgentService:
                             emit_builtin(tracker.on_tool_result(block.tool_use_id, block.content, bool(block.is_error)))
                 elif isinstance(message, ResultMessage):
                     cost = message.total_cost_usd
+                    context_window = context_limit(message.model_usage) or context_window
                     if message.session_id:
                         self._remember_sdk_session(runtime, message.session_id)
                     if message.is_error and not error_text:
@@ -446,6 +450,8 @@ class AgentService:
             self.store.set_run_status(run_id, status)
             self._emit(runtime.session_id, run_id, 'run_finished', {
                 'status': status, 'costUsd': cost, 'model': model, 'auth': auth,
+                # How full the model's context was on its last request (for the panel's ring).
+                'contextTokens': context_tokens, 'contextWindow': context_window or DEFAULT_CONTEXT_WINDOW,
             }, role='system_event')
             runtime.tools = None
             runtime.run_id = None
@@ -503,3 +509,19 @@ class AgentService:
             except Exception:
                 log.exception('agent event listener failed')
         return event
+
+
+DEFAULT_CONTEXT_WINDOW = 200_000
+
+
+def context_size(usage: dict[str, Any]) -> int | None:
+    """Tokens the model saw on one request: everything sent (cached or not) plus what it wrote."""
+    keys = ('input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens')
+    total = sum(int(usage.get(key) or 0) for key in keys)
+    return total or None
+
+
+def context_limit(model_usage: dict[str, Any] | None) -> int | None:
+    """The main model's context window, as the CLI reports it."""
+    windows = [int(item.get('contextWindow') or 0) for item in (model_usage or {}).values() if isinstance(item, dict)]
+    return max(windows, default=0) or None

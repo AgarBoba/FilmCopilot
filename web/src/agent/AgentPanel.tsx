@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { ChatsIcon, CloseIcon, MemoryIcon, PlusIcon, SendIcon, SparkIcon, StopIcon, UndoIcon } from '../canvas/icons';
+import { ChatsIcon, CloseIcon, MemoryIcon, PlusIcon, SendIcon, ShieldIcon, SparkIcon, StopIcon, UndoIcon } from '../canvas/icons';
 import { agentApi, type AgentEvent, type AgentSkill, type PermissionMode } from './agentApi';
 import { AgentMessage } from './AgentMessage';
 import { pendingConfirmations, undoableRuns, useAgentStore, type SessionFilter } from './agentStore';
 import { useCommentStore } from '../comments/commentStore';
-import { describeAnchor, STATUS_LABELS, type CanvasComment } from '../comments/commentApi';
+import { agentBusy, describeAnchor, pinState, STATUS_LABELS, type CanvasComment } from '../comments/commentApi';
 import { Markdown } from './Markdown';
 import { SessionList } from './SessionList';
-import { AgentAvatar } from './AgentAvatar';
+import { AgentAvatar, type AgentMood } from './AgentAvatar';
+import { clock, contextUsage, groupTurns } from './turns';
 import { MemoryView } from './MemoryView';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
@@ -52,9 +53,11 @@ export function AgentPanel({
   const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [skill, setSkill] = useState<AgentSkill | null>(null);
   const [menuIndex, setMenuIndex] = useState(0);
+  /** The skills button opened the list (typing "/" opens it too). */
+  const [picker, setPicker] = useState(false);
   const slash = /^\/(\S*)$/.exec(draft);
-  const menuSkills = slash ? matchSkills(skills, slash[1]) : [];
-  const menuOpen = Boolean(slash) && menuSkills.length > 0;
+  const menuSkills = slash ? matchSkills(skills, slash[1]) : picker ? skills : [];
+  const menuOpen = (Boolean(slash) || picker) && menuSkills.length > 0;
 
   function loadSkills() {
     agentApi.listSkills().then((data) => setSkills(data.skills)).catch(() => undefined);
@@ -63,7 +66,8 @@ export function AgentPanel({
 
   function pickSkill(next: AgentSkill) {
     setSkill(next);
-    setDraft('');
+    setPicker(false);
+    if (/^\/\S*$/.test(draft)) setDraft('');
     setMenuIndex(0);
     inputRef.current?.focus();
   }
@@ -96,7 +100,7 @@ export function AgentPanel({
   const comments = useCommentStore((state) => state.comments);
   /** The open chat belongs to a canvas comment: replies go through the comment's queue. */
   const currentComment = comments.find((comment) => comment.sessionId === sessionId) ?? null;
-  const commentBusy = currentComment ? ['queued', 'running', 'waiting'].includes(currentComment.status) : false;
+  const commentBusy = currentComment ? agentBusy(currentComment) : false;
   const listRequest = useAgentStore((state) => state.listRequest);
   /** Set once the canvas asked for a list or a chat: the panel then doesn't jump to the last chat. */
   const requestedRef = useRef(false);
@@ -121,7 +125,8 @@ export function AgentPanel({
 
   function openComment(comment: CanvasComment) {
     useCommentStore.getState().focus(comment.id);
-    void openSession(comment.sessionId);
+    // A plain note has no conversation: its thread opens on the canvas.
+    if (comment.sessionId) void openSession(comment.sessionId);
   }
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -239,7 +244,7 @@ export function AgentPanel({
       // A comment's chat continues through the comment, so its pin and queue stay right.
       if (!text || commentBusy) return;
       setSending(true);
-      if (await useCommentStore.getState().reply(currentComment.id, text)) {
+      if (await useCommentStore.getState().reply(currentComment.id, text, true)) {
         setDraft('');
         stickToBottom.current = true;
       } else {
@@ -321,6 +326,32 @@ export function AgentPanel({
   const backgroundBusy = others.some((item) => item.status === 'waiting') ? 'waiting'
     : others.some((item) => item.status === 'running') ? 'running' : null;
 
+  const turns = groupTurns(events.filter((event, index) => event.kind !== 'tasks' || lastTasks.get(event.runId) === index));
+  const labelOf = (model?: string | null) => (model ? store.models.find((item) => item.id === model)?.label ?? model : null);
+  const liveMood = pending.size ? 'waiting' : activeRunId ? 'working' : 'idle';
+  const streamingEntries = Object.entries(streaming);
+  const showUndo = !activeRunId && lastFinishedRun !== null && undoable.has(lastFinishedRun);
+  const tail = streamingEntries.length || activeRunId || showUndo ? (
+    <>
+      {streamingEntries.map(([runId, text]) => (
+        <div key={`stream-${runId}`} className="agent-msg is-assistant is-streaming">
+          <Markdown text={text} />
+        </div>
+      ))}
+      {activeRunId && !streaming[activeRunId] && pending.size === 0 && (
+        <div className="agent-thinking" aria-live="polite"><span /><span /><span /></div>
+      )}
+      {showUndo && lastFinishedRun && (
+        <button type="button" className="agent-undo" onClick={() => void undo(lastFinishedRun)}>
+          <UndoIcon width={14} height={14} /> 撤销这一轮的改动
+        </button>
+      )}
+    </>
+  ) : null;
+  const context = contextUsage(events);
+  const mode = settings?.permissionMode ?? 'confirm_generation';
+  const modeLabel = MODE_OPTIONS.find((option) => option.value === mode)?.label ?? '';
+
   return (
     <aside className="agent-panel nowheel" aria-label="Agent 对话" style={{ width: `min(${width}px, calc(100vw - 32px))` }} onKeyDown={(event) => {
       // Keep canvas shortcuts (Delete, V, H, Space…) out of the panel; ⌘J still closes it.
@@ -401,10 +432,10 @@ export function AgentPanel({
       ) : (
       <>
       {currentComment && (
-        <div className={`agent-comment-bar is-${currentComment.status}`}>
-          <span className={`session-pin is-${currentComment.status}`} aria-hidden="true" />
+        <div className={`agent-comment-bar is-${pinState(currentComment)}`}>
+          <span className={`session-pin is-${pinState(currentComment)}`} aria-hidden="true" />
           <span className="agent-comment-where">留言 · {describeAnchor(currentComment.anchor, nodeTitles)}</span>
-          <span className="agent-comment-status">{STATUS_LABELS[currentComment.status]}</span>
+          <span className="agent-comment-status">{STATUS_LABELS[pinState(currentComment)]}</span>
           <button type="button" onClick={() => useCommentStore.getState().focus(currentComment.id)}>在画布上看</button>
           {currentComment.status === 'resolved' ? (
             <button type="button" onClick={() => void useCommentStore.getState().reopen(currentComment.id)}>重新打开</button>
@@ -432,30 +463,41 @@ export function AgentPanel({
             告诉 Agent 你想做什么，比如「用这张兔子图做 3 个不同风格的版本」。先在画布上选中节点，它会围绕这些节点工作。
           </div>
         )}
-        {events.map((event, index) => event.kind === 'tasks' && lastTasks.get(event.runId) !== index ? null : (
-          <AgentMessage
-            key={event.id ?? `live-${index}`}
-            event={event}
-            focusTitles={focusTitles}
-            focusPreviews={nodePreviews}
-            onFocusNodes={onFocusNodes}
-            onSaveToCanvas={onSaveToCanvas}
-            onConfirm={(target, approved, note) => confirm(target, approved, note)}
-            pending={pending.has(event.requestId)}
-          />
-        ))}
-        {Object.entries(streaming).map(([runId, text]) => (
-          <div key={`stream-${runId}`} className="agent-msg is-assistant is-streaming">
-            <Markdown text={text} />
-          </div>
-        ))}
-        {activeRunId && !streaming[activeRunId] && pending.size === 0 && (
-          <div className="agent-thinking" aria-live="polite"><span /><span /><span /></div>
-        )}
-        {!activeRunId && lastFinishedRun && undoable.has(lastFinishedRun) && (
-          <button type="button" className="agent-undo" onClick={() => void undo(lastFinishedRun)}>
-            <UndoIcon width={14} height={14} /> 撤销这一轮的改动
-          </button>
+        {turns.map((turn, turnIndex) => {
+          const last = turnIndex === turns.length - 1;
+          const items = turn.items.map(({ event, index }) => (
+            <AgentMessage
+              key={event.id ?? `live-${index}`}
+              event={event}
+              focusTitles={focusTitles}
+              focusPreviews={nodePreviews}
+              onFocusNodes={onFocusNodes}
+              onSaveToCanvas={onSaveToCanvas}
+              onConfirm={(target, approved, note) => confirm(target, approved, note)}
+              pending={pending.has(event.requestId)}
+            />
+          ));
+          if (turn.speaker === 'user') {
+            return (
+              <div key={turn.key} className="agent-turn is-user">
+                <div className="agent-turn-main">
+                  <span className="agent-turn-time">{clock(turn.time)}</span>
+                  {items}
+                </div>
+                <span className="agent-turn-me" aria-hidden="true">我</span>
+              </div>
+            );
+          }
+          return (
+            <AgentTurn key={turn.key} time={turn.time} model={labelOf(turn.model)}
+              mood={last ? liveMood : 'idle'}>
+              {items}
+              {last && tail}
+            </AgentTurn>
+          );
+        })}
+        {tail && (turns.length === 0 || turns[turns.length - 1].speaker === 'user') && (
+          <AgentTurn time={null} model={labelOf(currentModel)} mood={liveMood}>{tail}</AgentTurn>
         )}
       </div>
 
@@ -501,7 +543,7 @@ export function AgentPanel({
             ))}
           </div>
         )}
-        <div className="agent-input-row">
+        <div className="agent-input-box">
           {skill && (
             <span className="agent-skill-chip" data-tooltip={skill.description} data-tooltip-side="top">
               <SparkIcon width={12} height={12} />{skill.label}
@@ -515,8 +557,9 @@ export function AgentPanel({
             aria-label="消息"
             placeholder={activeRunId || commentBusy ? 'Agent 正在处理…'
               : currentComment ? '回复这条留言，Enter 发送'
-                : skill ? `补充要求（可以不写），Enter 发送` : '想让 Agent 做什么？输入 / 选技能，Enter 发送'}
+                : skill ? '补充要求（可以不写），Enter 发送' : '想让 Agent 做什么？'}
             onFocus={() => { if (!skills.length) loadSkills(); }}
+            onBlur={() => setPicker(false)}
             onChange={(event) => {
               setDraft(event.target.value);
               setMenuIndex(0);
@@ -538,7 +581,8 @@ export function AgentPanel({
                 }
                 if (event.key === 'Escape') {
                   event.preventDefault();
-                  setDraft('');
+                  if (picker) setPicker(false);
+                  else setDraft('');
                   return;
                 }
               }
@@ -552,42 +596,54 @@ export function AgentPanel({
               }
             }}
           />
-          {activeRunId ? (
-            <button type="button" className="agent-send is-stop" aria-label="停止" data-tooltip="停止这一轮"
-              onClick={() => void agentApi.stop(activeRunId)}>
-              <StopIcon width={14} height={14} />
-            </button>
-          ) : (
-            <button type="button" className="agent-send" aria-label="发送" data-tooltip="发送"
-              disabled={(!draft.trim() && !skill) || sending || commentBusy || configured === false} onClick={() => void send()}>
-              <SendIcon width={15} height={15} />
-            </button>
-          )}
-        </div>
-        {/* Quiet setting under the input: what the agent must ask before doing. */}
-        <div className="agent-composer-meta">
-          {store.models.length > 0 && (
-            <label className="agent-mode">
-              <select
-                aria-label="模型"
-                value={currentModel}
-                onChange={(event) => void changeModel(event.target.value)}
-              >
-                {store.models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </select>
-              <span className="agent-mode-caret" aria-hidden="true">▾</span>
-            </label>
-          )}
-          <label className="agent-mode">
-            <select
-              aria-label="审核设置"
-              value={settings?.permissionMode ?? 'confirm_generation'}
-              onChange={(event) => void changeMode(event.target.value as PermissionMode)}
+          {/* One quiet row: model, skills, review mode, context use, send. */}
+          <div className="agent-input-tools">
+            {store.models.length > 0 && (
+              <label className="agent-pill" data-tooltip="模型" data-tooltip-side="top">
+                <span>{modelLabel}</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                <select aria-label="模型" value={currentModel} onChange={(event) => void changeModel(event.target.value)}>
+                  {store.models.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+              </label>
+            )}
+            <button
+              type="button"
+              className={`agent-tool ${picker ? 'is-active' : ''}`}
+              aria-label="技能"
+              data-tooltip="技能（也可以输入 /）"
+              data-tooltip-side="top"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                if (!skills.length) loadSkills();
+                setPicker(!picker);
+                setMenuIndex(0);
+                inputRef.current?.focus();
+              }}
             >
-              {MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-            <span className="agent-mode-caret" aria-hidden="true">▾</span>
-          </label>
+              <SparkIcon width={14} height={14} />
+            </button>
+            <label className={`agent-tool is-mode-${mode}`} data-tooltip={`审核：${modeLabel}`} data-tooltip-side="top">
+              <ShieldIcon width={14} height={14} fill={mode === 'confirm_all' ? 'currentColor' : 'none'} half={mode === 'confirm_generation'} />
+              <select aria-label="审核设置" value={mode} onChange={(event) => void changeMode(event.target.value as PermissionMode)}>
+                {MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <span className="agent-input-end">
+              {context && <ContextRing used={context.used} limit={context.limit} />}
+              {activeRunId ? (
+                <button type="button" className="agent-send is-stop" aria-label="停止" data-tooltip="停止这一轮"
+                  onClick={() => void agentApi.stop(activeRunId)}>
+                  <StopIcon width={14} height={14} />
+                </button>
+              ) : (
+                <button type="button" className="agent-send" aria-label="发送" data-tooltip="发送"
+                  disabled={(!draft.trim() && !skill) || sending || commentBusy || configured === false} onClick={() => void send()}>
+                  <SendIcon width={15} height={15} />
+                </button>
+              )}
+            </span>
+          </div>
         </div>
       </footer>
       </>
@@ -629,4 +685,45 @@ function matchSkills(skills: AgentSkill[], query: string): AgentSkill[] {
   const q = query.trim().toLowerCase();
   if (!q) return skills;
   return skills.filter((item) => [item.label, item.name, item.description].some((text) => text.toLowerCase().includes(q)));
+}
+
+
+/** One stretch of the agent's messages: its face, name, model and time, then the content indented. */
+function AgentTurn({ time, model, mood, children }: {
+  time: string | null; model: string | null; mood: AgentMood; children: React.ReactNode;
+}) {
+  return (
+    <div className="agent-turn is-agent">
+      <div className="agent-turn-head">
+        <AgentAvatar size={24} mood={mood} />
+        <span className="agent-turn-name">Agent</span>
+        {model && <span className="agent-turn-model">{model}</span>}
+        {time && <span className="agent-turn-time">{clock(time)}</span>}
+      </div>
+      <div className="agent-turn-body">{children}</div>
+    </div>
+  );
+}
+
+/** A small ring for how full the model's context is; hover says how much, in one line. */
+function ContextRing({ used, limit }: { used: number; limit: number }) {
+  const share = Math.min(1, used / limit);
+  const percent = Math.round(share * 100);
+  const circumference = 2 * Math.PI * 6;
+  const k = (value: number) => (value >= 1000 ? `${Math.round(value / 1000)}k` : String(value));
+  return (
+    <span
+      className={`agent-context ${share >= 0.7 ? 'is-high' : ''}`}
+      role="img"
+      aria-label={`上下文已用 ${percent}%`}
+      data-tooltip={`上下文已用 ${percent}% · ${k(used)} / ${k(limit)}`}
+      data-tooltip-side="top"
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" className="agent-context-track" />
+        <circle cx="8" cy="8" r="6" className="agent-context-fill"
+          strokeDasharray={`${Math.max(share * circumference, 0.6)} ${circumference}`} transform="rotate(-90 8 8)" />
+      </svg>
+    </span>
+  );
 }

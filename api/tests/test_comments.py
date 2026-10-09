@@ -39,8 +39,8 @@ def test_a_comment_on_a_picture_starts_a_run_with_its_location(repository):
 
     async def scenario():
         comment = await comments.create(
-            canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.62, 'y': 0.3}, '这里的天空换成黄昏')
-        assert comment['status'] == 'running'
+            canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.62, 'y': 0.3}, '这里的天空换成黄昏', to_agent=True)
+        assert (comment['status'], comment['agentStatus']) == ('open', 'running')
         await settle(service, comments)
         return comment
 
@@ -56,7 +56,7 @@ def test_a_comment_on_a_picture_starts_a_run_with_its_location(repository):
     first = store.list_messages(comment['sessionId'])[0]['content']
     assert first['text'] == '这里的天空换成黄昏' and first['focus'] == ['img']
     done = comments.get(comment['id'])
-    assert (done['status'], done['outcome']) == ('done', '把天空改成黄昏了。')
+    assert (done['agentStatus'], done['outcome']) == ('done', '把天空改成黄昏了。')
 
 
 def test_queue_runs_two_at_a_time_and_one_per_node(repository):
@@ -66,13 +66,13 @@ def test_queue_runs_two_at_a_time_and_one_per_node(repository):
     add_image(repository, canvas_id, 'b')
 
     async def scenario():
-        first = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'a'}, '一')
-        same_node = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'a'}, '二')
-        other = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'b'}, '三')
-        blank = await comments.create(canvas_id, {'kind': 'canvas', 'x': 10, 'y': 20}, '四')
-        started = [comments.get(c['id'])['status'] for c in (first, same_node, other, blank)]
+        first = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'a'}, '一', to_agent=True)
+        same_node = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'a'}, '二', to_agent=True)
+        other = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'b'}, '三', to_agent=True)
+        blank = await comments.create(canvas_id, {'kind': 'canvas', 'x': 10, 'y': 20}, '四', to_agent=True)
+        started = [comments.get(c['id'])['agentStatus'] for c in (first, same_node, other, blank)]
         await settle(service, comments, until=lambda: all(
-            comments.get(c['id'])['status'] == 'done' for c in (first, same_node, other, blank)))
+            comments.get(c['id'])['agentStatus'] == 'done' for c in (first, same_node, other, blank)))
         return started
 
     # "二" waits for "一" (same node) even though a slot is free; "四" waits for a slot.
@@ -86,7 +86,7 @@ def test_confirmation_shows_as_waiting(repository):
 
     async def scenario():
         updates = comments.subscribe(canvas_id)
-        comment = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '重画一张')
+        comment = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '重画一张', to_agent=True)
         session_queue = service.subscribe(comment['sessionId'])
         while True:
             event = await asyncio.wait_for(session_queue.get(), 5)
@@ -96,7 +96,7 @@ def test_confirmation_shows_as_waiting(repository):
         await settle(service, comments)
         statuses = []
         while not updates.empty():
-            status = updates.get_nowait()['status']
+            status = updates.get_nowait()['agentStatus']
             if not statuses or statuses[-1] != status:
                 statuses.append(status)
         return statuses
@@ -110,27 +110,33 @@ def test_reply_resolve_and_reopen(repository):
     add_image(repository, canvas_id)
 
     async def scenario():
-        comment = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '暗一点')
+        comment = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '暗一点', to_agent=True)
         with pytest.raises(DomainError) as busy:
-            await comments.reply(comment['id'], '再暗一点')
+            await comments.reply(comment['id'], '再暗一点', to_agent=True)
         assert busy.value.code == 'COMMENT_BUSY'
         with pytest.raises(DomainError):
             comments.resolve(comment['id'])
+        # A plain reply is fine while the agent works.
+        noted = await comments.reply(comment['id'], '（备忘：暗部别糊）')
+        assert [r['text'] for r in noted['replies']] == ['（备忘：暗部别糊）'] and noted['agentStatus'] == 'running'
         await settle(service, comments)
         assert comments.resolve(comment['id'])['status'] == 'resolved'
         assert comments.list(canvas_id, 'open') == []
-        assert comments.reopen(comment['id'])['status'] == 'done'
+        assert comments.reopen(comment['id'])['status'] == 'open'
         comments.resolve(comment['id'])
-        # Replying to a resolved comment brings it back and continues the same chat.
-        replied = await comments.reply(comment['id'], '再暗一点')
-        assert replied['status'] == 'running' and replied['resolvedAt'] is None
+        # Replying to the agent on a resolved comment reopens it and continues the same chat,
+        # with the plain reply it hasn't seen yet.
+        replied = await comments.reply(comment['id'], '再暗一点', to_agent=True)
+        assert (replied['status'], replied['agentStatus'], replied['resolvedAt']) == ('open', 'running', None)
         await settle(service, comments)
         return comments.get(comment['id'])
 
     final = asyncio.run(scenario())
-    assert (final['status'], final['outcome']) == ('done', '又改了一下')
+    assert (final['agentStatus'], final['outcome']) == ('done', '又改了一下')
+    assert [(r['text'], r['toAgent']) for r in final['replies']] == [('（备忘：暗部别糊）', False), ('再暗一点', True)]
     second_prompt = factory.clients[0].prompts[1]
-    assert '[留言位置]' not in second_prompt and second_prompt.endswith('再暗一点')
+    assert '[留言位置]' not in second_prompt
+    assert second_prompt.endswith('- （备忘：暗部别糊）\n- 再暗一点') and '最后一条最新' in second_prompt
 
 
 def test_anchor_validation(repository):
@@ -142,7 +148,7 @@ def test_anchor_validation(repository):
 
     async def attempt(anchor):
         with pytest.raises(DomainError) as error:
-            await comments.create(canvas_id, anchor, '看这里')
+            await comments.create(canvas_id, anchor, '看这里', to_agent=True)
         return error.value.code
 
     async def scenario():
@@ -166,7 +172,7 @@ def test_video_comment_records_the_moment(repository):
 
     async def scenario():
         comment = await comments.create(
-            canvas_id, {'kind': 'media', 'nodeId': 'vid', 'x': 0.5, 'y': 0.25, 'time': 3.24}, '这里手抖了')
+            canvas_id, {'kind': 'media', 'nodeId': 'vid', 'x': 0.5, 'y': 0.25, 'time': 3.24}, '这里手抖了', to_agent=True)
         await settle(service, comments)
         return comment
 
@@ -179,10 +185,10 @@ def test_queued_comment_on_a_deleted_node_fails(repository):
     add_image(repository, canvas_id)
 
     async def scenario():
-        await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '一')
-        waiting = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '二')
+        await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '一', to_agent=True)
+        waiting = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '二', to_agent=True)
         repository.delete_node(canvas_id, 'img')
-        await settle(service, comments, until=lambda: comments.get(waiting['id'])['status'] == 'failed')
+        await settle(service, comments, until=lambda: comments.get(waiting['id'])['agentStatus'] == 'failed')
         return comments.get(waiting['id'])
 
     failed = asyncio.run(scenario())
@@ -195,16 +201,19 @@ def test_needs_a_configured_agent_and_stays_out_of_other_chats(repository):
 
     async def unconfigured():
         with pytest.raises(DomainError) as error:
-            await comments.create(canvas_id, {'kind': 'canvas', 'x': 0, 'y': 0}, '加一个镜头')
+            await comments.create(canvas_id, {'kind': 'canvas', 'x': 0, 'y': 0}, '加一个镜头', to_agent=True)
         return error.value.code
 
     assert asyncio.run(unconfigured()) == 'AGENT_NOT_CONFIGURED'
     assert comments.list(canvas_id) == []
+    # A plain comment needs no agent at all.
+    plain = asyncio.run(comments.create(canvas_id, {'kind': 'canvas', 'x': 0, 'y': 0}, '这里留个镜头位'))
+    assert (plain['status'], plain['agentStatus'], plain['sessionId']) == ('open', None, None)
 
     comments, service, store, canvas_id, factory = setup(repository, [('text', '加好了')], [('text', 'hi')])
 
     async def scenario():
-        await comments.create(canvas_id, {'kind': 'canvas', 'x': 0, 'y': 0}, '加一个镜头')
+        await comments.create(canvas_id, {'kind': 'canvas', 'x': 0, 'y': 0}, '加一个镜头', to_agent=True)
         await settle(service, comments)
         chat = store.create_session(canvas_id)
         await service.send_message(chat['id'], '你好')
@@ -222,10 +231,10 @@ def test_restart_marks_interrupted_runs_failed(repository):
     add_image(repository, canvas_id)
     with repository.transaction() as connection:
         connection.execute(
-            "INSERT INTO canvas_comments (id, canvas_id, session_id, anchor_kind, node_id, text, status) "
-            "VALUES ('c1', ?, 's', 'node', 'img', '一', 'running')", (canvas_id,))
+            "INSERT INTO canvas_comments (id, canvas_id, session_id, anchor_kind, node_id, text, status, agent_status) "
+            "VALUES ('c1', ?, 's', 'node', 'img', '一', 'open', 'running')", (canvas_id,))
     asyncio.run(comments.recover())
-    assert comments.get('c1')['status'] == 'failed'
+    assert comments.get('c1')['agentStatus'] == 'failed'
 
 
 def test_comment_routes(client):
@@ -274,7 +283,7 @@ def test_a_picture_comment_sends_the_marked_spot(repository, tmp_path):
     add_image_asset(repository, canvas_id, 'img', tmp_path / 'p.png', 'p1')
 
     async def scenario():
-        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.1, 'y': 0.9}, '这块太亮')
+        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.1, 'y': 0.9}, '这块太亮', to_agent=True)
         await settle(service, comments)
 
     asyncio.run(scenario())
@@ -293,7 +302,7 @@ def test_missing_file_still_sends_the_text(repository, tmp_path):
     (tmp_path / 'p.png').unlink()
 
     async def scenario():
-        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.5, 'y': 0.5}, '这里')
+        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.5, 'y': 0.5}, '这里', to_agent=True)
         await settle(service, comments)
 
     asyncio.run(scenario())
@@ -313,7 +322,7 @@ def test_a_video_comment_sends_the_frame_and_its_neighbours(repository, tmp_path
     repository.update_node(canvas_id, 'vid', {'data': {'assetId': 'v1'}})
 
     async def scenario():
-        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'vid', 'x': 0.5, 'y': 0.5, 'time': 1.0}, '手抖')
+        await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'vid', 'x': 0.5, 'y': 0.5, 'time': 1.0}, '手抖', to_agent=True)
         await settle(service, comments)
 
     asyncio.run(scenario())
@@ -335,7 +344,7 @@ def test_redraw_from_a_comment_is_tagged_and_logged(repository, tmp_path):
     store.update_settings(store.project_for_canvas(canvas_id), {'permissionMode': 'auto'})
 
     async def scenario():
-        comment = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '天空换成黄昏')
+        comment = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '天空换成黄昏', to_agent=True)
         await settle(service, comments)
         return comment
 
@@ -387,7 +396,7 @@ def test_undoing_a_comment_round_restores_the_canvas_and_says_so(repository):
         repository, [('tool', 'create_nodes', {'nodes': [{'type': 'note', 'content': '分镜'}]}), ('text', '加了一个便签。')])
 
     async def scenario():
-        comment = await comments.create(canvas_id, {'kind': 'canvas', 'x': 0, 'y': 0}, '加个便签写分镜')
+        comment = await comments.create(canvas_id, {'kind': 'canvas', 'x': 0, 'y': 0}, '加个便签写分镜', to_agent=True)
         await settle(service, comments)
         assert len(repository.get_snapshot(canvas_id).nodes) == 1
         run_id = store.list_messages(comment['sessionId'])[0]['run_id']
@@ -397,5 +406,160 @@ def test_undoing_a_comment_round_restores_the_canvas_and_says_so(repository):
     comment = asyncio.run(scenario())
     assert repository.get_snapshot(canvas_id).nodes == []
     undone = comments.get(comment['id'])
-    assert undone['status'] == 'done' and undone['outcome'].startswith('已撤销')
+    assert undone['agentStatus'] == 'done' and undone['outcome'].startswith('已撤销')
     assert service.task_log(canvas_id) == ['画布：加个便签写分镜 → 已撤销这一轮的改动，画布回到了留言前的样子，等用户查看']
+
+
+# --------------------------------------------------------------- plain comments (2026-10-09)
+
+def test_a_plain_comment_is_just_a_thread(repository):
+    comments, service, store, canvas_id, factory = setup(repository)
+    add_image(repository, canvas_id)
+
+    async def scenario():
+        updates = comments.subscribe(canvas_id)
+        comment = await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.2, 'y': 0.4}, '这里光线有点冷')
+        assert (comment['status'], comment['agentStatus'], comment['sessionId']) == ('open', None, None)
+        await comments.reply(comment['id'], '回头统一调成暖色')
+        resolved = comments.resolve(comment['id'])
+        reopened = comments.reopen(comment['id'])
+        seen = []
+        while not updates.empty():
+            seen.append(updates.get_nowait())
+        return comment, resolved, reopened, seen
+
+    comment, resolved, reopened, seen = asyncio.run(scenario())
+    assert resolved['status'] == 'resolved' and reopened['status'] == 'open'
+    assert [r['text'] for r in reopened['replies']] == ['回头统一调成暖色']
+    assert len(seen) == 4 and all(update['id'] == comment['id'] for update in seen)
+    assert factory.clients == [] and not [s for s in store.list_sessions('default', canvas_id) if s['kind'] == 'comment']
+    assert service.task_log(canvas_id) == []  # plain comments are not agent tasks
+    assert [c['id'] for c in comments.list(canvas_id, kind='note')] == [comment['id']]
+    assert comments.list(canvas_id, kind='agent') == []
+
+
+def test_at_agent_hands_it_over(repository):
+    comments, service, _, canvas_id, factory = setup(repository, [('text', '好')], [('text', '好')])
+    add_image(repository, canvas_id)
+
+    async def scenario():
+        first = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '@Agent 把背景换成黄昏')
+        await settle(service, comments)
+        plain = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '发邮件给 agentur@x.com')
+        return comments.get(first['id']), plain
+
+    first, plain = asyncio.run(scenario())
+    assert first['agentStatus'] == 'done' and factory.clients[0].prompts[0].endswith('@Agent 把背景换成黄昏')
+    assert plain['agentStatus'] is None  # "agentur" is not a mention
+
+
+def test_handing_off_later_sends_the_thread_with_its_location(repository):
+    comments, service, store, canvas_id, factory = setup(repository, [('text', '改成暖色了。')])
+    add_image(repository, canvas_id)
+
+    async def scenario():
+        comment = await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.5, 'y': 0.5}, '光线有点冷')
+        await comments.reply(comment['id'], '再加点晨雾')
+        handed = await comments.hand_off(comment['id'])
+        assert handed['agentStatus'] == 'running' and handed['sessionId']
+        await settle(service, comments)
+        return comments.get(comment['id'])
+
+    done = asyncio.run(scenario())
+    prompt = factory.clients[0].prompts[0]
+    assert '[留言位置] 图片节点「图片 img」[img] 第 1 版' in prompt
+    assert prompt.endswith('（按时间顺序，最后一条最新）：\n- 光线有点冷\n- 再加点晨雾')
+    assert store.get_session(done['sessionId'])['kind'] == 'comment'
+    assert done['agentStatus'] == 'done' and done['status'] == 'open'
+    assert [c['id'] for c in comments.list(canvas_id, kind='agent')] == [done['id']]
+    with pytest.raises(DomainError):
+        asyncio.run(comments.hand_off('nope'))
+
+
+def test_delete_removes_the_thread_and_archives_its_chat(repository):
+    comments, service, store, canvas_id, _ = setup(repository, [('pause', 0.1), ('text', 'ok')])
+    add_image(repository, canvas_id)
+
+    async def scenario():
+        updates = comments.subscribe(canvas_id)
+        plain = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '备注')
+        await comments.reply(plain['id'], '再补一句')
+        comments.delete(plain['id'])
+        task = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '改', to_agent=True)
+        with pytest.raises(DomainError) as busy:
+            comments.delete(task['id'])
+        assert busy.value.code == 'COMMENT_BUSY'
+        await settle(service, comments)
+        comments.delete(task['id'])
+        removed = []
+        while not updates.empty():
+            update = updates.get_nowait()
+            if update.get('deleted'):
+                removed.append(update['id'])
+        return plain, task, removed
+
+    plain, task, removed = asyncio.run(scenario())
+    assert removed == [plain['id'], task['id']] and comments.list(canvas_id) == []
+    assert store.get_session(task['sessionId'])['archived_at'] is not None
+    with repository.database.connection() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM comment_replies').fetchone()[0] == 0
+
+
+def test_the_agent_sees_open_notes_as_reference(repository):
+    from tests.test_canvas_tools import setup as tools_setup
+    tools, _, canvas_id = tools_setup(repository)
+    comments = CommentService(make_service(repository, FakeFactory())[0])
+    add_image(repository, canvas_id)
+
+    async def scenario():
+        note = await comments.create(canvas_id, {'kind': 'media', 'nodeId': 'img', 'x': 0.25, 'y': 0.5}, '这里光线有点冷')
+        await comments.reply(note['id'], '整体暖一点')
+        await comments.create(canvas_id, {'kind': 'canvas', 'x': 100, 'y': 40}, '这里放第二场')
+        done = await comments.create(canvas_id, {'kind': 'node', 'nodeId': 'img'}, '已经处理的')
+        comments.resolve(done['id'])
+
+    asyncio.run(scenario())
+    node = tools.get_node('img').text
+    assert '用户备注（1 条未解决）' in node and '不要因为看到备注就主动去改' in node
+    assert '- 画面 (25%, 50%)：「这里光线有点冷」（1 条回复，最新：「整体暖一点」）' in node
+    assert '已经处理的' not in node
+    canvas = tools.get_canvas().text
+    assert '用户备注 1 条' in canvas and '[画布空白处的用户备注]' in canvas and '- 画布 (100, 40)：「这里放第二场」' in canvas
+
+
+def test_old_comment_tables_are_migrated(tmp_path):
+    import sqlite3
+    from app.db import Database
+    path = tmp_path / 'old.sqlite3'
+    connection = sqlite3.connect(path)
+    connection.execute('''CREATE TABLE canvas_comments (id TEXT PRIMARY KEY, canvas_id TEXT NOT NULL, session_id TEXT NOT NULL,
+        anchor_kind TEXT NOT NULL, node_id TEXT, version INTEGER, x REAL, y REAL, time REAL, text TEXT NOT NULL,
+        status TEXT NOT NULL, outcome TEXT, pending_text TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, resolved_at TEXT)''')
+    connection.executemany(
+        "INSERT INTO canvas_comments (id, canvas_id, session_id, anchor_kind, text, status, pending_text) VALUES (?, 'c', 's', 'node', ?, ?, ?)",
+        [('a', '一', 'done', None), ('b', '二', 'resolved', None), ('q', '三', 'queued', '三')])
+    connection.commit()
+    connection.close()
+    database = Database(path)
+    database.init_schema()
+    database.init_schema()  # running again changes nothing
+    with database.connection() as connection:
+        rows = {row['id']: dict(row) for row in connection.execute('SELECT * FROM canvas_comments')}
+    assert (rows['a']['status'], rows['a']['agent_status'], rows['a']['text_seen_by_agent']) == ('open', 'done', 1)
+    assert (rows['b']['status'], rows['b']['agent_status']) == ('resolved', 'done')
+    assert (rows['q']['status'], rows['q']['agent_status'], rows['q']['text_seen_by_agent']) == ('open', 'queued', 0)
+
+
+def test_plain_and_agent_comment_routes(client):
+    canvas_id = client.post('/api/canvases', json={'name': 'C'}).json()['canvasId']
+    created = client.post(f'/api/canvases/{canvas_id}/comments',
+                          json={'anchor': {'kind': 'canvas', 'x': 0, 'y': 0}, 'text': '这里放第二场'})
+    assert created.status_code == 200 and created.json()['agentStatus'] is None
+    comment_id = created.json()['id']
+    replied = client.post(f'/api/comments/{comment_id}/reply', json={'text': '要夜景'}).json()
+    assert [r['text'] for r in replied['replies']] == ['要夜景']
+    assert client.get(f'/api/canvases/{canvas_id}/comments?kind=note').json()['comments'][0]['id'] == comment_id
+    assert client.get(f'/api/canvases/{canvas_id}/comments?kind=agent').json() == {'comments': []}
+    assert client.delete(f'/api/comments/{comment_id}').status_code == 204
+    assert client.get(f'/api/comments/{comment_id}').status_code == 404

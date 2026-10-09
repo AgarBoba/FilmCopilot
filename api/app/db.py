@@ -205,12 +205,12 @@ class Database:
                     UNIQUE (canvas_id, node_id, version)
                 );
 
-                -- Comments pinned on the canvas; each is worked on by its own agent session
-                -- (comments.py, spec 2026-10-08-canvas-comments-design.md).
+                -- Comments pinned on the canvas (comments.py). A comment is a thread the user writes
+                -- for themselves; handed to the agent, it gets its own agent session.
                 CREATE TABLE IF NOT EXISTS canvas_comments (
                     id TEXT PRIMARY KEY,
                     canvas_id TEXT NOT NULL,
-                    session_id TEXT NOT NULL,
+                    session_id TEXT,
                     anchor_kind TEXT NOT NULL CHECK (anchor_kind IN ('canvas', 'node', 'media')),
                     node_id TEXT,
                     version INTEGER,
@@ -218,7 +218,10 @@ class Database:
                     y REAL,
                     time REAL,
                     text TEXT NOT NULL,
-                    status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'waiting', 'done', 'failed', 'resolved')),
+                    author TEXT NOT NULL DEFAULT 'me',
+                    status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
+                    agent_status TEXT CHECK (agent_status IN ('queued', 'running', 'waiting', 'done', 'failed')),
+                    text_seen_by_agent INTEGER NOT NULL DEFAULT 0,
                     outcome TEXT,
                     pending_text TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -226,6 +229,18 @@ class Database:
                     resolved_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS canvas_comments_canvas ON canvas_comments (canvas_id, status);
+                -- What people wrote under a comment after its first message (the agent's side lives
+                -- in its session). seen_by_agent: already passed to the agent.
+                CREATE TABLE IF NOT EXISTS comment_replies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comment_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    author TEXT NOT NULL DEFAULT 'me',
+                    to_agent INTEGER NOT NULL DEFAULT 0,
+                    seen_by_agent INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS comment_replies_comment ON comment_replies (comment_id, id);
                 CREATE TABLE IF NOT EXISTS canvas_task_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     canvas_id TEXT NOT NULL,
@@ -266,6 +281,50 @@ class Database:
                 connection.execute(
                     "ALTER TABLE canvases ADD COLUMN viewport_json TEXT NOT NULL DEFAULT '{\"x\": 0, \"y\": 0, \"zoom\": 1}'"
                 )
+            self._migrate_comments(connection)
+
+    @staticmethod
+    def _migrate_comments(connection: sqlite3.Connection) -> None:
+        """Comments used to be agent tasks only (status was the agent's status). Now a comment is
+        open / resolved and the agent's status is separate; old comments were all agent tasks."""
+        columns = {row['name'] for row in connection.execute('PRAGMA table_info(canvas_comments)').fetchall()}
+        if 'agent_status' in columns:
+            return
+        connection.execute('ALTER TABLE canvas_comments RENAME TO canvas_comments_old')
+        connection.execute('''CREATE TABLE canvas_comments (
+                    id TEXT PRIMARY KEY,
+                    canvas_id TEXT NOT NULL,
+                    session_id TEXT,
+                    anchor_kind TEXT NOT NULL CHECK (anchor_kind IN ('canvas', 'node', 'media')),
+                    node_id TEXT,
+                    version INTEGER,
+                    x REAL,
+                    y REAL,
+                    time REAL,
+                    text TEXT NOT NULL,
+                    author TEXT NOT NULL DEFAULT 'me',
+                    status TEXT NOT NULL CHECK (status IN ('open', 'resolved')),
+                    agent_status TEXT CHECK (agent_status IN ('queued', 'running', 'waiting', 'done', 'failed')),
+                    text_seen_by_agent INTEGER NOT NULL DEFAULT 0,
+                    outcome TEXT,
+                    pending_text TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TEXT
+        )''')
+        pending = 'pending_text' if 'pending_text' in columns else 'NULL'  # very early tables lack it
+        connection.execute(f'''
+            INSERT INTO canvas_comments
+                (id, canvas_id, session_id, anchor_kind, node_id, version, x, y, time, text, author, status,
+                 agent_status, text_seen_by_agent, outcome, pending_text, created_at, updated_at, resolved_at)
+            SELECT id, canvas_id, session_id, anchor_kind, node_id, version, x, y, time, text, 'me',
+                   CASE WHEN status = 'resolved' THEN 'resolved' ELSE 'open' END,
+                   CASE WHEN status = 'resolved' THEN 'done' ELSE status END,
+                   CASE WHEN status = 'queued' AND {pending} = text THEN 0 ELSE 1 END,
+                   outcome, {pending}, created_at, updated_at, resolved_at
+            FROM canvas_comments_old''')
+        connection.execute('DROP TABLE canvas_comments_old')
+        connection.execute('CREATE INDEX IF NOT EXISTS canvas_comments_canvas ON canvas_comments (canvas_id, status)')
 
     def active_connection(self) -> sqlite3.Connection | None:
         return _active_connection.get()

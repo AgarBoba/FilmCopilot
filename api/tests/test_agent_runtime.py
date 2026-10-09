@@ -60,6 +60,9 @@ def test_a_run_streams_text_uses_tools_and_is_recorded(repository):
     (node,) = repository.get_snapshot(canvas_id).nodes
     assert node.data['content'] == '午后光线'
     assert repository.agent_run_changes(run['id'])  # undoable
+    finished = store.list_messages(session_id)[-1]['content']
+    assert finished['contextTokens'] == 32040  # the last request: input, cache and output
+    assert finished['contextWindow'] == 200000
 
 
 def test_options_lock_down_tools_and_permissions(repository):

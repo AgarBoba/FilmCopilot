@@ -81,7 +81,10 @@ class FakeClient:
                     yield StreamEvent('u', 's', {
                         'type': 'content_block_delta', 'delta': {'type': 'text_delta', 'text': chunk},
                     })
-                yield AssistantMessage([TextBlock(step[1])], model='fake')
+                yield AssistantMessage([TextBlock(step[1])], model='fake', usage={
+                    'input_tokens': 120, 'cache_read_input_tokens': 30000, 'cache_creation_input_tokens': 1880,
+                    'output_tokens': 40,
+                })
             elif kind == 'tool':
                 name, args = step[1], step[2]
                 yield AssistantMessage([ToolUseBlock(f'tool-{index}', qualified(name), args)], model='fake')
@@ -105,6 +108,9 @@ class FakeClient:
         yield ResultMessage(
             subtype='success', duration_ms=1, duration_api_ms=1, is_error=False, num_turns=1,
             session_id='sdk-session-1', total_cost_usd=0.01,
+            model_usage={'fake': {'inputTokens': 1, 'outputTokens': 1, 'cacheReadInputTokens': 0,
+                                  'cacheCreationInputTokens': 0, 'webSearchRequests': 0, 'costUSD': 0.01,
+                                  'contextWindow': 200000, 'maxOutputTokens': 32000}},
         )
 
 

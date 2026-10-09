@@ -43,6 +43,14 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-10-09 留言变成真正的评论；面板改成头像版式和新输入栏
+
+- 留言默认是普通留言（一串讨论，Agent 看得到但不动手），勾「@Agent 让它处理」或打 @Agent 才交给 Agent；一条留言里可以混着两种回复。后端：`canvas_comments` 拆成 `status`（open / resolved）和 `agent_status`（NULL = 普通留言），回复存 `comment_replies`，交给 Agent 时把它还没看过的内容按时间合成一条消息；新增 `POST /comments/{id}/agent`、`DELETE /comments/{id}`；`get_canvas` / `get_node` 带上用户备注。
+- 前端按设计稿重做：新留言框和小窗都是 Claude 评论框的样子（头像、名字、时间，右上 ✓ ⋯ ×，左下 @Agent 勾选框，右下圆形发送）；小窗把留言的回复和 Agent 每一轮合在一条时间线上（`comments/thread.ts`），Agent 那边的 user_message 不重复显示。图钉：白色普通留言带条数，带 ✦ 的是交给 Agent 的。
+- Agent 面板：左右聊天版式，Agent 一段回复只出现一次头像 + 名字 + 模型 + 时间（`agent/turns.ts`）；输入栏改成模型胶囊、技能 ✦、审核盾牌（只有图标，悬停出字），右边上下文小圆环。去掉了输入框下面的常驻提示。
+- 上下文圆环用真实用量：`run_finished` 新增 `contextTokens`（最后一次请求的 input + cache + output）和 `contextWindow`（CLI 报的模型窗口，缺省 200k）。
+- 验证：后端 pytest 176 通过；前端 vitest 90 通过（新增留言讨论串、勾选 / @Agent、菜单交给 Agent 和两次删除、处理中禁用、时间线合并、面板分段和圆环）；容器里起服务用 Playwright 截图核对过新留言框、普通留言、等确认、做完和面板。
+
 ### 2026-10-09 Agent 记忆：对话摘要，recall 能搜中文短语
 
 - **对话摘要**（`agent/summary.py`）：面板对话每轮结束（完成或停止）、以及撤销一轮之后，后台用 Haiku 根据「之前的摘要 + 这一轮的原话、回复、操作」重写一句不超过 80 字的摘要，存进 `agent_sessions.summary`。走 Agent SDK 的一次性 `query()`（不带任何工具），API Key 和订阅两种登录都能用。同一个对话的摘要按顺序一个个更新；失败就保留旧的，不影响这一轮。留言对话不做摘要（它们已有画布任务记录）。

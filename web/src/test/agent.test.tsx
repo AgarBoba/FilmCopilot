@@ -503,4 +503,31 @@ describe('agent panel', () => {
     expect(await screen.findAllByLabelText('任务清单')).toHaveLength(1);
     expect(screen.getByLabelText('任务清单')).toHaveTextContent('1/1');
   });
+
+  it('the skills button opens the list; the shield says the review mode on hover', async () => {
+    await renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: '技能' }));
+    const menu = await screen.findByRole('listbox', { name: '技能' });
+    expect(within(menu).getAllByRole('option')).toHaveLength(2);
+    fireEvent.click(within(menu).getByText('分镜拆解'));
+    expect(screen.getByLabelText('不用这个技能')).toBeInTheDocument();
+    expect(screen.getByLabelText('审核设置').closest('[data-tooltip]')).toHaveAttribute('data-tooltip', '审核：只确认生成和删除');
+  });
+
+  it('you on the right, the agent on the left under one face; the ring shows context use', async () => {
+    await renderPanel();
+    const { apply } = useAgentStore.getState();
+    useAgentStore.getState().reset('s1');
+    apply(event({ id: 1, kind: 'user_message', text: '建个便签', createdAt: '2026-10-08 10:32:00' }));
+    apply(event({ id: 2, kind: 'tool_step', tool: 'create_nodes', summary: '新建 1 个节点' }));
+    apply(event({ id: 3, kind: 'assistant_text', text: '建好了', model: 'm' }));
+    apply(event({ id: 4, kind: 'run_finished', status: 'completed', contextTokens: 64000, contextWindow: 200000 }));
+    const user = (await screen.findByText('建个便签')).closest('.agent-turn');
+    expect(user).toHaveClass('is-user');
+    const agentTurns = document.querySelectorAll('.agent-turn.is-agent');
+    expect(agentTurns).toHaveLength(1);
+    expect(agentTurns[0]).toHaveTextContent('新建 1 个节点');
+    expect(agentTurns[0]).toHaveTextContent('建好了');
+    expect(screen.getByRole('img', { name: '上下文已用 32%' })).toHaveAttribute('data-tooltip', '上下文已用 32% · 64k / 200k');
+  });
 });

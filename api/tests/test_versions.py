@@ -100,8 +100,8 @@ def test_old_switch_back_copies_are_cleaned_up(repository):
                 (canvas_id, version, asset))
         for comment_id, version in (('on-a-copy', 3), ('on-c', 5)):
             connection.execute(
-                "INSERT INTO canvas_comments (id, canvas_id, session_id, anchor_kind, node_id, version, x, y, text, status) "
-                "VALUES (?, ?, 's', 'media', 'n', ?, 0.5, 0.5, 't', 'done')", (comment_id, canvas_id, version))
+                "INSERT INTO canvas_comments (id, canvas_id, session_id, anchor_kind, node_id, version, x, y, text, status, agent_status) "
+                "VALUES (?, ?, 's', 'media', 'n', ?, 0.5, 0.5, 't', 'open', 'done')", (comment_id, canvas_id, version))
     versions = NodeVersions(repository.database)
     versions.dedupe()
     versions.dedupe()  # safe to run again

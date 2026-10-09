@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
-import { CheckIcon, SparkIcon } from '../canvas/icons';
-import { commentApi, describeAnchor, formatMoment, type CanvasComment, type CommentAnchor } from './commentApi';
+import { CheckIcon, CloseIcon, SparkIcon } from '../canvas/icons';
+import { commentApi, describeAnchor, formatMoment, pinState, STATUS_LABELS, type CanvasComment, type CommentAnchor } from './commentApi';
 
 export { describeAnchor };
-import { CommentPopover } from './CommentPopover';
+import { CommentComposer } from './CommentComposer';
+import { CommentPopover, POPOVER_WIDTH } from './CommentPopover';
 import { openComments, queuePosition, useCommentStore } from './commentStore';
 import { mediaToScreen, nodeMedia, screenToMedia, sideOf } from './mediaGeometry';
 
@@ -51,8 +52,6 @@ export function CommentLayer({
   /** Comment mode, pointer over a picture or video: says the pin will carry a spot (and a moment). */
   const [hint, setHint] = useState<{ x: number; y: number; time: number | null } | null>(null);
   const hoverRef = useRef<{ x: number; y: number; target: Element } | null>(null);
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
   const stateRef = useRef({ comments, mode, hidden, openId, draft, selectedNodeIds });
   stateRef.current = { comments, mode, hidden, openId, draft, selectedNodeIds };
 
@@ -60,9 +59,12 @@ export function CommentLayer({
   useEffect(() => {
     const store = useCommentStore.getState();
     void store.load(canvasId);
-    return commentApi.stream(canvasId, (comment) => useCommentStore.getState().upsert(comment), () => {
-      void useCommentStore.getState().load(canvasId);
-    });
+    return commentApi.stream(
+      canvasId,
+      (comment) => useCommentStore.getState().upsert(comment),
+      () => void useCommentStore.getState().load(canvasId),
+      (id) => useCommentStore.getState().drop(id),
+    );
   }, [canvasId]);
 
   // The canvas changed (a new version landed, a node was deleted): refresh what pins show.
@@ -135,7 +137,6 @@ export function CommentLayer({
       event.stopPropagation();
       const anchor = anchorAt(event.clientX, event.clientY, event.target as Element, flowRef.current);
       if (anchor) {
-        setText('');
         useCommentStore.getState().setDraft({ anchor });
         // One pin per trip: back to the normal pointer while typing. Shift keeps comment mode on.
         if (!event.shiftKey) useCommentStore.setState({ mode: false });
@@ -190,13 +191,9 @@ export function CommentLayer({
   const open = openId ? comments.find((comment) => comment.id === openId) ?? null : null;
   const unresolved = openComments(comments);
 
-  async function submit() {
-    const body = text.trim();
-    if (!draft || !body || sending) return;
-    setSending(true);
-    const created = await useCommentStore.getState().create(draft.anchor, body);
-    setSending(false);
-    if (created) setText('');
+  async function submit(body: string, toAgent: boolean) {
+    if (!draft) return false;
+    return Boolean(await useCommentStore.getState().create(draft.anchor, body, toAgent));
   }
 
   return (
@@ -236,7 +233,7 @@ export function CommentLayer({
             comment={comment}
             at={at}
             active={comment.id === openId}
-            queue={comment.status === 'queued' ? queuePosition(comments, comment.id) : 0}
+            queue={comment.agentStatus === 'queued' ? queuePosition(comments, comment.id) : 0}
             onClick={() => useCommentStore.getState().open(comment.id === openId ? null : comment.id)}
           />
         );
@@ -246,36 +243,32 @@ export function CommentLayer({
           <span className="comment-pin is-draft comment-ui" style={{ left: positions.draft.x, top: positions.draft.y }} aria-hidden="true" />
           <div
             className="comment-draft comment-ui"
+            role="dialog"
+            aria-label="新留言"
             style={{
-              left: sideOf(positions.draft.x, 290, bounds.width),
-              top: Math.min(Math.max(8, positions.draft.y - 40), bounds.height - 140),
+              left: sideOf(positions.draft.x, POPOVER_WIDTH, bounds.width),
+              top: Math.min(Math.max(8, positions.draft.y - 32), bounds.height - 150),
+              width: POPOVER_WIDTH,
             }}
             onKeyDown={(event) => event.stopPropagation()}
           >
-            <div className="comment-draft-where">{describeAnchor(draft.anchor, nodeTitles)}</div>
-            <textarea
-              autoFocus
-              rows={2}
-              value={text}
-              aria-label="留言内容"
-              placeholder="想让 Agent 改什么？Enter 发送，Esc 取消"
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return;
-                if (event.key === 'Escape') {
-                  useCommentStore.getState().setDraft(null);
-                } else if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  void submit();
-                }
-              }}
-            />
-            <div className="comment-draft-foot">
-              <button type="button" className="comment-link" onClick={() => useCommentStore.getState().setDraft(null)}>取消</button>
-              <button type="button" className="comment-button is-primary" disabled={!text.trim() || sending} onClick={() => void submit()}>
-                交给 Agent
-              </button>
+            <div className="comment-msg-head">
+              <span className="comment-avatar" aria-hidden="true">我</span>
+              <span className="comment-msg-name">新留言</span>
+              <span className="comment-msg-time comment-draft-where">{describeAnchor(draft.anchor, nodeTitles)}</span>
+              <span className="comment-corner">
+                <button type="button" className="comment-icon" aria-label="取消" onClick={() => useCommentStore.getState().setDraft(null)}>
+                  <CloseIcon width={15} height={15} />
+                </button>
+              </span>
             </div>
+            <CommentComposer
+              autoFocus
+              label="留言内容"
+              placeholder="写点什么…"
+              onSubmit={submit}
+              onCancel={() => useCommentStore.getState().setDraft(null)}
+            />
           </div>
         </>
       )}
@@ -306,11 +299,14 @@ function Pin({ comment, at, active, queue, onClick }: {
   comment: CanvasComment; at: XY; active: boolean; queue: number; onClick: () => void;
 }) {
   const old = Boolean(comment.anchor.stale);
-  const label = { queued: '排队中', running: 'Agent 处理中', waiting: '等你确认', done: '已完成', failed: '没做完', resolved: '已解决' }[comment.status];
+  const state = pinState(comment);
+  const label = state === 'note' ? '留言' : state === 'resolved' ? '已解决' : `Agent · ${STATUS_LABELS[state]}`;
+  const count = 1 + comment.replies.length;
+  const agent = comment.agentStatus !== null && state !== 'resolved';
   return (
     <button
       type="button"
-      className={`comment-pin comment-ui is-${comment.status} ${old ? 'is-old' : ''} ${active ? 'is-active' : ''}`}
+      className={`comment-pin comment-ui is-${state} ${agent ? 'is-agent' : ''} ${old ? 'is-old' : ''} ${active ? 'is-active' : ''}`}
       style={{ left: at.x, top: at.y }}
       aria-label={`留言：${comment.text}（${label}）`}
       data-tooltip={`${label}${old ? ' · 针对上一版' : ''}：${comment.text.slice(0, 40)}`}
@@ -320,11 +316,11 @@ function Pin({ comment, at, active, queue, onClick }: {
         onClick();
       }}
     >
-      {comment.status === 'queued' && <span>{queue || ''}</span>}
-      {comment.status === 'running' && <SparkIcon width={13} height={13} />}
-      {comment.status === 'waiting' && <span>!</span>}
-      {(comment.status === 'done' || comment.status === 'resolved') && <CheckIcon width={13} height={13} />}
-      {comment.status === 'failed' && <span>×</span>}
+      {(state === 'note' || state === 'resolved') && count > 1 && <span>{count}</span>}
+      {state === 'queued' && <><SparkIcon width={11} height={11} />{queue > 0 && <span>{queue}</span>}</>}
+      {(state === 'running' || state === 'waiting') && <SparkIcon width={13} height={13} />}
+      {state === 'done' && <CheckIcon width={13} height={13} />}
+      {state === 'failed' && <span>!</span>}
     </button>
   );
 }
