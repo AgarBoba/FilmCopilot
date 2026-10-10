@@ -42,7 +42,7 @@ def test_prices_follow_the_model_file():
     assert generation_price(video) == 30
     assert generation_price(video, {'duration': 10}) == 60
     assert generation_price(video, {'duration': 10, 'resolution': '480p', 'generateAudio': False}) == 24
-    assert chat_price(None) == 0 and chat_price(0.0001) == 1 and chat_price(0.153) == 16
+    assert chat_price(None) == 0 and chat_price(0.0001) == 0.01 and chat_price(0.153) == 15.3
     base = {'id': 'm', 'kind': 'image', 'provider': 'replicate', 'providerModel': 'x/m', 'inputs': {'prompt': 'prompt'}}
     assert parse_model(base).price() == {'base': 5, 'multiply': {}}  # no price: the kind's default
     assert parse_model({**base, 'credits': 7}).price() == {'base': 7, 'multiply': {}}
@@ -220,3 +220,18 @@ def test_routes(client):
     assert client.post('/api/credits/top-up', json={'amount': 0}).status_code == 422
     models = client.get('/api/models').json()['models']
     assert next(m for m in models if m['id'] == 'seedream-5-pro')['credits']['base'] == 4
+
+
+def test_agent_usage_is_shown_exactly_and_charged_in_whole_credits(repository):
+    """No rounding up per turn: the fraction is carried until it makes a whole credit."""
+    credits = Credits(repository.database)
+    assert credits.charge_usage(2.23, 'chat', 'Agent 对话', 'run:a') == (2, 498)
+    assert credits.pending() == 0.23
+    assert credits.charge_usage(0.5, 'chat', 'Agent 对话', 'run:b') == (0, 498)
+    assert credits.charge_usage(0.4, 'chat', 'Agent 对话', 'run:c') == (1, 497)
+    assert credits.pending() == 0.13
+    assert credits.charge_usage(0.4, 'chat', 'Agent 对话', 'run:c') == (0, 497)  # same turn twice: once
+    history = credits.history()
+    assert [(e['used'], e['delta']) for e in history[:3]] == [(0.4, -1), (0.5, 0), (2.23, -2)]
+    assert 'used' not in history[-1]  # the welcome credits are not usage
+    assert credits.summary()['pending'] == 0.13

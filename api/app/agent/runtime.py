@@ -517,10 +517,11 @@ class AgentService:
                 runtime.context_tokens = context_tokens
             self.broker.cancel_run(run_id)
             self.store.set_run_status(run_id, status)
-            run_cost, charged, balance = self._charge_turn(runtime, run_id, model, cost)
+            run_cost, used, taken, balance = self._charge_turn(runtime, run_id, model, cost)
             self._emit(runtime.session_id, run_id, 'run_finished', {
                 'status': status, 'costUsd': run_cost, 'model': model, 'auth': auth,
-                'credits': charged, 'balance': balance, 'costTotal': cost,
+                # credits: what this turn really used; charged: whole credits taken from the balance now.
+                'credits': used, 'charged': taken, 'balance': balance, 'costTotal': cost,
                 # How full the model's context was on its last request (for the panel's ring).
                 'contextTokens': context_tokens, 'contextWindow': context_window or DEFAULT_CONTEXT_WINDOW,
             }, role='system_event')
@@ -543,25 +544,26 @@ class AgentService:
 
     def _charge_turn(
         self, runtime: SessionRuntime, run_id: str, model: str, total_cost: float | None,
-    ) -> tuple[float | None, int, int | None]:
-        """(this turn's cost in USD, credits charged, balance after). Never fails the turn."""
+    ) -> tuple[float | None, float, int, int | None]:
+        """(this turn's cost in USD, credits it used (exact), whole credits taken now, balance after).
+        Never fails the turn."""
         if total_cost is None:
-            return None, 0, None
+            return None, 0.0, 0, None
         before = runtime.cost_total if runtime.cost_total is not None else self.last_cost_total(runtime.session_id, run_id)
         # Lower than before: the total started over (a fresh conversation), so all of it is this turn's.
         run_cost = total_cost - before if total_cost >= before else total_cost
         runtime.cost_total = total_cost
-        amount = chat_price(run_cost)
-        if not amount:
-            return run_cost, 0, None
+        used = chat_price(run_cost)
+        if not used:
+            return run_cost, 0.0, 0, None
         label = dict(MODELS).get(model, model)
         try:
-            balance = Credits(self.repository.database).charge(
-                amount, 'chat', f'Agent 对话 · {label}', ref=f'run:{run_id}', allow_negative=True)
+            taken, balance = Credits(self.repository.database).charge_usage(
+                used, 'chat', f'Agent 对话 · {label}', ref=f'run:{run_id}')
         except Exception:
             log.exception('charging agent turn %s failed', run_id)
-            return run_cost, 0, None
-        return run_cost, amount, balance
+            return run_cost, used, 0, None
+        return run_cost, used, taken, balance
 
     # ------------------------------------------------------------ summaries
 

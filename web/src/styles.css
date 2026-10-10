@@ -4046,3 +4046,4 @@ body.is-resizing-panel .agent-panel { transition: none; }
 }
 /* Top-left of the canvas, above the rail and comment pins. */
 .credits-dock { position: absolute; top: 16px; left: 16px; z-index: 25; }
+.credits-pending { margin: -2px 0 6px; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { CoinIcon } from '../canvas/icons';
-import { useCreditStore, type CreditEntry } from './creditStore';
+import { formatUsage, useCreditStore, type CreditEntry } from './creditStore';
 
 const QUICK = [100, 500, 2000];
 const LOW = 50;
@@ -27,6 +27,7 @@ function when(createdAt: string, now = new Date()): string {
 export function CreditsButton() {
   const balance = useCreditStore((state) => state.balance);
   const entries = useCreditStore((state) => state.entries);
+  const pending = useCreditStore((state) => state.pending);
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState('');
   const [busy, setBusy] = useState(false);
@@ -95,6 +96,11 @@ export function CreditsButton() {
             <span className="credits-tag">模拟</span>
           </div>
           <div className={`credits-balance ${state}`}>{shown}</div>
+          {pending > 0 && (
+            <div className="credits-pending" data-tooltip="Agent 对话按实际用量记账，余额只扣整数，零头攒够 1 再扣">
+              另有 {formatUsage(pending)} 待扣
+            </div>
+          )}
           <p className="credits-hint">生成图片、视频按模型和参数扣；和 Agent 对话按实际用量扣（1 积分 ≈ $0.01）。失败或撤销的生成会退回。</p>
 
           <div className="credits-section-label">充值</div>
@@ -140,8 +146,12 @@ function HistoryRow({ entry }: { entry: CreditEntry }) {
     <li className="credits-row">
       <span className="credits-row-label" title={entry.label}>{entry.label}</span>
       <span className="credits-row-time">{when(entry.createdAt)}</span>
-      <span className={`credits-row-delta ${entry.delta > 0 ? 'is-plus' : ''}`}>
-        {entry.delta > 0 ? '+' : '−'}{formatCredits(Math.abs(entry.delta))}
+      <span
+        className={`credits-row-delta ${entry.delta > 0 ? 'is-plus' : ''}`}
+        data-tooltip={entry.used !== undefined ? `实际用量 ${formatUsage(entry.used)}，这次从余额扣 ${Math.abs(entry.delta)}` : undefined}
+        data-tooltip-side="left"
+      >
+        {entry.used !== undefined ? `−${formatUsage(entry.used)}` : `${entry.delta > 0 ? '+' : '−'}${formatCredits(Math.abs(entry.delta))}`}
       </span>
     </li>
   );

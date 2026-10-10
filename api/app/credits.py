@@ -7,9 +7,11 @@ in `credit_ledger`; the balance is the newest row's `balance_after`.
 What costs credits:
 - a generation, charged when it is queued, at the price in its model file ("credits", below);
   given back if it fails or an agent undo cancels it before it starts;
-- an agent turn, charged when it finishes, from what the model calls actually cost
-  (1 积分 = US$0.01, rounded up). A turn may take the balance a little below zero; the next
-  one is refused until there are credits again.
+- an agent turn, when it finishes, from what the model calls actually cost (1 积分 = US$0.01).
+  Each turn records its exact usage (e.g. 2.23) for display; the balance only loses whole
+  credits, and the leftover fraction is carried to the next turn (no rounding up per turn).
+  A turn may take the balance a little below zero; the next one is refused until there are
+  credits again.
 
 Prices live in each models/*.json file:
     "credits": 4                                    # flat
@@ -83,11 +85,12 @@ def generation_price(model: ModelSpec, parameters: dict[str, Any] | None = None)
     return max(0, math.ceil(round(amount, 6)))
 
 
-def chat_price(cost_usd: float | None) -> int:
-    """Credits for an agent turn that cost `cost_usd` in model calls."""
+def chat_price(cost_usd: float | None) -> float:
+    """What an agent turn that cost `cost_usd` in model calls used, in credits (exact, not rounded).
+    The wallet is charged whole credits only; see Credits.charge_usage."""
     if not cost_usd or cost_usd <= 0:
-        return 0
-    return max(1, math.ceil(round(cost_usd / USD_PER_CREDIT, 6)))
+        return 0.0
+    return round(cost_usd / USD_PER_CREDIT, 4)
 
 
 def price_text(model: ModelSpec) -> str:
@@ -105,6 +108,14 @@ def _balance(connection: Any) -> int:
     return int(row['balance_after']) if row else 0
 
 
+def _owed(connection: Any) -> float:
+    """Exact usage recorded minus whole credits taken for it: the carried fraction."""
+    row = connection.execute(
+        'SELECT COALESCE(SUM(amount), 0) AS used, COALESCE(SUM(-delta), 0) AS taken '
+        'FROM credit_ledger WHERE amount IS NOT NULL').fetchone()
+    return float(row['used']) - float(row['taken'])
+
+
 class Credits:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -116,16 +127,43 @@ class Credits:
     def history(self, limit: int = 30) -> list[dict[str, Any]]:
         with self.database.connection() as connection:
             rows = connection.execute(
-                'SELECT id, delta, kind, label, ref, balance_after, created_at FROM credit_ledger '
+                'SELECT id, delta, amount, kind, label, ref, balance_after, created_at FROM credit_ledger '
                 'ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
         return [
             {'id': row['id'], 'delta': row['delta'], 'kind': row['kind'], 'label': row['label'] or KIND_LABELS.get(row['kind'], ''),
-             'ref': row['ref'], 'balanceAfter': row['balance_after'], 'createdAt': row['created_at']}
+             'ref': row['ref'], 'balanceAfter': row['balance_after'], 'createdAt': row['created_at'],
+             # Agent turns: what the turn really used (delta is the whole credits taken from the balance).
+             **({'used': row['amount']} if row['amount'] is not None else {})}
             for row in rows
         ]
 
+    def pending(self) -> float:
+        """Usage not yet taken from the balance (always under 1 credit)."""
+        with self.database.connection() as connection:
+            return round(_owed(connection), 4)
+
     def summary(self) -> dict[str, Any]:
-        return {'balance': self.balance(), 'entries': self.history(), 'usdPerCredit': USD_PER_CREDIT}
+        return {'balance': self.balance(), 'pending': self.pending(), 'entries': self.history(),
+                'usdPerCredit': USD_PER_CREDIT}
+
+    def charge_usage(self, used: float, kind: str, label: str, ref: str | None = None) -> tuple[int, int]:
+        """Record exact usage (e.g. 2.23 credits for an agent turn) and take only whole credits from
+        the balance; the fraction is carried and taken once it adds up to a whole one.
+        Returns (whole credits taken now, balance after). May go below zero."""
+        if used <= 0:
+            return 0, self.balance()
+        with self.database.connection() as connection:
+            if ref is not None and connection.execute(
+                    'SELECT 1 FROM credit_ledger WHERE kind = ? AND ref = ?', (kind, ref)).fetchone():
+                return 0, _balance(connection)
+            whole = math.floor(round(_owed(connection) + used, 6) + 1e-9)
+            balance = _balance(connection) - whole
+            connection.execute(
+                'INSERT INTO credit_ledger (delta, amount, kind, label, ref, balance_after) VALUES (?, ?, ?, ?, ?, ?)',
+                (-whole, used, kind, label, ref, balance))
+            if self.database.active_connection() is None:
+                connection.commit()
+        return whole, balance
 
     def _add(self, delta: int, kind: str, label: str, ref: str | None) -> int:
         with self.database.connection() as connection:

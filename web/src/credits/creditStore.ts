@@ -16,11 +16,15 @@ export interface CreditEntry {
   kind: 'welcome' | 'top_up' | 'generation' | 'refund' | 'chat' | string;
   label: string;
   balanceAfter: number;
+  /** Agent turns: what the turn really used (delta is the whole credits taken from the balance). */
+  used?: number;
   createdAt: string;
 }
 
 interface CreditState {
   balance: number | null;
+  /** Usage not yet taken from the balance (under 1 credit; taken once it adds up). */
+  pending: number;
   entries: CreditEntry[];
   load: () => Promise<void>;
   topUp: (amount: number) => Promise<void>;
@@ -34,6 +38,7 @@ let again = false;
 
 export const useCreditStore = create<CreditState>((set, get) => ({
   balance: null,
+  pending: 0,
   entries: [],
   async load() {
     // Many events can arrive at once (a batch of generations): one request at a time, plus one after.
@@ -45,8 +50,8 @@ export const useCreditStore = create<CreditState>((set, get) => ({
       try {
         const response = await fetch(`${base()}/credits`);
         if (response.ok) {
-          const body = (await response.json()) as { balance: number; entries: CreditEntry[] };
-          set({ balance: body.balance, entries: body.entries ?? [] });
+          const body = (await response.json()) as { balance: number; pending?: number; entries: CreditEntry[] };
+          set({ balance: body.balance, pending: body.pending ?? 0, entries: body.entries ?? [] });
         }
       } catch {
         /* offline: keep what we have */
@@ -67,14 +72,20 @@ export const useCreditStore = create<CreditState>((set, get) => ({
       body: JSON.stringify({ amount }),
     });
     if (!response.ok) throw new Error('充值失败');
-    const body = (await response.json()) as { balance: number; entries: CreditEntry[] };
-    set({ balance: body.balance, entries: body.entries ?? [] });
+    const body = (await response.json()) as { balance: number; pending?: number; entries: CreditEntry[] };
+    set({ balance: body.balance, pending: body.pending ?? 0, entries: body.entries ?? [] });
   },
   setBalance(balance) {
     set({ balance });
     void get().load();
   },
 }));
+
+/** Exact usage for display: up to 2 decimals, "<0.01" for crumbs (2.23, 0.5, 3). */
+export function formatUsage(value: number): string {
+  if (value > 0 && value < 0.01) return '<0.01';
+  return String(Math.round(value * 100) / 100);
+}
 
 function valueKey(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'true' : 'false';

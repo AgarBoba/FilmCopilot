@@ -251,6 +251,7 @@ class Database:
                     balance_after INTEGER NOT NULL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                -- amount: exact usage for agent turns (delta is the whole credits taken).
                 CREATE UNIQUE INDEX IF NOT EXISTS credit_ledger_ref ON credit_ledger (kind, ref) WHERE ref IS NOT NULL;
                 INSERT INTO credit_ledger (delta, kind, label, ref, balance_after)
                     SELECT 500, 'welcome', '新手赠送', 'welcome', 500
@@ -265,6 +266,9 @@ class Database:
                 );
                 '''
             )
+            ledger_columns = {row['name'] for row in connection.execute('PRAGMA table_info(credit_ledger)').fetchall()}
+            if 'amount' not in ledger_columns:
+                connection.execute('ALTER TABLE credit_ledger ADD COLUMN amount REAL')
             columns = {
                 row['name']
                 for row in connection.execute('PRAGMA table_info(generation_jobs)').fetchall()

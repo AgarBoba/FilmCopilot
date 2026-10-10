@@ -97,8 +97,10 @@ export interface AgentEvent {
   message?: string;
   status?: 'completed' | 'stopped' | 'failed';
   costUsd?: number | null;
-  /** run_finished: credits this turn cost, and the balance after (absent when nothing was charged). */
+  /** run_finished: credits this turn really used (exact), whole credits taken from the balance now,
+   * and the balance after (absent when nothing was charged). */
   credits?: number;
+  charged?: number;
   balance?: number | null;
   /** context_compacted: about how much the model was reading per request before. */
   tokens?: number | null;

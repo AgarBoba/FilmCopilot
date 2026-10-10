@@ -10,6 +10,7 @@ import { Markdown } from './Markdown';
 import { SessionList } from './SessionList';
 import { AgentAvatar, type AgentMood } from './AgentAvatar';
 import { clock, contextUsage, groupTurns, turnCredits } from './turns';
+import { formatUsage } from '../credits/creditStore';
 import { MemoryView } from './MemoryView';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
@@ -701,8 +702,8 @@ function AgentTurn({ time, model, mood, credits = 0, children }: {
         {model && <span className="agent-turn-model">{model}</span>}
         {time && <span className="agent-turn-time">{clock(time)}</span>}
         {credits > 0 && (
-          <span className="agent-turn-credits" data-tooltip="这一轮对话用的积分（生成另算）" data-tooltip-side="bottom">
-            {credits} 积分
+          <span className="agent-turn-credits" data-tooltip="这一轮对话实际用的积分（生成另算；余额按整数扣，零头攒着下次一起扣）" data-tooltip-side="bottom">
+            {formatUsage(credits)} 积分
           </span>
         )}
       </div>

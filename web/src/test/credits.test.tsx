@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { turnCredits } from '../agent/turns';
 import { CreditsButton } from '../credits/CreditsButton';
-import { generationPrice, useCreditStore } from '../credits/creditStore';
+import { formatUsage, generationPrice, useCreditStore } from '../credits/creditStore';
 import { FALLBACK_MODELS } from '../models/modelStore';
 import { PromptComposer } from '../nodes/PromptComposer';
 
@@ -16,7 +16,7 @@ function respond(body: unknown) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  useCreditStore.setState({ balance: null, entries: [] });
+  useCreditStore.setState({ balance: null, pending: 0, entries: [] });
 });
 
 describe('credits (积分)', () => {
@@ -70,11 +70,27 @@ describe('credits (积分)', () => {
     expect(button).toHaveAttribute('data-tooltip', '消耗 30 积分');
   });
 
-  it('adds up what each agent turn used', () => {
+  it('adds up what each agent turn really used, shown to two decimals', () => {
     expect(turnCredits([
       { kind: 'assistant_text', text: 'hi' },
-      { kind: 'run_finished', credits: 3 },
+      { kind: 'run_finished', credits: 2.234, charged: 2 },
+      { kind: 'run_finished', credits: 0.5, charged: 0 },
       { kind: 'run_finished' },
-    ] as never)).toBe(3);
+    ] as never)).toBeCloseTo(2.734);
+    expect([formatUsage(2.734), formatUsage(0.5), formatUsage(3), formatUsage(0.004)]).toEqual(['2.73', '0.5', '3', '<0.01']);
+  });
+
+  it('agent usage is listed exactly, with the carried fraction under the balance', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => respond({ balance: 497, pending: 0.13, entries: [
+      { id: 4, delta: -1, used: 0.4, kind: 'chat', label: 'Agent 对话 · Haiku 5.5', balanceAfter: 497, createdAt: '2026-10-10 03:00:00' },
+      { id: 3, delta: 0, used: 0.5, kind: 'chat', label: 'Agent 对话 · Haiku 5.5', balanceAfter: 498, createdAt: '2026-10-10 02:59:00' },
+    ] })));
+    render(<CreditsButton />);
+    await userEvent.click(await screen.findByRole('button', { name: '积分：497' }));
+    const dialog = screen.getByRole('dialog', { name: '积分' });
+    await waitFor(() => expect(dialog).toHaveTextContent('另有 0.13 待扣'));
+    expect(dialog).toHaveTextContent('−0.4');
+    expect(dialog).toHaveTextContent('−0.5');
+    expect(dialog.querySelector('.credits-row-delta')).toHaveAttribute('data-tooltip', '实际用量 0.4，这次从余额扣 1');
   });
 });
