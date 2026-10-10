@@ -38,6 +38,8 @@ class FakeClient:
         self.models: list[str] = []
         self.interrupted = False
         self.connected = False
+        self.compactions: list[str] = []
+        self.compacting = False
         self.total_cost = 0.0  # like the real CLI: a running total (a resumed chat starts from the saved one)
 
     async def connect(self):
@@ -66,11 +68,22 @@ class FakeClient:
                     elif block['type'] == 'image':
                         images.append({'caption': caption, **block['source']})
             prompt = text
+        self.interrupted = False
+        if prompt.startswith('/compact'):  # the CLI's own command: summarise, no script step
+            self.compactions.append(prompt)
+            self.compacting = True
+            return
         self.prompts.append(prompt)
         self.prompt_images.append(images)
-        self.interrupted = False
 
     async def receive_response(self):
+        if self.compacting:
+            self.compacting = False
+            self.total_cost += 0.005
+            yield SystemMessage('compact_boundary', {'compact_metadata': {'trigger': 'manual', 'pre_tokens': 32000}})
+            yield ResultMessage(subtype='success', duration_ms=1, duration_api_ms=1, is_error=False, num_turns=0,
+                                session_id='sdk-session-1', total_cost_usd=self.total_cost)
+            return
         script = self.scripts.pop(0) if self.scripts else []
         yield SystemMessage('init', {'session_id': 'sdk-session-1'})
         for index, step in enumerate(script):

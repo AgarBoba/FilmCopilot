@@ -32,6 +32,14 @@ from .summary import Summarizer, build_input, clean as clean_summary, sdk_summar
 
 log = logging.getLogger(__name__)
 
+PREFIX_LABELS = {'memory': '项目记忆', 'other_chats': '其他对话摘要', 'task_log': '画布任务记录'}
+# /compact with what this kind of chat needs kept (the canvas itself can always be read again).
+COMPACT_COMMAND = (
+    '/compact 这是影视创作画布上的助手对话。摘要里保留：用户的目标、偏好和已定的设定 / 风格；'
+    '正在做和还没做完的事；提到过的节点名称和 ID；用户拒绝或撤销过的操作和原因。'
+    '画布上每个节点的具体内容不用逐条保留，需要时会重新用工具读取。'
+)
+
 # Built lazily so importing this module (and the test suite) never needs the SDK CLI.
 ClientFactory = Callable[[Any, dict[str, Any]], Any]
 
@@ -74,6 +82,11 @@ class SessionRuntime:
     # (new client after a restart, model or skill change) starts from the saved total, not 0.
     # A turn costs the difference from the last total we saw. None = look it up (last_cost_total).
     cost_total: float | None = None
+    # What the model has already seen in this chat, so it isn't sent again unchanged:
+    # 'prefix' -> the per-turn blocks (memory, other chats, task log); 'canvas' -> get_canvas lines.
+    # Cleared when the chat is compacted, a turn fails, or the process restarts (sent in full then).
+    seen_context: dict[str, Any] = field(default_factory=dict)
+    context_tokens: int | None = None  # what the model saw on the chat's last request
 
 
 class AgentService:
@@ -146,6 +159,10 @@ class AgentService:
             session_id=session_id, run_id=run['id'],
         )
         runtime.tools.comment_id = comment_id
+        compact = self._should_compact(runtime)
+        if compact:
+            runtime.seen_context.clear()  # the summary replaces what was sent: send it all again
+        runtime.tools.shared = runtime.seen_context
 
         snapshot = self.repository.get_snapshot(runtime.canvas_id)
         titles = {node.id: node.data.get('title', '') for node in snapshot.nodes}
@@ -154,16 +171,26 @@ class AgentService:
         if chosen is not None:
             user_event['skill'] = {'id': chosen.id, 'label': chosen.label}
         self._emit(session_id, run['id'], 'user_message', user_event, role='user')
+        blocks = {
+            'memory': self.memory.context_block(runtime.project_id),
+            'other_chats': tuple(self._other_chats(runtime)),
+            'task_log': tuple(self.task_log(runtime.canvas_id)),
+        }
+        sent = runtime.seen_context.setdefault('prefix', {})
+        fresh = {key: value for key, value in blocks.items() if sent.get(key) != value}
+        unchanged = [PREFIX_LABELS[key] for key, value in blocks.items() if value and key not in fresh]
+        sent.update(blocks)
         prompt = build_user_message(
             text, settings['permissionMode'], focus, settings['generationCap'],
-            memory=self.memory.context_block(runtime.project_id),
-            other_chats=self._other_chats(runtime),
-            task_log=self.task_log(runtime.canvas_id),
+            memory=fresh.get('memory', ''),
+            other_chats=list(fresh.get('other_chats') or []),
+            task_log=list(fresh.get('task_log') or []),
             skill=(chosen.id, chosen.label) if chosen else None,
             context=context,
+            unchanged=unchanged,
         )
         model = settings.get('model') or self.config.model
-        runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt, model, images))
+        runtime.task = asyncio.create_task(self._run(runtime, run['id'], prompt, model, images, compact))
         return run
 
     def task_log(self, canvas_id: str, limit: int = 10) -> list[str]:
@@ -383,9 +410,36 @@ class AgentService:
             ))
         return PermissionResultDeny(message=f'用户拒绝了：{summary}。不要重试或换个方式再做，先问用户想怎么调整。')
 
+    def _should_compact(self, runtime: SessionRuntime) -> bool:
+        """Compress the older part of a long chat before this turn (see AgentConfig.compact_tokens)."""
+        if not self.config.compact_tokens or not runtime.sdk_session_id:
+            return False
+        tokens = runtime.context_tokens
+        if tokens is None:  # after a restart: the last turn's number from the transcript
+            for message in reversed(self.store.list_messages(runtime.session_id)):
+                if message['content'].get('kind') == 'run_finished':
+                    tokens = message['content'].get('contextTokens')
+                    break
+        return bool(tokens and tokens > self.config.compact_tokens)
+
+    async def _compact(self, runtime: SessionRuntime, run_id: str, client: Any) -> float | None:
+        """Ask the CLI to summarise the chat so far (/compact). Returns its running cost total."""
+        from claude_agent_sdk import ResultMessage, SystemMessage
+        before, total, done = runtime.context_tokens, None, False
+        await client.query(COMPACT_COMMAND)
+        async for message in client.receive_response():
+            if isinstance(message, SystemMessage) and message.subtype == 'compact_boundary':
+                done = True
+            elif isinstance(message, ResultMessage):
+                total = message.total_cost_usd
+        if done:
+            runtime.context_tokens = None
+            self._emit(runtime.session_id, run_id, 'context_compacted', {'tokens': before}, role='system_event')
+        return total
+
     async def _run(
         self, runtime: SessionRuntime, run_id: str, prompt: str, model: str | None = None,
-        images: list[dict[str, Any]] | None = None,
+        images: list[dict[str, Any]] | None = None, compact: bool = False,
     ) -> None:
         model = model or self.config.model
         auth = self.config.auth
@@ -403,6 +457,11 @@ class AgentService:
         context_tokens, context_window = None, None
         try:
             client = await self._client(runtime, model)
+            if compact:
+                try:
+                    cost = await self._compact(runtime, run_id, client)
+                except Exception:  # the turn still runs on the full chat
+                    log.warning('compacting chat %s failed', runtime.session_id, exc_info=True)
             await client.query(user_input(prompt, images) if images else prompt)
             async for message in client.receive_response():
                 if isinstance(message, StreamEvent):
@@ -452,6 +511,10 @@ class AgentService:
                 status = 'failed'
             if error_text and status != 'stopped':
                 self._emit(runtime.session_id, run_id, 'error', {'message': error_text}, role='system_event')
+            if status != 'completed':
+                runtime.seen_context.clear()  # unsure what reached the model: send everything next time
+            if context_tokens:
+                runtime.context_tokens = context_tokens
             self.broker.cancel_run(run_id)
             self.store.set_run_status(run_id, status)
             run_cost, charged, balance = self._charge_turn(runtime, run_id, model, cost)
@@ -535,6 +598,8 @@ class AgentService:
 
     def _remember_sdk_session(self, runtime: SessionRuntime, sdk_session_id: str) -> None:
         if runtime.sdk_session_id != sdk_session_id:
+            if runtime.sdk_session_id is not None and sdk_session_id != runtime.sdk_session_id:
+                runtime.seen_context.clear()  # not the conversation we resumed: it saw nothing yet
             runtime.sdk_session_id = sdk_session_id
             self.store.set_sdk_session(runtime.session_id, sdk_session_id)
 

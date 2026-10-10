@@ -45,6 +45,9 @@ class AgentConfig:
     video_wait_seconds: float = 900
     poll_seconds: float = 2
     confirmation_timeout_seconds: float = 600
+    # When the model saw more than this many tokens on the chat's last request, the next turn
+    # first compresses the older part of the chat (/compact). 0 turns it off.
+    compact_tokens: int = 60_000
 
     @property
     def configured(self) -> bool:
@@ -60,7 +63,11 @@ class AgentConfig:
         if auth not in AUTH_MODES:
             auth = 'subscription' if token and not api_key else 'api'
         model = current_model(os.getenv('AGENT_MODEL')) or MODEL_IDS[0]
-        return cls(model=model, api_key_present=api_key, auth=auth, oauth_token_present=token)
+        try:
+            compact = int(os.getenv('AGENT_COMPACT_TOKENS') or 60_000)
+        except ValueError:
+            compact = 60_000
+        return cls(model=model, api_key_present=api_key, auth=auth, oauth_token_present=token, compact_tokens=compact)
 
 
 def explain_error(text: str, auth: str) -> str:

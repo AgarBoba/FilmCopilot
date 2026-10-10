@@ -96,6 +96,13 @@ export function AgentMessage({ event, focusTitles, focusPreviews = {}, onFocusNo
       );
     case 'tasks':
       return <TaskList items={event.items ?? []} />;
+    case 'context_compacted':
+      return (
+        <div className="agent-note">
+          对话比较长，已把较早的内容整理成摘要，后面每轮更省
+          {event.tokens ? `（之前每次要读约 ${Math.round(event.tokens / 1000)}k token）` : ''}
+        </div>
+      );
     case 'run_undone': {
       const skipped = event.skipped ?? [];
       return (

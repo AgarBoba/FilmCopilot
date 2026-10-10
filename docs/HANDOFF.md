@@ -70,7 +70,7 @@ cd web && pnpm test -- --run && pnpm exec tsc -b
 | 文件 | 管什么 |
 | --- | --- |
 | `runtime.py` | `AgentService`：一轮对话的完整流程，事件流（`_emit`），停止 / 撤销，对话摘要的调度，`run_finished` 里带 `contextTokens` / `contextWindow`。 |
-| `prompts.py` | system prompt 和每轮的前缀（画布概况、其他对话摘要等）。 |
+| `prompts.py` | system prompt 和每轮的前缀（画布概况、其他对话摘要等）。前缀里的记忆 / 其他对话 / 任务记录没变就不重发（`runtime.seen_context`），get_canvas 第二次起只发变化；上一轮读的量超过 `AGENT_COMPACT_TOKENS`（默认 6 万）就先 /compact。改这些时别让模型拿到的信息变少。 |
 | `mcp_server.py` + `canvas_tools.py` + `memory_tools.py` | 给 Agent 的 18 个画布 / 记忆工具，工具描述也在这里。 |
 | `permissions.py` / `conflicts.py` / `undo.py` | 审核方式（每步确认 / 只确认生成和删除 / 全自动），和用户同时改同一节点时的冲突，撤销一轮。 |
 | `memory.py` / `store.py` / `summary.py` | 两层记忆（项目设定、用户偏好）和 recall 搜索；会话和消息存储；用 Haiku 5.5 写对话摘要。 |

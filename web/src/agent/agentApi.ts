@@ -79,7 +79,8 @@ export interface AgentEvent {
     | 'skill_used'
     | 'web_search'
     | 'web_fetch'
-    | 'tasks';
+    | 'tasks'
+    | 'context_compacted';
   createdAt?: string;
   text?: string;
   focus?: string[];
@@ -99,6 +100,8 @@ export interface AgentEvent {
   /** run_finished: credits this turn cost, and the balance after (absent when nothing was charged). */
   credits?: number;
   balance?: number | null;
+  /** context_compacted: about how much the model was reading per request before. */
+  tokens?: number | null;
   /** run_finished: tokens the model saw on its last request, and its context window. */
   contextTokens?: number | null;
   contextWindow?: number | null;
@@ -209,7 +212,7 @@ export const agentApi = {
     const kinds: AgentEvent['kind'][] = [
       'user_message', 'text_delta', 'assistant_text', 'tool_step', 'confirm_request',
       'confirm_resolved', 'error', 'run_finished', 'run_undone', 'memory_change',
-      'skill_used', 'web_search', 'web_fetch', 'tasks',
+      'skill_used', 'web_search', 'web_fetch', 'tasks', 'context_compacted',
     ];
     const open = () => {
       if (closed) return;

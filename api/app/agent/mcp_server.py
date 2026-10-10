@@ -52,8 +52,10 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
      '列出可用的图片 / 视频模型：擅长什么、参考图上限、参数和可选值、是否缺少密钥。选模型或设参数前先看。',
      {'type': 'object', 'properties': {'kind': {'type': 'string', 'enum': ['image', 'video']}}}),
     ('get_canvas',
-     '读取画布：节点 ID、类型、名称、位置、Prompt 摘要、生成状态、上游；还有用户贴的便签（区域说明），每个节点注明它在哪张便签的区里。传 node_ids 只看这些节点及其上下游。',
-     {'type': 'object', 'properties': {'node_ids': {'type': 'array', 'items': {'type': 'string'}}}}),
+     '读取画布：节点 ID、类型、名称、位置、Prompt 摘要、生成状态、上游；还有用户贴的便签（区域说明），每个节点注明它在哪张便签的区里。传 node_ids 只看这些节点及其上下游。'
+     '同一个对话里第二次起只返回和你上次看到时相比变化的部分（其余以上次为准）；确实需要完整列表时传 full=true。',
+     {'type': 'object', 'properties': {'node_ids': {'type': 'array', 'items': {'type': 'string'}},
+                                       'full': {'type': 'boolean'}}}),
     ('get_node', '读取一个节点的完整信息：Prompt、参数、内容、上下游、最近一次生成结果或失败原因。',
      {'type': 'object', 'properties': {'node_id': {'type': 'string'}}, 'required': ['node_id']}),
     ('view_asset', '查看节点里的图片（视频为开头 / 中间 / 结尾 3 帧）。用来判断画面效果或参考风格。默认看当前版本，传 version 看以前的某一版。',
@@ -121,7 +123,7 @@ async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> Tool
     if name == 'list_models':
         return tools.list_models(args.get('kind'))
     if name == 'get_canvas':
-        return tools.get_canvas(args.get('node_ids'))
+        return tools.get_canvas(args.get('node_ids'), bool(args.get('full')))
     if name == 'get_node':
         return tools.get_node(args['node_id'])
     if name == 'view_asset':

@@ -426,6 +426,11 @@ describe('skills, web and the to-do list', () => {
     expect(container.querySelectorAll('a[rel="noreferrer"]')).toHaveLength(2);
   });
 
+  it('says when a long chat was compacted', () => {
+    render(<AgentMessage {...props} event={event({ kind: 'context_compacted', tokens: 99345 })} />);
+    expect(screen.getByText(/已把较早的内容整理成摘要.*约 99k token/)).toBeInTheDocument();
+  });
+
   it('the to-do list shows progress', () => {
     render(<AgentMessage {...props} event={event({ kind: 'tasks', items: [
       { id: '1', subject: '写分镜表', status: 'completed' },

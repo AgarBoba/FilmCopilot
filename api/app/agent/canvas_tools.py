@@ -44,6 +44,23 @@ ERROR_TEXT = {
 }
 
 
+def canvas_entries(lines: list[str]) -> dict[str, str]:
+    """get_canvas lines keyed for comparing two looks: '[node id]' for each node and sticky, the
+    whole user-notes section as one entry, section titles by their text; the first line is 'header'."""
+    entries: dict[str, str] = {'header': lines[0]} if lines else {}
+    notes_block: list[str] = []
+    for line in lines[1:]:
+        if notes_block or line.startswith('[画布空白处的用户备注]'):
+            notes_block.append(line)
+        elif line.startswith('- [') and ']' in line:
+            entries[line[2:line.index(']') + 1]] = line
+        else:
+            entries[f'section:{line}'] = line
+    if notes_block:
+        entries['notes'] = '\n'.join(notes_block)
+    return entries
+
+
 def note_size(content: str) -> dict[str, float]:
     """Tall enough to show a note's text without scrolling (width fixed so storyboard rows stay aligned)."""
     per_line = 17  # CJK characters per rendered line at the default width and size
@@ -88,10 +105,13 @@ class CanvasTools:
         self.last_seen_revision = repository.get_snapshot(canvas_id).revision
         # The canvas as the agent knows it: what it last looked at plus its own changes.
         self.seen = repository.canvas_state(canvas_id)
+        # What the model already saw in this chat (AgentService keeps it across turns). get_canvas
+        # uses it to send only what changed since the model's last full look.
+        self.shared: dict[str, Any] = {}
 
     # ------------------------------------------------------------------ reads
 
-    def get_canvas(self, node_ids: list[str] | None = None) -> ToolResult:
+    def get_canvas(self, node_ids: list[str] | None = None, full: bool = False) -> ToolResult:
         snapshot = self.repository.get_snapshot(self.canvas_id)
         self.last_seen_revision = snapshot.revision
         upstream: dict[str, list[str]] = {node.id: [] for node in snapshot.nodes}
@@ -162,7 +182,34 @@ class CanvasTools:
         if loose and not wanted:
             lines.append('[画布空白处的用户备注] ' + notes.HINT)
             lines.extend(f'- {notes.describe(note)}' for note in loose[:10])
-        return ToolResult('\n'.join(lines), summary='查看画布')
+        if wanted:
+            return ToolResult('\n'.join(lines), summary='查看画布')
+        return ToolResult(self._canvas_since_last_look(lines, full), summary='查看画布')
+
+    def _canvas_since_last_look(self, lines: list[str], full: bool) -> str:
+        """The full listing the first time in a chat; after that, only what changed (the model still
+        has the earlier listing in the chat). Falls back to the full listing when most of it changed."""
+        current = canvas_entries(lines)
+        previous = self.shared.get('canvas')
+        self.shared['canvas'] = current
+        if full or previous is None:
+            return '\n'.join(lines)
+        changed = [line for key, line in current.items() if key != 'header' and previous.get(key) != line]
+        removed = [key for key in previous if key.startswith('[') and key not in current]
+        entries = [key for key in current if key.startswith('[')]
+        if len(changed) + len(removed) > max(3, len(entries) // 2):
+            return '\n'.join(lines)
+        if not changed and not removed:
+            return f"{current['header']}\n和你在这个对话里上次看到的画布完全一样，以上次的完整列表为准。"
+        out = [current['header'],
+               f'（和你在这个对话里上次看到的画布相比，只列出有变化的部分；其余 {len(entries) - len(changed)} 项没变，'
+               '以上次的列表为准。要完整列表就传 full=true。）']
+        if changed:
+            out.append('[新增或有变化]')
+            out.extend(changed)
+        if removed:
+            out.append('[已删除] ' + '、'.join(removed))
+        return '\n'.join(out)
 
     def list_models(self, kind: str | None = None) -> ToolResult:
         """Models the canvas can use, with what each is good at and its parameters."""

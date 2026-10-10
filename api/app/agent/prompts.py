@@ -78,9 +78,10 @@ SYSTEM_PROMPT = """你是 Film Copilot 的创作助手，和用户一起在一�
 def build_user_message(
     text: str, mode: str, focus: list[tuple[str, str]], generation_left: int,
     memory: str = '', other_chats: list[str] | None = None, skill: tuple[str, str] | None = None,
-    context: str | None = None, task_log: list[str] | None = None,
+    context: str | None = None, task_log: list[str] | None = None, unchanged: list[str] | None = None,
 ) -> str:
-    """Prefix the user's words with this turn's context: memory, other chats, mode, selection."""
+    """Prefix the user's words with this turn's context: memory, other chats, mode, selection.
+    `unchanged`: blocks left out because the model already saw them, unchanged, in this chat."""
     lines: list[str] = []
     if memory:
         lines.append(memory)
@@ -90,6 +91,8 @@ def build_user_message(
     if task_log:
         lines.append('[画布任务记录]（最近处理过的画布留言）')
         lines.extend(f'- {line}' for line in task_log)
+    if unchanged:
+        lines.append(f"[{'、'.join(unchanged)}] 和你在这个对话里之前看到的一样，这次没有重复发")
     lines += [
         f'[权限档位] {MODE_LABELS.get(mode, mode)}',
         f'[本轮还可直接生成] {generation_left} 次，超出需要用户确认',
