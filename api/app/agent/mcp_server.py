@@ -86,7 +86,7 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
      {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
     ('delete_nodes', '删除节点（连带其连线）。',
      {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
-    ('generate', '对节点发起生成（会花费额度，可能需要用户确认）。之后用 wait_for_generation 查看结果。'
+    ('generate', '对节点发起生成（会扣积分）。需要用户确认时系统会自动弹确认卡片，你直接调用就行，不用先在文字里问。之后用 wait_for_generation 查看结果。'
      '结果会替换节点当前的画面，旧的留作历史版本。reference_current=true：把节点当前的画面也作为参考图一起发'
      '（参考原图重画，用来做局部修改）。',
      {'type': 'object', 'properties': {'node_ids': ID_LIST, 'reference_current': {'type': 'boolean'}},
