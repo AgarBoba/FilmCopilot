@@ -1,5 +1,7 @@
 from pathlib import Path
 from math import isfinite
+import sqlite3
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -21,6 +23,14 @@ STICKY_SIZES = ('s', 'm', 'l')
 
 # Viewport changes are not canvas content; undo runs are never themselves undone.
 _UNTRACKED_COMMANDS = {'update_canvas', 'undo_agent_run'}
+
+# Generation debit and job creation share a short write transaction. Keep each lock wait
+# bounded so transient contention is retried for a few seconds rather than surfacing at once.
+GENERATION_LOCK_BUSY_TIMEOUT_MS = 200
+GENERATION_LOCK_RETRY_WINDOW_SECONDS = 5.0
+GENERATION_LOCK_MAX_ATTEMPTS = 20
+GENERATION_LOCK_INITIAL_BACKOFF_SECONDS = 0.05
+GENERATION_LOCK_MAX_BACKOFF_SECONDS = 0.25
 
 
 def diff_canvas_state(before: dict, after: dict) -> list[tuple[str, str, Any, Any]]:
@@ -46,34 +56,63 @@ class CanvasCommandService:
         self.data_dir = data_dir if data_dir is not None else Settings.from_env().data_dir
 
     def execute(self, canvas_id: str, envelope: CommandEnvelope) -> CommandResult:
-        cached = self.repository.find_command(canvas_id, envelope.idempotencyKey)
-        if cached is not None:
-            return cached
-
         if envelope.agentRunId and envelope.actor != 'agent':
             raise DomainError('INVALID_PAYLOAD', 'agentRunId is only valid for agent commands')
 
-        with self.repository.transaction():
-            self.repository.assert_revision(canvas_id, envelope.baseRevision)
-            track = bool(envelope.agentRunId) and envelope.command not in _UNTRACKED_COMMANDS
-            before = self.repository.canvas_state(canvas_id) if track else None
-            payload = self._dispatch(canvas_id, envelope)
-            revision = self.repository.bump_revision(canvas_id)
-            result = CommandResult(
-                revision=revision,
-                command=envelope.command,
-                payload=payload,
-                actor=envelope.actor,
-                agentRunId=envelope.agentRunId,
-            )
-            if track:
-                changes = diff_canvas_state(before, self.repository.canvas_state(canvas_id))
-                if envelope.command == 'start_generation' and payload.get('jobId'):
-                    changes.append(('job', payload['jobId'], None, {'targetNodeId': payload.get('targetNodeId')}))
-                self.repository.record_agent_changes(envelope.agentRunId, canvas_id, revision, changes)
-            self.events.append_for_result(canvas_id, revision, result)
-            self.repository.save_command(canvas_id, envelope.idempotencyKey, result)
-        return result
+        is_generation = envelope.command == 'start_generation'
+        deadline = time.monotonic() + GENERATION_LOCK_RETRY_WINDOW_SECONDS
+        backoff = GENERATION_LOCK_INITIAL_BACKOFF_SECONDS
+        for attempt in range(1, GENERATION_LOCK_MAX_ATTEMPTS + 1):
+            try:
+                cached = self.repository.find_command(canvas_id, envelope.idempotencyKey)
+                if cached is not None:
+                    return cached
+
+                with self.repository.transaction(
+                    immediate=is_generation,
+                    busy_timeout_ms=GENERATION_LOCK_BUSY_TIMEOUT_MS if is_generation else None,
+                ):
+                    self.repository.assert_revision(canvas_id, envelope.baseRevision)
+                    track = bool(envelope.agentRunId) and envelope.command not in _UNTRACKED_COMMANDS
+                    before = self.repository.canvas_state(canvas_id) if track else None
+                    payload = self._dispatch(canvas_id, envelope)
+                    revision = self.repository.bump_revision(canvas_id)
+                    result = CommandResult(
+                        revision=revision,
+                        command=envelope.command,
+                        payload=payload,
+                        actor=envelope.actor,
+                        agentRunId=envelope.agentRunId,
+                    )
+                    if track:
+                        changes = diff_canvas_state(before, self.repository.canvas_state(canvas_id))
+                        if envelope.command == 'start_generation' and payload.get('jobId'):
+                            changes.append(('job', payload['jobId'], None, {'targetNodeId': payload.get('targetNodeId')}))
+                        self.repository.record_agent_changes(envelope.agentRunId, canvas_id, revision, changes)
+                    self.events.append_for_result(canvas_id, revision, result)
+                    self.repository.save_command(canvas_id, envelope.idempotencyKey, result)
+                return result
+            except sqlite3.OperationalError as error:
+                if not is_generation or not self._is_database_lock_error(error):
+                    raise
+                remaining = deadline - time.monotonic()
+                if attempt >= GENERATION_LOCK_MAX_ATTEMPTS or remaining <= 0:
+                    raise DomainError(
+                        'DATABASE_BUSY',
+                        '画布正在处理其他操作，本次生成未提交，也没有扣积分。请稍后重试。',
+                    ) from error
+                time.sleep(min(backoff, remaining))
+                backoff = min(backoff * 2, GENERATION_LOCK_MAX_BACKOFF_SECONDS)
+
+        raise AssertionError('unreachable')
+
+    @staticmethod
+    def _is_database_lock_error(error: sqlite3.OperationalError) -> bool:
+        code = getattr(error, 'sqlite_errorcode', None)
+        if code is not None:
+            return code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+        message = str(error).lower()
+        return 'locked' in message or 'busy' in message
 
     def _dispatch(self, canvas_id: str, envelope: CommandEnvelope) -> dict[str, Any]:
         handlers = {

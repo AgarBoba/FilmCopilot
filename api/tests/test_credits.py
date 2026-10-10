@@ -1,5 +1,9 @@
 """Credits (积分, simulated): generations and agent turns cost credits; failures give them back."""
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+import sqlite3
+from threading import Timer
 
 import pytest
 
@@ -77,6 +81,83 @@ def test_a_generation_is_charged_when_queued_and_refunded_if_it_fails(repository
     assert error.value.code == 'INSUFFICIENT_CREDITS' and '需要 60' in error.value.message
     assert credits.balance() == 59
     assert not [j for j in repository.get_snapshot(canvas_id).jobs if j['target_node_id'] == node]  # nothing queued
+
+
+def test_generation_retries_a_transient_database_lock_and_charges_once(repository, monkeypatch):
+    tools, service, canvas_id = setup(repository)
+    node = user(service, repository, canvas_id, 'create_node',
+                {'nodeType': 'image', 'data': {'prompt': '灯塔'}}, 'create-for-lock-retry')['nodeId']
+
+    transaction = repository.transaction
+    attempts = 0
+
+    @contextmanager
+    def count_transactions(**kwargs):
+        nonlocal attempts
+        attempts += 1
+        with transaction(**kwargs) as connection:
+            yield connection
+
+    monkeypatch.setattr(repository, 'transaction', count_transactions)
+    monkeypatch.setattr('app.commands.GENERATION_LOCK_BUSY_TIMEOUT_MS', 40, raising=False)
+
+    lock = repository.database._connect()
+    lock.execute('BEGIN IMMEDIATE')
+    release_errors = []
+
+    def release_lock():
+        try:
+            lock.commit()
+        except Exception as error:  # surface timer-thread failures in the test
+            release_errors.append(error)
+
+    releaser = Timer(0.12, release_lock)
+    releaser.start()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(
+                user, service, repository, canvas_id, 'start_generation',
+                {'targetNodeId': node}, 'generation-after-lock',
+            ).result(timeout=3)
+    finally:
+        releaser.join(timeout=1)
+        if lock.in_transaction:
+            lock.rollback()
+        lock.close()
+
+    assert not release_errors
+    assert attempts >= 2
+    assert result['credits'] == 4 and result['balance'] == 496
+    assert Credits(repository.database).balance() == 496
+    assert len([entry for entry in Credits(repository.database).history() if entry['kind'] == 'generation']) == 1
+    assert len(repository.get_snapshot(canvas_id).jobs) == 1
+
+
+def test_generation_reports_a_friendly_error_after_lock_retries_are_exhausted(repository, monkeypatch):
+    tools, service, canvas_id = setup(repository)
+    node = user(service, repository, canvas_id, 'create_node',
+                {'nodeType': 'image', 'data': {'prompt': '灯塔'}}, 'create-for-lock-exhaustion')['nodeId']
+    attempts = 0
+
+    @contextmanager
+    def always_locked(**kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise sqlite3.OperationalError('database is locked')
+        yield  # make this a context manager without opening a transaction
+
+    monkeypatch.setattr(repository, 'transaction', always_locked)
+    monkeypatch.setattr('app.commands.GENERATION_LOCK_MAX_ATTEMPTS', 3, raising=False)
+    monkeypatch.setattr('app.commands.time.sleep', lambda _: None, raising=False)
+
+    with pytest.raises(DomainError) as error:
+        user(service, repository, canvas_id, 'start_generation', {'targetNodeId': node}, 'generation-lock-exhausted')
+
+    assert attempts == 3
+    assert error.value.code == 'DATABASE_BUSY'
+    assert '稍后重试' in error.value.message
+    assert Credits(repository.database).balance() == 500
+    assert not repository.get_snapshot(canvas_id).jobs
 
 
 def test_the_agent_sees_prices_and_undo_gives_queued_generations_back(repository):

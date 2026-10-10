@@ -60,6 +60,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
             'RUN_ACTIVE': 409,
             'ALREADY_UNDONE': 409,
             'AGENT_NOT_CONFIGURED': 503,
+            'DATABASE_BUSY': 503,
             'COMMENT_BUSY': 409,
             'INSUFFICIENT_CREDITS': 402,
         }.get(error.code, 422)

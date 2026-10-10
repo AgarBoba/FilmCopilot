@@ -385,11 +385,18 @@ class Database:
         return _active_connection.get()
 
     @contextmanager
-    def transaction(self) -> Iterator[sqlite3.Connection]:
+    def transaction(
+        self, *, immediate: bool = False, busy_timeout_ms: int | None = None,
+    ) -> Iterator[sqlite3.Connection]:
         connection = self._connect()
+        if busy_timeout_ms is not None:
+            if isinstance(busy_timeout_ms, bool) or not isinstance(busy_timeout_ms, int) or busy_timeout_ms < 0:
+                connection.close()
+                raise ValueError('busy_timeout_ms must be a non-negative integer')
+            connection.execute(f'PRAGMA busy_timeout = {busy_timeout_ms}')
         token = _active_connection.set(connection)
         try:
-            connection.execute('BEGIN')
+            connection.execute('BEGIN IMMEDIATE' if immediate else 'BEGIN')
             yield connection
             connection.commit()
         except Exception:

@@ -25,8 +25,10 @@ class CanvasRepository:
         self.database = database
 
     @contextmanager
-    def transaction(self) -> Iterator[sqlite3.Connection]:
-        with self.database.transaction() as connection:
+    def transaction(
+        self, *, immediate: bool = False, busy_timeout_ms: int | None = None,
+    ) -> Iterator[sqlite3.Connection]:
+        with self.database.transaction(immediate=immediate, busy_timeout_ms=busy_timeout_ms) as connection:
             yield connection
 
     def create_canvas(self, name: str, canvas_id: str | None = None) -> CanvasSnapshot:
