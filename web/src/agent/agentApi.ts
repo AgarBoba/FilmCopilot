@@ -62,6 +62,15 @@ export interface MemoryList {
 }
 
 /** One entry of the agent stream. Persisted entries have an `id`; text deltas do not. */
+/** Tokens one agent turn used: read from the cache, written to it, read fresh, written by the model. */
+export interface TokenUsage {
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+  requests: number;
+}
+
 export interface AgentEvent {
   id: number | null;
   runId: string | null;
@@ -101,6 +110,8 @@ export interface AgentEvent {
    * and the balance after (absent when nothing was charged). */
   credits?: number;
   charged?: number;
+  /** run_finished: tokens over the turn's model requests. */
+  usage?: TokenUsage | null;
   balance?: number | null;
   /** context_compacted: about how much the model was reading per request before. */
   tokens?: number | null;

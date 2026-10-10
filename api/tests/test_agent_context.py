@@ -82,3 +82,22 @@ def test_a_long_chat_is_compacted_before_the_next_turn(repository):
     service2, _, _, session2 = make_service(repository, factory2, off)
     run_turns(service2, session2, ['a', 'b'])
     assert factory2.clients[0].compactions == []
+
+
+def test_each_turn_records_its_token_usage(repository):
+    from types import SimpleNamespace
+    from app.agent.runtime import UsageTally
+    tally = UsageTally()
+    request = {'input_tokens': 500, 'cache_read_input_tokens': 91000, 'cache_creation_input_tokens': 3000, 'output_tokens': 400}
+    for _ in range(2):  # two content blocks of one request: counted once
+        tally.add(SimpleNamespace(usage=request, message_id='msg-1'))
+    tally.add(SimpleNamespace(usage={'input_tokens': 10, 'output_tokens': 5}, message_id='msg-2'))
+    tally.add(SimpleNamespace(usage=None, message_id='msg-3'))
+    assert tally.summary() == {'input': 510, 'cacheRead': 91000, 'cacheWrite': 3000, 'output': 405, 'requests': 2}
+    assert UsageTally().summary() is None
+
+    factory = FakeFactory([('text', '好')])
+    service, store, canvas_id, session_id = make_service(repository, factory)
+    run_turns(service, session_id, ['你好'])
+    finished = next(m['content'] for m in store.list_messages(session_id) if m['content']['kind'] == 'run_finished')
+    assert finished['usage'] == {'input': 120, 'cacheRead': 30000, 'cacheWrite': 1880, 'output': 40, 'requests': 1}

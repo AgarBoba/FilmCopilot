@@ -1,4 +1,4 @@
-import type { AgentEvent } from './agentApi';
+import type { AgentEvent, TokenUsage } from './agentApi';
 
 export interface Turn {
   key: string;
@@ -38,6 +38,32 @@ export function groupTurns(events: AgentEvent[]): Turn[] {
 /** Credits the agent's turns used for talking (generations are charged separately). */
 export function turnCredits(events: AgentEvent[]): number {
   return events.reduce((sum, event) => sum + (event.kind === 'run_finished' ? event.credits ?? 0 : 0), 0);
+}
+
+/** Token usage summed over the turn's runs (null when none was reported). */
+export function turnUsage(events: AgentEvent[]): TokenUsage | null {
+  let total: TokenUsage | null = null;
+  for (const event of events) {
+    if (event.kind !== 'run_finished' || !event.usage) continue;
+    total ??= { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, requests: 0 };
+    for (const key of ['input', 'cacheRead', 'cacheWrite', 'output', 'requests'] as const) total[key] += event.usage[key] ?? 0;
+  }
+  return total;
+}
+
+/** 91234 → "9.1万", 3000 → "3千", 512 → "512". */
+function tokens(value: number): string {
+  if (value >= 10_000) return `${Math.round(value / 1000) / 10}万`;
+  if (value >= 1000) return `${Math.round(value / 100) / 10}千`;
+  return String(value);
+}
+
+/** The cost breakdown under a turn's credits, e.g. "缓存命中 92%\n读缓存 9.1万 · 写缓存 3千 · 新输入 500 · 输出 400 · 调用 4 次". */
+export function usageText(usage: TokenUsage): string {
+  const read = usage.input + usage.cacheRead + usage.cacheWrite;
+  const hit = read ? Math.round((usage.cacheRead / read) * 100) : 0;
+  return `缓存命中 ${hit}%\n读缓存 ${tokens(usage.cacheRead)} · 写缓存 ${tokens(usage.cacheWrite)} · `
+    + `新输入 ${tokens(usage.input)} · 输出 ${tokens(usage.output)} · 调用 ${usage.requests} 次`;
 }
 
 /** "10:32" today, "10/8" before. */

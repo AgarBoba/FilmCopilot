@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { ChatsIcon, CloseIcon, MemoryIcon, PlusIcon, SendIcon, ShieldIcon, SparkIcon, StopIcon, UndoIcon } from '../canvas/icons';
-import { agentApi, type AgentEvent, type AgentSkill, type PermissionMode } from './agentApi';
+import { agentApi, type AgentEvent, type AgentSkill, type PermissionMode, type TokenUsage } from './agentApi';
 import { AgentMessage } from './AgentMessage';
 import { pendingConfirmations, undoableRuns, useAgentStore, type SessionFilter } from './agentStore';
 import { useCommentStore } from '../comments/commentStore';
@@ -9,7 +9,7 @@ import { agentBusy, describeAnchor, pinState, STATUS_LABELS, type CanvasComment 
 import { Markdown } from './Markdown';
 import { SessionList } from './SessionList';
 import { AgentAvatar, type AgentMood } from './AgentAvatar';
-import { clock, contextUsage, groupTurns, turnCredits } from './turns';
+import { clock, contextUsage, groupTurns, turnCredits, turnUsage, usageText } from './turns';
 import { formatUsage } from '../credits/creditStore';
 import { MemoryView } from './MemoryView';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
@@ -492,6 +492,7 @@ export function AgentPanel({
           return (
             <AgentTurn key={turn.key} time={turn.time} model={labelOf(turn.model)}
               credits={turnCredits(turn.items.map((item) => item.event))}
+              usage={turnUsage(turn.items.map((item) => item.event))}
               mood={last ? liveMood : 'idle'}>
               {items}
               {last && tail}
@@ -691,8 +692,9 @@ function matchSkills(skills: AgentSkill[], query: string): AgentSkill[] {
 
 
 /** One stretch of the agent's messages: its face, name, model and time, then the content indented. */
-function AgentTurn({ time, model, mood, credits = 0, children }: {
-  time: string | null; model: string | null; mood: AgentMood; credits?: number; children: React.ReactNode;
+function AgentTurn({ time, model, mood, credits = 0, usage = null, children }: {
+  time: string | null; model: string | null; mood: AgentMood; credits?: number; usage?: TokenUsage | null;
+  children: React.ReactNode;
 }) {
   return (
     <div className="agent-turn is-agent">
@@ -702,7 +704,11 @@ function AgentTurn({ time, model, mood, credits = 0, children }: {
         {model && <span className="agent-turn-model">{model}</span>}
         {time && <span className="agent-turn-time">{clock(time)}</span>}
         {credits > 0 && (
-          <span className="agent-turn-credits" data-tooltip="这一轮对话实际用的积分（生成另算；余额按整数扣，零头攒着下次一起扣）" data-tooltip-side="bottom">
+          <span
+            className="agent-turn-credits"
+            data-tooltip={`这一轮对话实际用的积分（生成另算）${usage ? `\n${usageText(usage)}` : ''}`}
+            data-tooltip-side="bottom"
+          >
             {formatUsage(credits)} 积分
           </span>
         )}

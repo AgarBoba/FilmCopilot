@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { turnCredits } from '../agent/turns';
+import { turnCredits, turnUsage, usageText } from '../agent/turns';
 import { CreditsButton } from '../credits/CreditsButton';
 import { formatUsage, generationPrice, useCreditStore } from '../credits/creditStore';
 import { FALLBACK_MODELS } from '../models/modelStore';
@@ -92,5 +92,16 @@ describe('credits (积分)', () => {
     expect(dialog).toHaveTextContent('−0.4');
     expect(dialog).toHaveTextContent('−0.5');
     expect(dialog.querySelector('.credits-row-delta')).toHaveAttribute('data-tooltip', '实际用量 0.4，这次从余额扣 1');
+  });
+
+  it('breaks a turn down into cache reads, cache writes, fresh input and output', () => {
+    const usage = turnUsage([
+      { kind: 'run_finished', usage: { input: 300, cacheRead: 61000, cacheWrite: 3000, output: 250, requests: 3 } },
+      { kind: 'run_finished', usage: { input: 200, cacheRead: 30000, cacheWrite: 0, output: 150, requests: 1 } },
+      { kind: 'run_finished' },
+    ] as never);
+    expect(usage).toEqual({ input: 500, cacheRead: 91000, cacheWrite: 3000, output: 400, requests: 4 });
+    expect(usageText(usage!)).toBe('缓存命中 96%\n读缓存 9.1万 · 写缓存 3千 · 新输入 500 · 输出 400 · 调用 4 次');
+    expect(turnUsage([{ kind: 'run_finished' }] as never)).toBeNull();
   });
 });

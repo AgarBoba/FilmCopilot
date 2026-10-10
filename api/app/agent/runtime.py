@@ -455,6 +455,7 @@ class AgentService:
 
         status, cost, error_text = 'completed', None, None
         context_tokens, context_window = None, None
+        usage = UsageTally()
         try:
             client = await self._client(runtime, model)
             if compact:
@@ -476,6 +477,7 @@ class AgentService:
                         error_text = explain_error('401 authentication', auth)
                         await client.interrupt()
                 elif isinstance(message, AssistantMessage):
+                    usage.add(message)
                     if message.usage and not message.parent_tool_use_id:
                         context_tokens = context_size(message.usage) or context_tokens
                     if message.error:
@@ -522,6 +524,9 @@ class AgentService:
                 'status': status, 'costUsd': run_cost, 'model': model, 'auth': auth,
                 # credits: what this turn really used; charged: whole credits taken from the balance now.
                 'credits': used, 'charged': taken, 'balance': balance, 'costTotal': cost,
+                # Tokens over all of this turn's model requests: what was read from the cache, written
+                # to it, read fresh, and written by the model (for the panel's cost breakdown).
+                'usage': usage.summary(),
                 # How full the model's context was on its last request (for the panel's ring).
                 'contextTokens': context_tokens, 'contextWindow': context_window or DEFAULT_CONTEXT_WINDOW,
             }, role='system_event')
@@ -621,6 +626,34 @@ class AgentService:
 
 
 DEFAULT_CONTEXT_WINDOW = 1_000_000  # Opus / Sonnet / Haiku 5.5; the CLI's own figure wins when it reports one
+
+
+class UsageTally:
+    """Adds up token usage over a turn's model requests. The CLI sends one AssistantMessage per
+    content block, all carrying the same request's usage, so each request is counted once."""
+
+    KEYS = (('input_tokens', 'input'), ('cache_read_input_tokens', 'cacheRead'),
+            ('cache_creation_input_tokens', 'cacheWrite'), ('output_tokens', 'output'))
+
+    def __init__(self) -> None:
+        self.totals = {name: 0 for _, name in self.KEYS}
+        self.seen: set[str] = set()
+
+    def add(self, message: Any) -> None:
+        usage = getattr(message, 'usage', None)
+        if not usage:
+            return
+        key = getattr(message, 'message_id', None) or f'anon-{len(self.seen)}'
+        if key in self.seen:
+            return
+        self.seen.add(key)
+        for source, name in self.KEYS:
+            self.totals[name] += int(usage.get(source) or 0)
+
+    def summary(self) -> dict[str, int] | None:
+        if not self.seen:
+            return None
+        return {**self.totals, 'requests': len(self.seen)}
 
 
 def context_size(usage: dict[str, Any]) -> int | None:
