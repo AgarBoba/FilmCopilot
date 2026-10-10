@@ -8,6 +8,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..crop import describe_source
 from ..commands import CanvasCommandService
 from ..config import resolve_project_path
 from ..domain import DomainError
@@ -124,6 +125,8 @@ class CanvasTools:
                 job = self._latest_job(snapshot, node.id)
                 if job:
                     parts.append(f"最近生成：{job['status']}")
+            if origin := describe_source(data):
+                parts.append(origin)
             if text:
                 parts.append(('文字' if node.nodeType == 'note' else 'Prompt') + f'：{text}')
             if upstream[node.id]:
@@ -205,6 +208,8 @@ class CanvasTools:
             if job:
                 error = f"，原因：{str(job['error'])[:200]}" if job.get('error') else ''
                 lines.append(f"最近一次生成：{job['status']}{error}")
+        if origin := describe_source(data):
+            lines.append(origin)
         refs = [edge.source for edge in snapshot.edges if edge.target == node.id]
         if refs:
             lines.append('上游：' + '、'.join(f"{KIND_LABELS[kinds[ref]]}「{titles[ref]}」[{ref}]" for ref in refs))

@@ -3757,3 +3757,27 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .agent-context-track { fill: none; stroke: color-mix(in srgb, var(--text-muted) 30%, transparent); stroke-width: 2; }
 .agent-context-fill { fill: none; stroke: var(--text-muted); stroke-width: 2; stroke-linecap: round; }
 .agent-context.is-high .agent-context-fill { stroke: var(--pin-waiting, #f5b041); }
+
+/* Image crop: fixed window; coordinates refer to original oriented pixels. */
+.image-crop-backdrop { position: fixed; inset: 0; z-index: 1500; display: grid; place-items: center; background: #0009; padding: 24px; }
+.image-crop-dialog { width: min(880px, 100%); max-height: calc(100dvh - 48px); overflow: auto; color: var(--text-primary); background: var(--node-bg); border: 1px solid color-mix(in srgb, var(--text-muted) 25%, transparent); border-radius: 20px; box-shadow: 0 24px 80px #0006; }
+.image-crop-dialog header { padding: 18px 24px; display: flex; align-items: center; justify-content: space-between; }
+.image-crop-dialog header div { display: flex; gap: 14px; align-items: baseline; min-width: 0; }
+.image-crop-dialog header span { color: var(--text-muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.image-crop-dialog button, .image-crop-dialog select { color: var(--text-primary); background: color-mix(in srgb, var(--text-muted) 10%, transparent); border: 1px solid color-mix(in srgb, var(--text-muted) 25%, transparent); border-radius: 9px; padding: 8px 14px; cursor: pointer; font: inherit; font-size: 13px; }
+.image-crop-dialog button:disabled, .image-crop-dialog select:disabled { opacity: .4; cursor: default; }
+.image-crop-dialog button:focus-visible, .image-crop-dialog select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.image-crop-dialog header button { padding: 7px; display: flex; }
+.image-crop-workspace { display: flex; justify-content: center; align-items: center; min-height: 120px; height: min(52dvh, 480px); padding: 16px 24px; overflow: hidden; background: #080a0f; }
+.image-crop-stage { position: relative; max-width: 100%; max-height: 100%; width: auto; height: 100%; touch-action: none; user-select: none; overflow: hidden; }
+.image-crop-stage img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.image-crop-selection { position: absolute; border: 1px solid #fff; box-shadow: 0 0 0 9999px #0008; cursor: move; touch-action: none; }
+.image-crop-grid { pointer-events: none; position: absolute; inset: 0; background: linear-gradient(to right, transparent 33.1%, #fff5 33.2%, #fff5 33.4%, transparent 33.5%, transparent 66.5%, #fff5 66.6%, #fff5 66.8%, transparent 66.9%), linear-gradient(to bottom, transparent 33.1%, #fff5 33.2%, #fff5 33.4%, transparent 33.5%, transparent 66.5%, #fff5 66.6%, #fff5 66.8%, transparent 66.9%); }
+.image-crop-handle { position: absolute; width: 12px; height: 12px; background: #fff; border: 1px solid #31333b; border-radius: 2px; transform: translate(-50%, -50%); }
+.crop-nw { left: 0; top: 0; cursor: nwse-resize; }.crop-n { left: 50%; top: 0; cursor: ns-resize; }.crop-ne { left: 100%; top: 0; cursor: nesw-resize; }.crop-e { left: 100%; top: 50%; cursor: ew-resize; }.crop-se { left: 100%; top: 100%; cursor: nwse-resize; }.crop-s { left: 50%; top: 100%; cursor: ns-resize; }.crop-sw { left: 0; top: 100%; cursor: nesw-resize; }.crop-w { left: 0; top: 50%; cursor: ew-resize; }
+.image-crop-options { padding: 16px 24px 0; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.image-crop-options label { display: flex; align-items: center; gap: 10px; }.image-crop-options span { color: var(--text-muted); }
+.image-crop-hint { color: var(--text-muted); font-size: 12px; padding: 0 24px; }
+.image-crop-error { color: #e76565; font-size: 13px; padding: 0 24px; }
+.image-crop-dialog footer { padding: 12px 24px 20px; display: flex; justify-content: space-between; }.image-crop-dialog footer div { display: flex; gap: 10px; }
+.image-crop-dialog .image-crop-apply { background: var(--accent); color: #fff; border-color: transparent; }

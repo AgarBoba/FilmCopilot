@@ -8,7 +8,7 @@ import { parseTime } from '../agent/SessionList';
 import { useCanvasStore } from '../state/canvasStore';
 
 const SOURCES: Record<string, string> = {
-  generated: '生成', uploaded: '上传', restored: '切回旧版', copied: '复制自其他节点', edited: '其他',
+  cropped: '裁剪', generated: '生成', uploaded: '上传', restored: '切回旧版', copied: '复制自其他节点', edited: '其他',
 };
 
 interface VersionHistoryProps {

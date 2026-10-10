@@ -1,3 +1,4 @@
+from pathlib import Path
 from math import isfinite
 from typing import Any
 from uuid import uuid4
@@ -36,9 +37,11 @@ def diff_canvas_state(before: dict, after: dict) -> list[tuple[str, str, Any, An
 
 
 class CanvasCommandService:
-    def __init__(self, repository: CanvasRepository, events: EventStore) -> None:
+    def __init__(self, repository: CanvasRepository, events: EventStore, data_dir: Path | None = None) -> None:
         self.repository = repository
         self.events = events
+        from .config import Settings
+        self.data_dir = data_dir if data_dir is not None else Settings.from_env().data_dir
 
     def execute(self, canvas_id: str, envelope: CommandEnvelope) -> CommandResult:
         cached = self.repository.find_command(canvas_id, envelope.idempotencyKey)
@@ -73,6 +76,7 @@ class CanvasCommandService:
     def _dispatch(self, canvas_id: str, envelope: CommandEnvelope) -> dict[str, Any]:
         handlers = {
             'create_node': self._create_node,
+            'crop_image': self._crop_image,
             'update_node': self._update_node,
             'move_nodes': self._move_nodes,
             'delete_node': self._delete_node,
@@ -91,6 +95,10 @@ class CanvasCommandService:
         if handler is None:
             raise DomainError('UNKNOWN_COMMAND', f'Unknown canvas command {envelope.command}')
         return handler(canvas_id, envelope.payload)
+
+    def _crop_image(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        from .crop import crop_image
+        return crop_image(self.repository, canvas_id, payload, self.data_dir)
 
     def _create_node(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         node_type = payload.get('nodeType')

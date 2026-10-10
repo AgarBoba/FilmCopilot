@@ -35,7 +35,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
     NodeVersions(database).dedupe()
     repository = CanvasRepository(database)
     event_store = EventStore(database)
-    command_service = CanvasCommandService(repository, event_store)
+    command_service = CanvasCommandService(repository, event_store, settings.data_dir)
     asset_service = AssetService(settings, database, repository)
 
     app = FastAPI(title="Film Copilot", lifespan=lifespan)

@@ -86,6 +86,7 @@ export const api = {
     );
     const eventTypes = [
       'canvas.create_node',
+      'canvas.crop_image',
       'canvas.update_node',
       'canvas.delete_node',
       'canvas.delete_elements',

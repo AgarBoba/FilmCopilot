@@ -20,7 +20,7 @@ from typing import Any
 
 from .db import Database
 
-SOURCES = ('generated', 'uploaded', 'restored', 'copied', 'edited')
+SOURCES = ('generated', 'uploaded', 'restored', 'copied', 'edited', 'cropped')
 
 _source: ContextVar[dict[str, Any] | None] = ContextVar('node_version_source', default=None)
 

@@ -6,6 +6,7 @@ import { downloadAsset } from './downloadAsset';
 import { MediaViewer } from './MediaViewer';
 import { NodeMenu } from './NodeMenu';
 import { VersionHistory } from './VersionHistory';
+import { ImageCropDialog } from './ImageCropDialog';
 
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -26,6 +27,8 @@ interface MediaNodeActionsProps {
 /** The "⋯" menu for image/video nodes: upload, download, view full screen. */
 export function MediaNodeActions({ kind, nodeId, assetUrl, title, busy, onUpload, onDuplicate }: MediaNodeActionsProps) {
   const [viewing, setViewing] = useState(false);
+  const [cropping, setCropping] = useState(false);
+  const closeCrop = useCallback(() => setCropping(false), []);
   const [history, setHistory] = useState(false);
   const closeHistory = useCallback(() => setHistory(false), []);
   const label = KIND_LABELS[kind];
@@ -50,6 +53,12 @@ export function MediaNodeActions({ kind, nodeId, assetUrl, title, busy, onUpload
             onSelect: () => onUpload?.(),
             disabledReason: busy ? '生成中，暂时不能上传' : undefined,
           },
+          ...(kind === 'image' && nodeId ? [{
+            key: 'crop', label: '裁剪',
+            icon: <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M6 3v13a2 2 0 0 0 2 2h13M3 6h13a2 2 0 0 1 2 2v13" /></svg>,
+            onSelect: () => setCropping(true),
+            disabledReason: busy ? '生成中，暂时不能裁剪' : assetUrl ? undefined : '还没有图片，无法裁剪',
+          }] : []),
           {
             key: 'download',
             label: '下载',
@@ -80,6 +89,7 @@ export function MediaNodeActions({ kind, nodeId, assetUrl, title, busy, onUpload
           },
         ]}
       />
+      {cropping && nodeId && <ImageCropDialog nodeId={nodeId} title={title} onClose={closeCrop} />}
       {history && nodeId && <VersionHistory nodeId={nodeId} kind={kind} title={title} onClose={closeHistory} />}
       {viewing && assetUrl && (
         <MediaViewer kind={kind} url={assetUrl} title={title} onDownload={download} onClose={closeViewer} />
