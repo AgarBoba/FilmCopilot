@@ -18,6 +18,8 @@ A model file:
     parameters    list of {key, label, type, field, default, options?|min?|max?}
                   type: enum | boolean | integer | number | string
     fixedInputs   optional constant provider inputs
+    credits       optional price per generation (simulated credits, see credits.py):
+                  a number, or {"base": N, "multiply": {paramKey: {value: factor}}}
 """
 from dataclasses import dataclass, field
 import json
@@ -99,6 +101,7 @@ class ModelSpec:
     fixed_inputs: dict[str, Any] = field(default_factory=dict)
     default: bool = False
     source: str = ''
+    credits: dict[str, Any] | None = None  # price spec (credits.py); None = the kind's default
 
     def default_parameters(self) -> dict[str, Any]:
         return {parameter.key: parameter.default for parameter in self.parameters}
@@ -130,7 +133,13 @@ class ModelSpec:
             'providerModel': self.provider_model, 'description': self.description, 'default': self.default,
             'maxImages': self.max_images, 'maxVideos': self.max_videos,
             'parameters': [parameter.public() for parameter in self.parameters],
+            'credits': self.price(),
         }
+
+    def price(self) -> dict[str, Any]:
+        """The price spec with the default filled in, for the canvas to show before generating."""
+        from .credits import DEFAULT_PRICE
+        return self.credits or {'base': DEFAULT_PRICE.get(self.kind, 5), 'multiply': {}}
 
 
 def _require(data: dict[str, Any], key: str, kind: type | tuple[type, ...], where: str) -> Any:
@@ -191,6 +200,13 @@ def parse_model(data: dict[str, Any], source: str = '<inline>') -> ModelSpec:
         if parameter.coerce(parameter.default)[1]:
             raise ModelFileError(f'{at}: default 不在允许的取值里')
         parameters.append(parameter)
+    from .credits import price_spec
+    credits = price_spec(data.get('credits'), where)
+    if credits:
+        known = {parameter.key for parameter in parameters}
+        unknown = [key for key in credits['multiply'] if key not in known]
+        if unknown:
+            raise ModelFileError(f'{where}: credits.multiply 里的 {", ".join(unknown)} 不是这个模型的参数')
     return ModelSpec(
         id=model_id,
         label=str(data.get('label') or model_id),
@@ -205,6 +221,7 @@ def parse_model(data: dict[str, Any], source: str = '<inline>') -> ModelSpec:
         fixed_inputs=dict(data.get('fixedInputs') or {}),
         default=bool(data.get('default')),
         source=source,
+        credits=credits,
     )
 
 

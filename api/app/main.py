@@ -15,7 +15,7 @@ from .agent.config import AgentConfig
 from .agent.runtime import AgentService
 from .agent.store import AgentStore
 from .agent.comments import CommentService
-from .routes import agent, assets, canvases, comments, events, memories, models
+from .routes import agent, assets, canvases, comments, credits, events, memories, models
 
 
 @asynccontextmanager
@@ -61,6 +61,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
             'ALREADY_UNDONE': 409,
             'AGENT_NOT_CONFIGURED': 503,
             'COMMENT_BUSY': 409,
+            'INSUFFICIENT_CREDITS': 402,
         }.get(error.code, 422)
         return JSONResponse(
             status_code=status_code,
@@ -78,6 +79,7 @@ def create_app(settings: Settings | None = None, agent_config: AgentConfig | Non
     app.include_router(memories.router)
     app.include_router(comments.router)
     app.include_router(models.router)
+    app.include_router(credits.router)
 
     return app
 

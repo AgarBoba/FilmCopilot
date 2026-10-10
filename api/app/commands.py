@@ -326,6 +326,11 @@ class CanvasCommandService:
             raise DomainError('NO_MODEL', f"没有可用的{'图片' if node_type == 'image' else '视频'}模型：检查 models/ 目录")
         snapshot['model'] = model.id
         snapshot['parameters'], _ = model.resolve_parameters(snapshot.get('parameters'))
+        from .credits import Credits, generation_price
+        credits = Credits(self.repository.database)
+        price = generation_price(model, snapshot['parameters'])
+        credits.require(price, f'生成「{model.label}」')
+        snapshot['credits'] = price
         provider = f'{model.provider}:{model.provider_model}'
         job_id = self.repository.create_generation_job(
             canvas_id,
@@ -338,7 +343,10 @@ class CanvasCommandService:
                 'references': snapshot['references'],
             },
         )
-        return {'jobId': job_id, 'status': 'queued', 'provider': provider, 'targetNodeId': node_id}
+        title = self.repository.node_snapshot(canvas_id, node_id)['data'].get('title') or ''
+        balance = credits.charge(price, 'generation', f'{model.label}' + (f' · {title}' if title else ''), ref=f'job:{job_id}')
+        return {'jobId': job_id, 'status': 'queued', 'provider': provider, 'targetNodeId': node_id,
+                'credits': price, 'balance': balance}
 
     def _undo_agent_run(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         from .agent.undo import undo_agent_run

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { useDebouncedDraft } from './useDebouncedDraft';
+import { generationPrice, useCreditStore } from '../credits/creditStore';
 import {
   modelForNode,
   modelsOfKind,
@@ -53,6 +54,9 @@ export function PromptComposer({
   const { draft, setDraft, flush } = useDebouncedDraft(prompt, onPromptChange);
   const setValue = (key: string, value: unknown) => onParametersChange({ ...values, [key]: value });
   const summary = model ? summarize(model.parameters, values) : '';
+  const price = generationPrice(model, values);
+  const balance = useCreditStore((state) => state.balance);
+  const short = price !== null && balance !== null && balance < price;
   const [open, setOpen] = useState(false);
   // The note hint can be closed; it comes back if the number of connected notes changes.
   const [noteHintHiddenFor, setNoteHintHiddenFor] = useState<number | null>(null);
@@ -140,7 +144,9 @@ export function PromptComposer({
         )}
         <button
           type="button"
-          className="prompt-generate"
+          className={`prompt-generate ${short ? 'is-short' : ''}`}
+          aria-label="生成"
+          data-tooltip={price === null ? undefined : short ? `要 ${price} 积分，只剩 ${balance}` : `消耗 ${price} 积分`}
           disabled={disabled}
           onClick={(event) => {
             event.stopPropagation();
@@ -150,6 +156,7 @@ export function PromptComposer({
           }}
         >
           生成
+          {price !== null && <span className="prompt-cost">{price}</span>}
         </button>
         {open && model && (
           <div className="prompt-popover nowheel" role="dialog" aria-label="生成参数">

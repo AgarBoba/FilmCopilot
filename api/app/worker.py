@@ -171,6 +171,10 @@ class Worker:
             payload = {'jobId': job['id'], 'status': status}
             if error:
                 payload['error'] = error
+            if status == 'failed':
+                from .credits import Credits
+                Credits(self.repository.database).refund_job(job['id'], '生成失败')
+                payload['refunded'] = True
             self.events.append(job['canvas_id'], revision, f'generation.{status}', payload)
 
 

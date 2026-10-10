@@ -14,11 +14,12 @@ from typing import Any
 
 from ..commands import CanvasCommandService
 from ..config import PROJECT_ROOT
+from ..credits import Credits, chat_price
 from ..domain import DomainError
 from ..repositories import CanvasRepository
 from ..schemas import CommandEnvelope
 from .canvas_tools import CanvasTools, ToolResult
-from .config import AgentConfig, explain_error
+from .config import MODELS, AgentConfig, explain_error
 from .mcp_server import MEMORY_TOOLS, READ_ONLY, build_handlers, build_server, qualified
 from .memory import MemoryStore
 from .memory_tools import MemoryTools
@@ -69,6 +70,8 @@ class SessionRuntime:
     handlers: dict[str, Any] = field(default_factory=dict)
     model: str | None = None  # model the live client is using
     skill_ids: tuple[str, ...] = ()  # skills the live client was started with
+    # The SDK reports the live client's running total cost; a turn costs the difference.
+    cost_total: float = 0.0
 
 
 class AgentService:
@@ -125,6 +128,7 @@ class AgentService:
         runtime = self._runtime(session_id)
         if runtime.task is not None and not runtime.task.done():
             raise DomainError('RUN_ACTIVE', 'Agent 还在处理上一条消息，等它结束或先停止')
+        Credits(self.repository.database).require(0, '和 Agent 对话')
 
         session = self.store.get_session(session_id)
         if not session.get('title'):
@@ -326,6 +330,7 @@ class AgentService:
         await client.connect()
         runtime.client = client
         runtime.model = model
+        runtime.cost_total = 0.0
         runtime.skill_ids = skill_ids
         return client
 
@@ -448,8 +453,10 @@ class AgentService:
                 self._emit(runtime.session_id, run_id, 'error', {'message': error_text}, role='system_event')
             self.broker.cancel_run(run_id)
             self.store.set_run_status(run_id, status)
+            run_cost, charged, balance = self._charge_turn(runtime, run_id, model, cost)
             self._emit(runtime.session_id, run_id, 'run_finished', {
-                'status': status, 'costUsd': cost, 'model': model, 'auth': auth,
+                'status': status, 'costUsd': run_cost, 'model': model, 'auth': auth,
+                'credits': charged, 'balance': balance,
                 # How full the model's context was on its last request (for the panel's ring).
                 'contextTokens': context_tokens, 'contextWindow': context_window or DEFAULT_CONTEXT_WINDOW,
             }, role='system_event')
@@ -457,6 +464,26 @@ class AgentService:
             runtime.run_id = None
             if status in ('completed', 'stopped'):
                 self.schedule_summary(runtime.session_id, run_id)
+
+    def _charge_turn(
+        self, runtime: SessionRuntime, run_id: str, model: str, total_cost: float | None,
+    ) -> tuple[float | None, int, int | None]:
+        """(this turn's cost in USD, credits charged, balance after). Never fails the turn."""
+        if total_cost is None:
+            return None, 0, None
+        run_cost = total_cost - runtime.cost_total if total_cost >= runtime.cost_total else total_cost
+        runtime.cost_total = total_cost
+        amount = chat_price(run_cost)
+        if not amount:
+            return run_cost, 0, None
+        label = dict(MODELS).get(model, model)
+        try:
+            balance = Credits(self.repository.database).charge(
+                amount, 'chat', f'Agent 对话 · {label}', ref=f'run:{run_id}', allow_negative=True)
+        except Exception:
+            log.exception('charging agent turn %s failed', run_id)
+            return run_cost, 0, None
+        return run_cost, amount, balance
 
     # ------------------------------------------------------------ summaries
 

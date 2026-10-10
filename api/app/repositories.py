@@ -389,6 +389,15 @@ class CanvasRepository:
             self._track_version(canvas_id, node_id, data, previous_asset)
 
     def delete_node(self, canvas_id: str, node_id: str) -> None:
+        # Its jobs go with it (cascade): ones that never started get their credits back.
+        queued = self._fetchall(
+            "SELECT id FROM generation_jobs WHERE canvas_id = ? AND target_node_id = ? AND status = 'queued'",
+            (canvas_id, node_id),
+        )
+        if queued:
+            from .credits import Credits
+            for row in queued:
+                Credits(self.database).refund_job(row['id'], '删除节点')
         cursor = self._execute(
             'DELETE FROM canvas_nodes WHERE canvas_id = ? AND id = ?', (canvas_id, node_id)
         )

@@ -8,6 +8,7 @@ generation worker or another run) is left alone and reported as skipped.
 """
 from typing import Any
 
+from ..credits import Credits
 from ..domain import DomainError
 from ..repositories import CanvasRepository
 from ..versions import version_source
@@ -82,7 +83,8 @@ def undo_agent_run(repository: CanvasRepository, canvas_id: str, run_id: str) ->
         pairs.add(pair)
         restored['restoredEdges'].append(entity_id)
 
-    # Generations that have not started yet are cancelled; money already spent cannot be refunded.
+    # Generations that have not started yet are cancelled and their credits given back;
+    # money already spent cannot be refunded.
     cancelled = []
     for job_id in job_ids:
         cursor = repository._execute(
@@ -92,6 +94,7 @@ def undo_agent_run(repository: CanvasRepository, canvas_id: str, run_id: str) ->
         )
         if cursor.rowcount:
             cancelled.append(job_id)
+            Credits(repository.database).refund_job(job_id, '撤销')
 
     repository._execute(
         "UPDATE agent_runs SET status = 'undone', finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP) "

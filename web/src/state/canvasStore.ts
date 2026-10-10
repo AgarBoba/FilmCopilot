@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import type { Edge, Node } from '@xyflow/react';
-
 import { ApiError, api } from '../api/client';
 import type {
   CanvasEvent,
@@ -9,6 +8,12 @@ import type {
   CommandEnvelope,
   CommandResult,
 } from '../domain/types';
+import { useCreditStore } from '../credits/creditStore';
+
+/** Events that charge or give back credits (generations queued, failed, cancelled with their node). */
+const CREDIT_EVENTS = new Set([
+  'canvas.start_generation', 'generation.failed', 'canvas.undo_agent_run', 'canvas.delete_node', 'canvas.delete_elements',
+]);
 
 
 export interface CanvasState {
@@ -119,6 +124,8 @@ export function createCanvasStore(initialSnapshot: CanvasSnapshot | null = null)
     },
 
     applyEvent(event) {
+      // Before the revision check: our own commands' events arrive after we already have their revision.
+      if (CREDIT_EVENTS.has(event.eventType)) void useCreditStore.getState().load();
       const snapshot = get().snapshot;
       if (!snapshot || event.canvasId !== snapshot.canvasId || event.revision <= snapshot.revision) {
         return;

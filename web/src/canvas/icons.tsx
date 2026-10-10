@@ -126,3 +126,7 @@ export const ShieldIcon = ({ fill = 'none', half = false, ...p }: IconProps & { 
   </Icon>
 );
 export const StickyIcon = (p: IconProps) => <Icon {...p}><path d="M5 4h14v11l-5 5H5z" /><path d="M14 20v-5h5" /></Icon>;
+/** Credits (积分): a coin with a spark. */
+export const CoinIcon = (p: IconProps) => (
+  <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5 13.3 10.7 16.5 12l-3.2 1.3L12 16.5l-1.3-3.2L7.5 12l3.2-1.3z" /></Icon>
+);

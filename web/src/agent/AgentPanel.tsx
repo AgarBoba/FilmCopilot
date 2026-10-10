@@ -9,7 +9,7 @@ import { agentBusy, describeAnchor, pinState, STATUS_LABELS, type CanvasComment 
 import { Markdown } from './Markdown';
 import { SessionList } from './SessionList';
 import { AgentAvatar, type AgentMood } from './AgentAvatar';
-import { clock, contextUsage, groupTurns } from './turns';
+import { clock, contextUsage, groupTurns, turnCredits } from './turns';
 import { MemoryView } from './MemoryView';
 import { ReferenceStrip, type NodeReference } from '../nodes/ReferenceStrip';
 
@@ -490,6 +490,7 @@ export function AgentPanel({
           }
           return (
             <AgentTurn key={turn.key} time={turn.time} model={labelOf(turn.model)}
+              credits={turnCredits(turn.items.map((item) => item.event))}
               mood={last ? liveMood : 'idle'}>
               {items}
               {last && tail}
@@ -689,8 +690,8 @@ function matchSkills(skills: AgentSkill[], query: string): AgentSkill[] {
 
 
 /** One stretch of the agent's messages: its face, name, model and time, then the content indented. */
-function AgentTurn({ time, model, mood, children }: {
-  time: string | null; model: string | null; mood: AgentMood; children: React.ReactNode;
+function AgentTurn({ time, model, mood, credits = 0, children }: {
+  time: string | null; model: string | null; mood: AgentMood; credits?: number; children: React.ReactNode;
 }) {
   return (
     <div className="agent-turn is-agent">
@@ -699,6 +700,11 @@ function AgentTurn({ time, model, mood, children }: {
         <span className="agent-turn-name">Agent</span>
         {model && <span className="agent-turn-model">{model}</span>}
         {time && <span className="agent-turn-time">{clock(time)}</span>}
+        {credits > 0 && (
+          <span className="agent-turn-credits" data-tooltip="这一轮对话用的积分（生成另算）" data-tooltip-side="bottom">
+            {credits} 积分
+          </span>
+        )}
       </div>
       <div className="agent-turn-body">{children}</div>
     </div>

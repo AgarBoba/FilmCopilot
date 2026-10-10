@@ -8,6 +8,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..credits import price_text
 from ..crop import describe_source
 from ..commands import CanvasCommandService
 from ..config import resolve_project_path
@@ -178,6 +179,7 @@ class CanvasTools:
                 state = f'（不可用：缺少 {", ".join(missing)}）' if missing else ''
             default = '，默认' if spec.default else ''
             lines.append(f'- [{spec.id}] {spec.label}：{KIND_LABELS[spec.kind]}模型{default}{state}。{spec.description}')
+            lines.append(f'  价格：{price_text(spec)}')
             refs = [f'最多 {spec.max_images} 张参考图' if spec.max_images else '不接受参考图']
             if spec.kind == 'video':
                 refs.append(f'最多 {spec.max_videos} 段参考视频' if spec.max_videos else '不接受参考视频')
@@ -532,6 +534,7 @@ class CanvasTools:
         if (busy := self._busy_error(node_ids)):
             return busy
         started: list[str] = []
+        spent, balance = 0, None
         for node_id in node_ids:
             # What gets generated: the node's own prompt/parameters/inputs and its upstream content.
             deps = {node_id: {'gone', 'prompt', 'parameters', 'inputs'}}
@@ -549,10 +552,13 @@ class CanvasTools:
                 return ToolResult(prefix + result.text, is_error=True, touched=started)
             self.store.count_generation(self.run_id)
             started.append(node_id)
+            spent += int(result.get('credits') or 0)
+            balance = result.get('balance', balance)
         titles = self._titles(node_ids)
+        cost = f'扣了 {spent} 积分，还剩 {balance}。' if spent and balance is not None else ''
         return ToolResult(
             '已开始生成：' + '、'.join(f'「{titles[i]}」' for i in node_ids)
-            + '。用 wait_for_generation 等待并查看结果。',
+            + f'。{cost}用 wait_for_generation 等待并查看结果。',
             touched=node_ids, summary=f'生成 {len(node_ids)} 个节点',
         )
 

@@ -3912,3 +3912,137 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .sticky-menu button:hover { background: var(--chrome-hover); }
 .sticky-menu button.is-danger { color: var(--pin-failed, #e5484d); }
 .sticky-menu kbd { color: var(--text-muted); font: inherit; font-size: 11px; }
+
+/* ---------- Credits (积分, simulated): top-left pill + popover ---------- */
+
+.credits { position: relative; }
+.credits-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 11px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: var(--chrome-bg);
+  box-shadow: var(--chrome-shadow);
+  backdrop-filter: blur(16px);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.credits-pill svg { color: #e0a51b; }
+.credits-pill:hover, .credits-pill.is-open { background: color-mix(in srgb, var(--chrome-bg) 80%, var(--text-muted)); }
+.credits-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.credits-pill.is-low { color: #c27c0e; }
+.credits-pill.is-empty { color: #e5484d; border-color: color-mix(in srgb, #e5484d 45%, transparent); }
+.credits-pill.is-empty svg { color: #e5484d; }
+
+.credits-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: 280px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 14px;
+  color: var(--text-primary);
+  background: var(--node-bg);
+  box-shadow: var(--chrome-shadow);
+  animation: popover-in 160ms ease-out;
+}
+.credits-head { display: flex; align-items: center; gap: 6px; }
+.credits-title { font-size: 13px; font-weight: 600; }
+.credits-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--chrome-hover);
+  font-size: 11px;
+}
+.credits-balance {
+  margin: 6px 0 4px;
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.credits-balance.is-low { color: #c27c0e; }
+.credits-balance.is-empty { color: #e5484d; }
+.credits-hint { margin: 0 0 12px; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.credits-section-label { margin: 10px 0 6px; color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.credits-topup { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.credits-chip,
+.credits-custom button {
+  height: 30px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.credits-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.credits-custom { display: flex; gap: 6px; margin-top: 6px; }
+.credits-custom input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+}
+.credits-custom input:focus { outline: none; border-color: var(--accent); }
+.credits-custom button { padding: 0 12px; border-color: var(--accent); color: white; background: var(--accent); }
+.credits-chip:disabled, .credits-custom button:disabled { opacity: 0.5; cursor: not-allowed; }
+.credits-error { margin-top: 6px; color: #e5484d; font-size: 12px; }
+.credits-history { margin: 0; padding: 0; list-style: none; }
+.credits-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12px;
+}
+.credits-row + .credits-row { border-top: 1px solid color-mix(in srgb, var(--text-muted) 12%, transparent); }
+.credits-row-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.credits-row-time { color: var(--text-muted); font-size: 11px; }
+.credits-row-delta { min-width: 40px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.credits-row-delta.is-plus { color: #2f9e5a; }
+.credits-empty { color: var(--text-muted); font-size: 12px; }
+
+/* The generate button shows what it costs. */
+.prompt-composer .prompt-generate { display: inline-flex; align-items: center; gap: 5px; }
+.prompt-cost {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 15px;
+}
+.prompt-composer .prompt-generate.is-short .prompt-cost { color: #fff; background: #e5484d; }
+.agent-turn-credits {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* Top-left of the canvas, above the rail and comment pins. */
+.credits-dock { position: absolute; top: 16px; left: 16px; z-index: 25; }

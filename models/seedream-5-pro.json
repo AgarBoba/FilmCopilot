@@ -6,6 +6,7 @@
   "providerModel": "bytedance/seedream-5-pro",
   "default": true,
   "description": "字节跳动的图片模型：写实和商业摄影效果好，能参考最多 10 张图保持角色 / 产品一致，适合关键帧和产品图。",
+  "credits": { "base": 4, "multiply": { "size": { "1K": 0.75 } } },
   "inputs": {
     "prompt": "prompt",
     "images": { "field": "image_input", "max": 10 }

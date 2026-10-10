@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { ModelPrice } from '../credits/creditStore';
+
 /** One model from models/*.json, as served by GET /api/models. */
 export interface ModelParameter {
   key: string;
@@ -25,6 +27,8 @@ export interface ModelInfo {
   missingEnv: string[];
   /** False when there is no adapter for its provider yet (api/app/providers/<provider>.py). */
   providerReady?: boolean;
+  /** Price per generation in credits (simulated); see credits/creditStore.ts. */
+  credits?: ModelPrice;
 }
 
 /**
@@ -35,6 +39,7 @@ export const FALLBACK_MODELS: ModelInfo[] = [
   {
     id: 'seedream-5-pro', label: 'Seedream 5 Pro', kind: 'image', provider: 'replicate', description: '',
     default: true, maxImages: 10, maxVideos: 0, missingEnv: [],
+    credits: { base: 4, multiply: { size: { '1K': 0.75 } } },
     parameters: [
       { key: 'size', label: 'Size', type: 'enum', default: '2K', options: [{ value: '1K', label: '1K' }, { value: '2K', label: '2K' }] },
       { key: 'aspectRatio', label: 'Aspect ratio', type: 'enum', default: 'match_input_image', options: [
@@ -47,6 +52,7 @@ export const FALLBACK_MODELS: ModelInfo[] = [
   {
     id: 'seedance-2.0-mini', label: 'Seedance 2.0 Mini', kind: 'video', provider: 'replicate', description: '',
     default: true, maxImages: 9, maxVideos: 3, missingEnv: [],
+    credits: { base: 30, multiply: { duration: { '10': 2 }, resolution: { '480p': 0.5 }, generateAudio: { false: 0.8 } } },
     parameters: [
       { key: 'duration', label: 'Duration', type: 'enum', default: 5, options: [{ value: 5, label: '5s' }, { value: 10, label: '10s' }] },
       { key: 'resolution', label: 'Resolution', type: 'enum', default: '720p', options: [{ value: '480p', label: '480p' }, { value: '720p', label: '720p' }] },

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { useCreditStore } from '../credits/creditStore';
 import type { AgentEvent, AgentSession, AgentSettings } from './agentApi';
 
 export const RECENT_MARK_MS = 4000;
@@ -85,6 +86,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         break;
       case 'run_finished':
         delete streaming[runId];
+        if (typeof event.balance === 'number') useCreditStore.getState().setBalance(event.balance);
         if (activeRunId === event.runId) {
           activeRunId = null;
           recentRunId = event.runId;

@@ -40,6 +40,7 @@ import { ReferenceEdge, getVisibleEdgeIds } from '../edges/ReferenceEdge';
 import { snapshotToReactFlow, useCanvasStore } from '../state/canvasStore';
 import { CanvasControls, type CanvasTool } from './CanvasControls';
 import { CanvasRail } from './CanvasRail';
+import { CreditsButton } from '../credits/CreditsButton';
 import { TooltipLayer } from './TooltipLayer';
 import { AgentPanel } from '../agent/AgentPanel';
 import { splitNoteBlock } from '../agent/Markdown';
@@ -1060,6 +1061,8 @@ export function CanvasShell() {
             onSaveToCanvas={(text, title) => void saveTextAsNote(text, title)}
           />
         )}
+        {/* Outside React Flow so its popover sits above comment pins (z-index 20). */}
+        <div className="credits-dock"><CreditsButton /></div>
         {pendingConnection && (
           <ConnectionChooser
             position={pendingConnection.screen}

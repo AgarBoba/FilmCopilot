@@ -241,6 +241,20 @@ class Database:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE INDEX IF NOT EXISTS comment_replies_comment ON comment_replies (comment_id, id);
+                -- Credits (credits.py): every change is a row; the balance is the newest balance_after.
+                CREATE TABLE IF NOT EXISTS credit_ledger (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    delta INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    label TEXT NOT NULL DEFAULT '',
+                    ref TEXT,
+                    balance_after INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS credit_ledger_ref ON credit_ledger (kind, ref) WHERE ref IS NOT NULL;
+                INSERT INTO credit_ledger (delta, kind, label, ref, balance_after)
+                    SELECT 500, 'welcome', '新手赠送', 'welcome', 500
+                    WHERE NOT EXISTS (SELECT 1 FROM credit_ledger);
                 CREATE TABLE IF NOT EXISTS canvas_task_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     canvas_id TEXT NOT NULL,

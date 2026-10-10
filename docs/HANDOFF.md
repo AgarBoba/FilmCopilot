@@ -62,6 +62,7 @@ cd web && pnpm test -- --run && pnpm exec tsc -b
 | `db.py` | 建表和迁移（如 `_migrate_comments`）。加表或加列都在这里，旧库要能自动升级。 |
 | `repositories.py` / `versions.py` / `upstream.py` | 读画布；节点的版本历史；「上游有更新」。 |
 | `worker.py` / `providers/` / `models_registry.py` | 生成任务和模型登记。 |
+| `credits.py` | 模拟积分：流水表 `credit_ledger`、生成价格（模型文件的 `credits`）、扣费和退回。生成在 `commands._start_generation` 扣，失败在 worker 退，删节点在 `repositories.delete_node` 退；Agent 每轮在 `runtime._charge_turn` 扣。 |
 | `routes/` | HTTP 接口：`agent.py`、`comments.py`、`canvases.py` 等。 |
 
 ### 画布 Agent `api/app/agent/`
@@ -84,6 +85,7 @@ cd web && pnpm test -- --run && pnpm exec tsc -b
 | `nodes/` | 图片 / 视频 / 文本节点、便签、Prompt 输入区、视频播放、版本历史。 |
 | `agent/AgentPanel.tsx` | 面板：左右聊天（`turns.ts` 把消息分段）、输入栏（模型胶囊、技能 ✦、审核盾牌、上下文圆环）。 |
 | `agent/AgentMessage.tsx`、`Markdown.tsx`、`SessionList.tsx`、`MemoryView.tsx` | 单条消息、Markdown 和「存到画布」、对话列表、记忆页。 |
+| `credits/` | 左上角积分胶囊和弹层（`CreditsButton`）、余额和价格公式（`creditStore.ts`，和后端同一个公式）。 |
 | `comments/` | 图钉和新留言（`CommentLayer`）、讨论小窗（`CommentPopover`）、回复框（`CommentComposer`，勾选框和 @Agent 是同一件事）、时间线合并（`thread.ts`）。 |
 | `styles.css` | 全部样式，一个文件。颜色用 DESIGN.md 里的变量。 |
 
@@ -165,13 +167,16 @@ git merge feat/<短名>
 ## 9. 还没做 / 没验证 / 想法池
 
 **没验证（容器里只有假密钥）**
-- 真实模型下的：对话摘要的效果、上下文圆环的数字、Sonnet / Haiku 5.5 的实际调用、Agent 处理留言的完整流程。
+- 真实模型下的：Agent 每轮实际扣多少积分、对话摘要的效果、上下文圆环的数字、Sonnet / Haiku 5.5 的实际调用、Agent 处理留言的完整流程。
 
 **已知的小尾巴**
 - 新留言写到一半，点外面不会关（故意的，怕丢字）。要不要改，问 Justin。
 - 对话列表还没显示对话摘要。
 - recall 只做了关键词匹配，没有语义（向量）搜索。
 - 审核方式的盾牌图标（实心 / 半实心 / 空心）是我定的，Justin 还没明确确认。
+
+**积分（模拟）的后续**
+- 现在没有账号，全机共用一个钱包，充值是手动加。上线要做：用户账号、按用户记账、真实支付、并发扣费加锁（现在 SQLite 普通事务）、后台写摘要的模型调用也计费。
 
 **已定的方向**
 - 面板里的 `@` 留给以后的「角色库」（@某个角色）。不做 @节点，关注节点靠在画布上选中。

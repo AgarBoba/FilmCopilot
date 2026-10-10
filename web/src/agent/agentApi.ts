@@ -96,6 +96,9 @@ export interface AgentEvent {
   message?: string;
   status?: 'completed' | 'stopped' | 'failed';
   costUsd?: number | null;
+  /** run_finished: credits this turn cost, and the balance after (absent when nothing was charged). */
+  credits?: number;
+  balance?: number | null;
   /** run_finished: tokens the model saw on its last request, and its context window. */
   contextTokens?: number | null;
   contextWindow?: number | null;

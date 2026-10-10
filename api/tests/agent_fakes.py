@@ -38,6 +38,7 @@ class FakeClient:
         self.models: list[str] = []
         self.interrupted = False
         self.connected = False
+        self.total_cost = 0.0  # like the real CLI: a running total for this client
 
     async def connect(self):
         self.connected = True
@@ -105,9 +106,10 @@ class FakeClient:
                 yield UserMessage([ToolResultBlock(f'tool-{index}', result, False)])
             elif kind == 'pause':
                 await asyncio.sleep(step[1])
+        self.total_cost += 0.01
         yield ResultMessage(
             subtype='success', duration_ms=1, duration_api_ms=1, is_error=False, num_turns=1,
-            session_id='sdk-session-1', total_cost_usd=0.01,
+            session_id='sdk-session-1', total_cost_usd=self.total_cost,
             model_usage={'fake': {'inputTokens': 1, 'outputTokens': 1, 'cacheReadInputTokens': 0,
                                   'cacheCreationInputTokens': 0, 'webSearchRequests': 0, 'costUSD': 0.01,
                                   'contextWindow': 200000, 'maxOutputTokens': 32000}},

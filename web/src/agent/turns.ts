@@ -35,6 +35,11 @@ export function groupTurns(events: AgentEvent[]): Turn[] {
   return turns;
 }
 
+/** Credits the agent's turns used for talking (generations are charged separately). */
+export function turnCredits(events: AgentEvent[]): number {
+  return events.reduce((sum, event) => sum + (event.kind === 'run_finished' ? event.credits ?? 0 : 0), 0);
+}
+
 /** "10:32" today, "10/8" before. */
 export function clock(value: string | null | undefined, now = new Date()): string {
   if (!value) return '';
