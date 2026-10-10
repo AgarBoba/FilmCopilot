@@ -70,8 +70,10 @@ class SessionRuntime:
     handlers: dict[str, Any] = field(default_factory=dict)
     model: str | None = None  # model the live client is using
     skill_ids: tuple[str, ...] = ()  # skills the live client was started with
-    # The SDK reports the live client's running total cost; a turn costs the difference.
-    cost_total: float = 0.0
+    # The SDK reports a running total cost for the conversation, and a resumed conversation
+    # (new client after a restart, model or skill change) starts from the saved total, not 0.
+    # A turn costs the difference from the last total we saw. None = look it up (last_cost_total).
+    cost_total: float | None = None
 
 
 class AgentService:
@@ -330,7 +332,6 @@ class AgentService:
         await client.connect()
         runtime.client = client
         runtime.model = model
-        runtime.cost_total = 0.0
         runtime.skill_ids = skill_ids
         return client
 
@@ -456,7 +457,7 @@ class AgentService:
             run_cost, charged, balance = self._charge_turn(runtime, run_id, model, cost)
             self._emit(runtime.session_id, run_id, 'run_finished', {
                 'status': status, 'costUsd': run_cost, 'model': model, 'auth': auth,
-                'credits': charged, 'balance': balance,
+                'credits': charged, 'balance': balance, 'costTotal': cost,
                 # How full the model's context was on its last request (for the panel's ring).
                 'contextTokens': context_tokens, 'contextWindow': context_window or DEFAULT_CONTEXT_WINDOW,
             }, role='system_event')
@@ -465,13 +466,27 @@ class AgentService:
             if status in ('completed', 'stopped'):
                 self.schedule_summary(runtime.session_id, run_id)
 
+    def last_cost_total(self, session_id: str, exclude_run: str | None = None) -> float:
+        """The SDK's running total at this chat's last finished turn (0 if none). Turns from before
+        credits existed have no costTotal; their costUsd was that running total."""
+        for message in reversed(self.store.list_messages(session_id)):
+            content = message['content']
+            if content.get('kind') != 'run_finished' or message.get('run_id') == exclude_run:
+                continue
+            total = content.get('costTotal') if 'credits' in content else content.get('costUsd')
+            if isinstance(total, (int, float)):
+                return float(total)
+        return 0.0
+
     def _charge_turn(
         self, runtime: SessionRuntime, run_id: str, model: str, total_cost: float | None,
     ) -> tuple[float | None, int, int | None]:
         """(this turn's cost in USD, credits charged, balance after). Never fails the turn."""
         if total_cost is None:
             return None, 0, None
-        run_cost = total_cost - runtime.cost_total if total_cost >= runtime.cost_total else total_cost
+        before = runtime.cost_total if runtime.cost_total is not None else self.last_cost_total(runtime.session_id, run_id)
+        # Lower than before: the total started over (a fresh conversation), so all of it is this turn's.
+        run_cost = total_cost - before if total_cost >= before else total_cost
         runtime.cost_total = total_cost
         amount = chat_price(run_cost)
         if not amount:

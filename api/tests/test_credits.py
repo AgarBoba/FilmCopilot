@@ -3,6 +3,7 @@ import asyncio
 
 import pytest
 
+from app.agent.runtime import AgentService
 from app.agent.undo import undo_agent_run
 from app.credits import Credits, chat_price, generation_price
 from app.domain import DomainError
@@ -112,10 +113,23 @@ def test_agent_turns_cost_what_the_model_calls_cost(repository):
     assert [(f['credits'], f['balance'], round(f['costUsd'], 4)) for f in finished] == [(1, 499, 0.01), (1, 498, 0.01)]
     assert [e['kind'] for e in credits.history()[:2]] == ['chat', 'chat']
 
+    # After a restart the CLI resumes the chat with its saved running total (0.02): only the new part counts.
+    for restored in (0.02, 0.0):  # and if it starts over from 0, the whole total is this turn's
+        restarted = AgentService(repository, service.command_service, store, service.config, FakeFactory([('text', '在')], restored_cost=restored))
+        asyncio.run(_one(restarted, session_id))
+    finished = [m['content'] for m in store.list_messages(session_id) if m['content']['kind'] == 'run_finished']
+    assert [f['credits'] for f in finished] == [1, 1, 1, 1]
+    assert credits.balance() == 496
+
     drain(credits, 0)
     with pytest.raises(DomainError) as error:
         asyncio.run(service.send_message(session_id, '还在吗', []))
     assert error.value.code == 'INSUFFICIENT_CREDITS'
+
+
+async def _one(service, session_id):
+    await service.send_message(session_id, '还在吗', [])
+    await finish(service, session_id)
 
 
 def test_routes(client):

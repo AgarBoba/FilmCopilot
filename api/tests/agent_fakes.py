@@ -38,7 +38,7 @@ class FakeClient:
         self.models: list[str] = []
         self.interrupted = False
         self.connected = False
-        self.total_cost = 0.0  # like the real CLI: a running total for this client
+        self.total_cost = 0.0  # like the real CLI: a running total (a resumed chat starts from the saved one)
 
     async def connect(self):
         self.connected = True
@@ -119,11 +119,13 @@ class FakeClient:
 class FakeFactory:
     """Pass as AgentService(client_factory=...). `scripts` is shared by all clients it creates."""
 
-    def __init__(self, *scripts: list[tuple]):
+    def __init__(self, *scripts: list[tuple], restored_cost: float = 0.0):
         self.scripts = list(scripts)
         self.clients: list[FakeClient] = []
+        self.restored_cost = restored_cost
 
     def __call__(self, options, handlers):
         client = FakeClient(options, handlers, self.scripts)
+        client.total_cost = self.restored_cost
         self.clients.append(client)
         return client
