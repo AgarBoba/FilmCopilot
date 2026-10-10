@@ -13,6 +13,7 @@ function Harness({ flow }: { flow: { getViewport: () => { x: number; y: number; 
     <div className="canvas-page">
       <div ref={ref} data-testid="canvas">
         <div className="comment-popover" data-testid="popover">小窗</div>
+        <div className="react-flow__node"><div className="sticky-text nowheel" data-testid="sticky">便签</div></div>
       </div>
       <aside className="agent-panel" data-testid="panel">面板</aside>
     </div>
@@ -41,5 +42,16 @@ describe('pinch zoom', () => {
     const scroll = new WheelEvent('wheel', { deltaY: 10, bubbles: true, cancelable: true });
     getByTestId('panel').dispatchEvent(scroll);
     expect(scroll.defaultPrevented).toBe(false);
+  });
+
+  it('over a text node or sticky (nowheel text) a pinch still zooms the canvas, once', () => {
+    const setViewport = vi.fn();
+    const { getByTestId } = render(<Harness flow={{ getViewport: () => ({ x: 0, y: 0, zoom: 1 }), setViewport }} />);
+    // Something below marking it handled (as React Flow does) must not swallow the zoom.
+    const swallow = (event: Event) => event.preventDefault();
+    getByTestId('sticky').addEventListener('wheel', swallow);
+    expect(pinch(getByTestId('sticky')).defaultPrevented).toBe(true);
+    expect(setViewport).toHaveBeenCalledTimes(1);
+    expect(setViewport.mock.calls[0][0].zoom).toBeGreaterThan(1);
   });
 });

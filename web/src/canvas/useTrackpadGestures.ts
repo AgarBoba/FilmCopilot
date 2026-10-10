@@ -70,8 +70,26 @@ export function useTrackpadGestures(
       zoomAround(gesture.clientX, gesture.clientY, startZoom * gesture.scale);
     }
 
+    /** Zoom the canvas by one pinch step (Chrome reports a pinch as Ctrl + wheel). */
+    function pinchZoom(event: WheelEvent) {
+      const zoom = flowRef.current?.getViewport().zoom ?? 1;
+      // Same feel as React Flow's own pinch: proportional to the scroll amount.
+      const delta = event.deltaMode === 1 ? event.deltaY * 0.05 : event.deltaMode ? event.deltaY : event.deltaY * 0.002;
+      zoomAround(event.clientX, event.clientY, zoom * Math.pow(2, -delta * 10));
+    }
+
     function onWheel(event: WheelEvent) {
-      if (event.ctrlKey) return; // pinch-zoom always goes to the canvas
+      if (event.ctrlKey) {
+        // Over text that scrolls on its own (text node, sticky: `nowheel`), React Flow leaves the
+        // pinch alone but still marks it handled, so nothing zooms. Zoom the canvas here instead.
+        const target = event.target as Element | null;
+        if (target?.closest?.('.react-flow__node .nowheel') && overCanvas(target)) {
+          event.preventDefault();
+          event.stopPropagation();
+          pinchZoom(event);
+        }
+        return;
+      }
       const textarea = (event.target as Element | null)?.closest?.('textarea');
       if (!textarea) return;
       const canScroll = textarea.scrollHeight > textarea.clientHeight + 1;
@@ -83,17 +101,14 @@ export function useTrackpadGestures(
       if (!event.ctrlKey || event.defaultPrevented) return;
       event.preventDefault();
       if (!overCanvas(event.target)) return;
-      const zoom = flowRef.current?.getViewport().zoom ?? 1;
-      // Same feel as React Flow's own pinch: proportional to the scroll amount.
-      const delta = event.deltaMode === 1 ? event.deltaY * 0.05 : event.deltaMode ? event.deltaY : event.deltaY * 0.002;
-      zoomAround(event.clientX, event.clientY, zoom * Math.pow(2, -delta * 10));
+      pinchZoom(event);
     }
 
     window.addEventListener('gesturestart', onGestureStart);
     window.addEventListener('gesturechange', onGestureChange);
     window.addEventListener('wheel', onUnhandledPinch, { passive: false });
     // Capture phase on the container runs before React Flow's own wheel handler below it.
-    container.addEventListener('wheel', onWheel, { capture: true, passive: true });
+    container.addEventListener('wheel', onWheel, { capture: true, passive: false });
     return () => {
       window.removeEventListener('gesturestart', onGestureStart);
       window.removeEventListener('gesturechange', onGestureChange);
