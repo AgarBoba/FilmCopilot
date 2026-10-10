@@ -42,7 +42,7 @@ def test_session_message_undo_and_settings_flow(tmp_path, monkeypatch):
         canvas = client.post('/api/canvases', json={'name': 'A', 'canvasId': 'c1'}).json()
         status = client.get('/api/agent/status').json()
         assert status['configured'] is True and status['model'] == 'claude-opus-5-5' and status['auth'] == 'api'
-        assert [m['label'] for m in status['models']] == ['Opus 5.5', 'Sonnet 5', 'Haiku 4.5']
+        assert [m['label'] for m in status['models']] == ['Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5']
         assert SECRET not in str(status)
 
         session = client.post('/api/agent/sessions', json={'canvasId': canvas['canvasId']}).json()
@@ -58,7 +58,7 @@ def test_session_message_undo_and_settings_flow(tmp_path, monkeypatch):
 
         assert client.patch('/api/projects/default/agent-settings', json={'permissionMode': 'auto'}).json()['permissionMode'] == 'auto'
         assert client.patch('/api/projects/default/agent-settings', json={'permissionMode': 'x'}).status_code == 422
-        assert client.patch('/api/projects/default/agent-settings', json={'model': 'claude-sonnet-5'}).json()['model'] == 'claude-sonnet-5'
+        assert client.patch('/api/projects/default/agent-settings', json={'model': 'claude-sonnet-5-5'}).json()['model'] == 'claude-sonnet-5-5'
         assert client.patch('/api/projects/default/agent-settings', json={'model': 'gpt-5'}).status_code == 422
 
 
@@ -148,3 +148,13 @@ def test_models_endpoint_lists_models_and_missing_keys(tmp_path, monkeypatch):
         seedream = next(m for m in body['models'] if m['id'] == 'seedream-5-pro')
         assert seedream['missingEnv'] == ['REPLICATE_API_TOKEN'] and seedream['maxImages'] == 10
         assert [p['key'] for p in seedream['parameters']] == ['size', 'aspectRatio', 'outputFormat']
+
+
+def test_a_project_saved_on_an_older_model_moves_to_its_successor(repository):
+    import json
+    from app.agent.store import AgentStore
+    store = AgentStore(repository.database)
+    with repository.database.transaction() as connection:
+        connection.execute("UPDATE projects SET settings_json = ? WHERE id = 'default'",
+                           (json.dumps({'model': 'claude-sonnet-5'}),))
+    assert store.get_settings('default')['model'] == 'claude-sonnet-5-5'

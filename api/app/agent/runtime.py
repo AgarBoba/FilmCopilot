@@ -511,7 +511,7 @@ class AgentService:
         return event
 
 
-DEFAULT_CONTEXT_WINDOW = 200_000
+DEFAULT_CONTEXT_WINDOW = 1_000_000  # Opus / Sonnet / Haiku 5.5; the CLI's own figure wins when it reports one
 
 
 def context_size(usage: dict[str, Any]) -> int | None:

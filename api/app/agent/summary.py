@@ -15,7 +15,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-SUMMARY_MODEL = 'claude-haiku-4-5-20251001'
+SUMMARY_MODEL = 'claude-haiku-5-5'
 MAX_SUMMARY = 120
 MAX_INPUT = 6000
 

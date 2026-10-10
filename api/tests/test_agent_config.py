@@ -17,8 +17,11 @@ def test_auth_mode_from_env(monkeypatch):
     monkeypatch.delenv('CLAUDE_CODE_OAUTH_TOKEN')
     monkeypatch.delenv('ANTHROPIC_API_KEY')
     assert AgentConfig.from_env().configured  # a plain `claude` login may exist; checked at run time
-    monkeypatch.setenv('AGENT_MODEL', 'claude-sonnet-5')
-    assert AgentConfig.from_env().model == 'claude-sonnet-5'
+    monkeypatch.setenv('AGENT_MODEL', 'claude-sonnet-5-5')
+    assert AgentConfig.from_env().model == 'claude-sonnet-5-5'
+    # An .env still naming a model that left the list gets its successor.
+    monkeypatch.setenv('AGENT_MODEL', 'claude-haiku-4-5-20251001')
+    assert AgentConfig.from_env().model == 'claude-haiku-5-5'
 
 
 def test_errors_are_explained():

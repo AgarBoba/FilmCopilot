@@ -16,10 +16,21 @@ import os
 # Models offered in the panel, strongest first. The first is the fallback default.
 MODELS: tuple[tuple[str, str], ...] = (
     ('claude-opus-5-5', 'Opus 5.5'),
-    ('claude-sonnet-5', 'Sonnet 5'),
-    ('claude-haiku-4-5-20251001', 'Haiku 4.5'),
+    ('claude-sonnet-5-5', 'Sonnet 5.5'),
+    ('claude-haiku-5-5', 'Haiku 5.5'),
 )
 MODEL_IDS = tuple(model_id for model_id, _ in MODELS)
+# Models taken out of the list, and what a project or .env that still names them now gets.
+REPLACED = {
+    'claude-sonnet-5': 'claude-sonnet-5-5',
+    'claude-haiku-4-5': 'claude-haiku-5-5',
+    'claude-haiku-4-5-20251001': 'claude-haiku-5-5',
+}
+
+
+def current_model(model_id: str | None) -> str | None:
+    """An older model id becomes its successor in the list; anything else is kept as is."""
+    return REPLACED.get(model_id, model_id) if model_id else model_id
 AUTH_MODES = ('api', 'subscription')
 
 
@@ -48,7 +59,7 @@ class AgentConfig:
         auth = (os.getenv('AGENT_AUTH') or '').strip().lower()
         if auth not in AUTH_MODES:
             auth = 'subscription' if token and not api_key else 'api'
-        model = os.getenv('AGENT_MODEL') or MODEL_IDS[0]
+        model = current_model(os.getenv('AGENT_MODEL')) or MODEL_IDS[0]
         return cls(model=model, api_key_present=api_key, auth=auth, oauth_token_present=token)
 
 

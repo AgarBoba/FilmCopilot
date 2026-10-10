@@ -43,6 +43,13 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-10-10 Agent 模型换成 5.5 一代
+
+- 面板可选模型：Opus 5.5（`claude-opus-5-5`）、Sonnet 5.5（`claude-sonnet-5-5`）、Haiku 5.5（`claude-haiku-5-5`），ID 以 Claude 官方文档的模型列表为准。对话摘要也改用 Haiku 5.5。
+- 旧模型自动换成新的：项目里存的或 .env 里写的 `claude-sonnet-5` → Sonnet 5.5，`claude-haiku-4-5(-20251001)` → Haiku 5.5（`config.current_model`）。
+- 这一代上下文窗口是 1M：上下文圆环在 CLI 没报窗口大小时按 1M 算。
+- 验证：后端 pytest 177 通过，前端 vitest 91 通过。真实调用新模型还没在本机跑过（容器里只有假密钥）。
+
 ### 2026-10-09 留言：勾选 = 打 @Agent，图钉改成头像气泡
 
 - 「@Agent 让它处理」勾选框和文字里的 @Agent 合成一件事：勾上在开头插入「@Agent 」，取消删掉，打 @Agent 自动勾上；输入框里的 @Agent 用紫色高亮（透明 textarea 后面垫一层同样排版的文字）。

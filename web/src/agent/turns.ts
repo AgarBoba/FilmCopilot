@@ -49,7 +49,7 @@ export function contextUsage(events: AgentEvent[]): { used: number; limit: numbe
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event.kind === 'run_finished' && event.contextTokens) {
-      return { used: event.contextTokens, limit: event.contextWindow || 200_000 };
+      return { used: event.contextTokens, limit: event.contextWindow || 1_000_000 };
     }
   }
   return null;

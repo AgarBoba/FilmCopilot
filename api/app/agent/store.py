@@ -32,7 +32,10 @@ class AgentStore:
             row = connection.execute('SELECT settings_json FROM projects WHERE id = ?', (project_id,)).fetchone()
         if row is None:
             raise DomainError('NOT_FOUND', f'Project {project_id} was not found')
-        return {**DEFAULT_SETTINGS, **json.loads(row['settings_json'])}
+        from .config import current_model
+        settings = {**DEFAULT_SETTINGS, **json.loads(row['settings_json'])}
+        settings['model'] = current_model(settings.get('model'))  # a project saved on an older model
+        return settings
 
     def update_settings(self, project_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         settings = self.get_settings(project_id)

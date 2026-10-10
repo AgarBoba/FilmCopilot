@@ -262,7 +262,7 @@ def test_switching_models_keeps_the_conversation(repository, monkeypatch):
         queue = service.subscribe(session_id)
         await service.send_message(session_id, 'a')
         await finish(service, session_id)
-        store.update_settings('default', {'model': 'claude-sonnet-5'})
+        store.update_settings('default', {'model': 'claude-sonnet-5-5'})
         await service.send_message(session_id, 'b')
         await finish(service, session_id)
         await service.send_message(session_id, 'c')
@@ -275,9 +275,9 @@ def test_switching_models_keeps_the_conversation(repository, monkeypatch):
     events = asyncio.run(scenario())
     assert len(factory.clients) == 1  # same client, same conversation
     assert factory.clients[0].options.model == 'claude-opus-5-5'
-    assert factory.clients[0].models == ['claude-sonnet-5']  # switched once, before the 2nd message
+    assert factory.clients[0].models == ['claude-sonnet-5-5']  # switched once, before the 2nd message
     replies = [e['model'] for e in events if e['kind'] == 'assistant_text']
-    assert replies == ['claude-opus-5-5', 'claude-sonnet-5', 'claude-sonnet-5']
+    assert replies == ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5']
 
 
 def test_subscription_mode_keeps_the_api_key_away_from_the_agent(repository, monkeypatch):

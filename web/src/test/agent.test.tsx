@@ -398,12 +398,12 @@ describe('memory', () => {
 
 describe('models', () => {
   it('each reply says which model answered', () => {
-    useAgentStore.setState({ models: [{ id: 'claude-sonnet-5', label: 'Sonnet 5' }] });
+    useAgentStore.setState({ models: [{ id: 'claude-sonnet-5-5', label: 'Sonnet 5.5' }] });
     render(
-      <AgentMessage event={event({ kind: 'assistant_text', text: '好的', model: 'claude-sonnet-5' })}
+      <AgentMessage event={event({ kind: 'assistant_text', text: '好的', model: 'claude-sonnet-5-5' })}
         focusTitles={{}} onFocusNodes={vi.fn()} onSaveToCanvas={vi.fn()} onConfirm={vi.fn()} pending={false} />,
     );
-    expect(screen.getByText('Sonnet 5')).toBeInTheDocument();
+    expect(screen.getByText('Sonnet 5.5')).toBeInTheDocument();
   });
 });
 
