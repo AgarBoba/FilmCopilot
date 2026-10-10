@@ -29,6 +29,7 @@ from .store import AgentStore
 from .builtin_events import BuiltinToolTracker
 from .skills import BUILTIN_TOOLS, discover, find as find_skill, plugin_dirs
 from .summary import Summarizer, build_input, clean as clean_summary, sdk_summarizer
+from .describe import AssetDescriber, Describer, sdk_describer
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ class AgentService:
         config: AgentConfig | None = None,
         client_factory: ClientFactory = sdk_client_factory,
         summarizer: Summarizer | None = None,
+        describer: Describer | None = None,
     ) -> None:
         self.repository = repository
         self.command_service = command_service
@@ -115,6 +117,10 @@ class AgentService:
         if summarizer is None and client_factory is sdk_client_factory:
             summarizer = sdk_summarizer(self.config.auth)
         self.summarizer = summarizer
+        # Descriptions of assets the agent looks at (describe.py). Off in tests unless one is given.
+        if describer is None and client_factory is sdk_client_factory:
+            describer = sdk_describer(self.config.auth)
+        self.asset_describer = AssetDescriber(repository.database, describer) if describer else None
         self._summary_runs: dict[str, list[str]] = {}  # session id -> runs waiting to be summarised
         self._summary_tasks: dict[str, asyncio.Task] = {}
 
@@ -163,6 +169,7 @@ class AgentService:
         if compact:
             runtime.seen_context.clear()  # the summary replaces what was sent: send it all again
         runtime.tools.shared = runtime.seen_context
+        runtime.tools.describer = self.asset_describer
 
         snapshot = self.repository.get_snapshot(runtime.canvas_id)
         titles = {node.id: node.data.get('title', '') for node in snapshot.nodes}
@@ -267,6 +274,8 @@ class AgentService:
     async def close(self) -> None:
         for task in self._summary_tasks.values():
             task.cancel()
+        if self.asset_describer is not None:
+            self.asset_describer.close()
         for runtime in self.sessions.values():
             if runtime.tools:
                 runtime.tools.stopped = True

@@ -43,6 +43,15 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-10-10 Agent 不看图也知道画面：画面描述 + 画面来源
+
+- 现象：`get_canvas` / `get_node` 只给节点现在的 Prompt、模型、参数。用户改了 Prompt 没重新生成（或切回旧版）时，Agent 会按新 Prompt 去理解旧画面；上传的图配着一句还没执行的 Prompt，也会被当成画面描述。根因：这两个工具读的是节点设置，没读画面自己的出处。
+- 画面描述（`agent/describe.py`）：`view_asset` 第一次看某个素材时，后台用 Haiku 5.5 写一两句描述，存进 `assets.metadata_json.description`（这一列以前一直是 `{}`）。素材不会被改，描述不会过期；失败不存，下次看时再试；不阻塞、不让工具调用失败。`get_canvas` 显示前 40 字（「画面：…」），`get_node` 显示全文（「画面描述：…」）。
+- 画面来源（`agent/provenance.py`）：用 `node_versions` + 那次生成的 `request_json`，对比节点现在的设置和生成当时的设置。Prompt 只比节点自己的部分（`nodePrompt`，不含连进来的便签），参数在同一模型下补齐默认值再比。`get_canvas` 加「Prompt、模型改过，画面还是旧的」或「画面是上传的」；`get_node` 加「画面来源：生成 / 用户上传 / 复制」，设置改过时列出生成当时的值。正在生成时不提示。上游变化仍归「上游有更新」，两者不重叠。
+- system prompt 加了一段：设置不等于画面；理解画面先看描述和来源，要看细节或拿它当参考时再 `view_asset`。
+- 和「只发变化」配合：描述写好或设置改动后，这个节点那一行会变，下一次 get_canvas 会把它列进「新增或有变化」。
+- 验证：后端 pytest 211 通过（新增 `tests/test_asset_understanding.py` 6 个，描述器用假的）。**未验证**：真实 Haiku 描述（通过 Agent SDK 流式输入带图）没有在本机跑过；描述质量要实际看几张图再调 `INSTRUCTIONS`。前端没改。
+
 ### 2026-10-10 每轮 Agent 对话的 token 明细和缓存命中率
 
 - 目的：方便优化上下文。积分本来就按缓存算价（CLI 按每次请求的读缓存 / 写缓存 / 新输入 / 输出分别计价），但看不到命中多少。

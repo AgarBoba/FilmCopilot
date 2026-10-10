@@ -18,7 +18,7 @@ from ..repositories import CanvasRepository
 from ..models_registry import ModelSpec, registry as model_registry
 from ..schemas import CommandEnvelope
 from ..versions import NodeVersions
-from . import conflicts, media, notes
+from . import conflicts, describe, media, notes, provenance
 from .config import AgentConfig
 from .store import AgentStore
 
@@ -102,6 +102,8 @@ class CanvasTools:
         self.memory: Any = None
         # Set when this run works on a canvas comment: its generations are tagged with it.
         self.comment_id: str | None = None
+        # Writes short descriptions of assets view_asset shows (describe.py; None in tests / when off).
+        self.describer: describe.AssetDescriber | None = None
         self.last_seen_revision = repository.get_snapshot(canvas_id).revision
         # The canvas as the agent knows it: what it last looked at plus its own changes.
         self.seen = repository.canvas_state(canvas_id)
@@ -139,6 +141,8 @@ class CanvasTools:
                              f'，大小 {size_text(sticky)}')
             lines.append('[节点]')
         open_notes = notes.open_notes(self.repository.database, self.canvas_id)
+        assets = {asset['id']: asset for asset in snapshot.assets}
+        origins = provenance.origins(self.repository.database, self.canvas_id)
         note_counts: dict[str, int] = {}
         for note in open_notes:
             if note['node_id']:
@@ -160,8 +164,19 @@ class CanvasTools:
                 f'位置 ({round(node.x)}, {round(node.y)})，大小 {size_text(node)}',
             ]
             if node.nodeType != 'note':
-                parts.append('有内容' if data.get('assetId') else '无内容')
+                asset_id = data.get('assetId')
+                parts.append('有内容' if asset_id else '无内容')
                 job = self._latest_job(snapshot, node.id)
+                if asset_id:
+                    described = describe.description_of(assets.get(asset_id))
+                    if described:
+                        parts.append(f'画面：{describe.preview(described)}')
+                    made = origins.get((node.id, asset_id))
+                    busy = bool(job and job['status'] in BUSY)
+                    hint = provenance.short_hint(made, [] if busy else provenance.changed_settings(
+                        made, node.nodeType, data))
+                    if hint:
+                        parts.append(hint)
                 if job:
                     parts.append(f"最近生成：{job['status']}")
             if origin := describe_source(data):
@@ -279,10 +294,18 @@ class CanvasTools:
                 size = f"{asset.get('width')}×{asset.get('height')}"
                 duration = f"，{asset['duration_seconds']:.1f} 秒" if asset.get('duration_seconds') else ''
                 lines.append(f"内容：{KIND_LABELS[asset['kind']]} {size}{duration}（可用 view_asset 查看）")
+                described = describe.description_of(asset)
+                if described:
+                    lines.append(f'画面描述：{described}')
                 history = NodeVersions(self.repository.database).list(self.canvas_id, node.id, asset['id'])
                 if len(history) > 1:
                     shown = next((item['version'] for item in history if item['assetId'] == asset['id']), len(history))
                     lines.append(f'版本：现在显示第 {shown} 版，共 {len(history)} 版（其他版本用 get_node_versions 看）')
+                origin = provenance.origins(self.repository.database, self.canvas_id).get((node.id, asset['id']))
+                latest = self._latest_job(snapshot, node.id)
+                changed = [] if latest and latest['status'] in BUSY else provenance.changed_settings(
+                    origin, node.nodeType, data)
+                lines.extend(provenance.detail_lines(origin, changed, node.nodeType))
             else:
                 lines.append('内容：无')
             job = self._latest_job(snapshot, node.id)
@@ -350,22 +373,30 @@ class CanvasTools:
         try:
             if asset['kind'] == 'image':
                 image = media.image_for_model(path, self.config.image_max_side)
+                images = [{'data': image['data'], 'mimeType': image['mimeType']}]
+                self._describe_later(asset, images)
                 return ToolResult(
                     f"{name}的图片（原图 {asset.get('width')}×{asset.get('height')}）：",
-                    images=[{'data': image['data'], 'mimeType': image['mimeType']}],
-                    summary=f'查看{name}', touched=[node_id],
+                    images=images, summary=f'查看{name}', touched=[node_id],
                 )
             duration, frames = media.video_frames_for_model(path, max_side=self.config.image_max_side)
         except DomainError as error:
             return self._error(error.message)
         except Exception as error:  # unreadable file, ffmpeg failure
             return self._error(f'读取媒体文件失败：{error}')
+        images = [{'data': frame['data'], 'mimeType': frame['mimeType']} for frame in frames]
+        self._describe_later(asset, images)
         return ToolResult(
             f"{name}的视频，时长 {duration:.1f} 秒，以下是开头、中间、结尾 3 帧"
             f"（{', '.join(str(frame['at']) + 's' for frame in frames)}）：",
-            images=[{'data': frame['data'], 'mimeType': frame['mimeType']} for frame in frames],
-            summary=f'查看{name}', touched=[node_id],
+            images=images, summary=f'查看{name}', touched=[node_id],
         )
+
+    def _describe_later(self, asset: dict[str, Any], images: list[dict[str, Any]]) -> None:
+        """First look at an asset: have it described in the background (describe.py)."""
+        if self.describer is None:
+            return
+        self.describer.schedule(asset['id'], asset['kind'], images)
 
     # ----------------------------------------------------------------- writes
 
