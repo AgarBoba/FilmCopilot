@@ -18,7 +18,7 @@ Film Copilot：本机运行的无限画布，用来生成图片和视频，画�
 | --- | --- |
 | 仓库 | `/Users/justingu/Desktop/Agent Demo`，远端 `origin` = github.com/AgarBoba/FilmCopilot |
 | 开发分支 | `feature/infinite-media-canvas`，工作目录 `/Users/justingu/Desktop/Agent Demo/.worktrees/infinite-media-canvas` |
-| `main` | 停在 `46e8fa1`，落后开发分支十几个提交（还没合并） |
+| `main` | 10/10 已快进到和开发分支相同（`6f9a7dd`）。注意：仓库根目录那份 `main` 的检出文件是旧的，没人在那里跑，别在根目录直接开发 |
 | 测试 | 后端 pytest 177 通过；前端 vitest 91 通过，`tsc -b` 干净 |
 | 最近做完 | 留言改成真正的评论（普通留言 / @Agent）、Agent 面板左右聊天版式和新输入栏、上下文圆环、对话摘要和 recall 改进、模型换成 Opus / Sonnet / Haiku 5.5 |
 
@@ -167,7 +167,6 @@ git merge feat/<短名>
 - 对话列表还没显示对话摘要。
 - recall 只做了关键词匹配，没有语义（向量）搜索。
 - 审核方式的盾牌图标（实心 / 半实心 / 空心）是我定的，Justin 还没明确确认。
-- `main` 还没合开发分支。
 
 **已定的方向**
 - 面板里的 `@` 留给以后的「角色库」（@某个角色）。不做 @节点，关注节点靠在画布上选中。
