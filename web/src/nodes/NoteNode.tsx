@@ -69,15 +69,15 @@ export function NoteNode({ data }: NoteNodeProps) {
       </NodeResizeControl>
       <NodeHandle type="source" position={Position.Right} id="source" />
       <div className="node-heading">
-        <span className="node-kind">NOTE</span>
-        <NodeTitle title={data.title} fallback="便签" onChange={data.onTitleChange} />
+        <span className="node-kind">TEXT</span>
+        <NodeTitle title={data.title} fallback="文本" onChange={data.onTitleChange} />
       </div>
       {editing ? (
         <textarea
           ref={textareaRef}
           className="nodrag nowheel"
           value={draft}
-          aria-label="便签内容"
+          aria-label="文本内容"
           placeholder="支持 Markdown：# 标题、- 列表、| 表格 |"
           style={style}
           onChange={(event) => setDraft(event.target.value)}
@@ -97,7 +97,7 @@ export function NoteNode({ data }: NoteNodeProps) {
           style={style}
           role="button"
           tabIndex={0}
-          aria-label="便签内容，双击编辑"
+          aria-label="文本内容，双击编辑"
           data-tooltip={draft.trim() ? '双击编辑' : undefined}
           onDoubleClick={startEditing}
           onKeyDown={(event) => {

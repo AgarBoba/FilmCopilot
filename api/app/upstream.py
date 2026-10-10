@@ -44,14 +44,14 @@ def describe_changes(before: dict[str, Any], now: dict[str, Any]) -> list[str]:
     old_notes = {note['nodeId']: note for note in before.get('notePrompts') or []}
     new_notes = {note['nodeId']: note for note in now.get('notePrompts') or []}
     for node_id, note in new_notes.items():
-        name = _name(note.get('title'), '便签')
+        name = _name(note.get('title'), '文本')
         if node_id not in old_notes:
             changes.append(f'新连接了{name}')
         elif old_notes[node_id].get('text') != note.get('text'):
             changes.append(f'{name}的文字改了')
     for node_id, note in old_notes.items():
         if node_id not in new_notes:
-            changes.append(f'{_name(note.get("title"), "便签")}已断开或清空')
+            changes.append(f'{_name(note.get("title"), "文本")}已断开或清空')
 
     old_refs = before.get('references') or []
     new_refs = now.get('references') or []

@@ -1,4 +1,5 @@
-export type NodeType = 'image' | 'video' | 'note';
+/** note: shown as 「文本」 (feeds downstream prompts). sticky: 「便签」, an area label with no ports. */
+export type NodeType = 'image' | 'video' | 'note' | 'sticky';
 
 export interface CanvasPosition {
   x: number;

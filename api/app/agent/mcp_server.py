@@ -27,10 +27,13 @@ IMAGE_PARAMS = {
 NODE_SPEC = {
     'type': 'object',
     'properties': {
-        'type': {'type': 'string', 'enum': ['image', 'video', 'note']},
-        'title': {'type': 'string', 'description': '节点名称；不填自动编号'},
+        'type': {'type': 'string', 'enum': ['image', 'video', 'note', 'sticky'],
+                 'description': 'note = 文本节点（文字会拼进下游 Prompt）；sticky = 便签（给一片区域写的说明，不能连线、不参与生成）'},
+        'title': {'type': 'string', 'description': '节点名称；不填自动编号（便签不用填，第一行就是它的名字）'},
         'prompt': {'type': 'string', 'description': '图片 / 视频节点的 Prompt'},
-        'content': {'type': 'string', 'description': '便签文字（会作为下游节点 Prompt 的前缀）'},
+        'content': {'type': 'string', 'description': '文本节点的文字（会作为下游节点 Prompt 的前缀）；便签的文字（第一行是区域名，会加粗）'},
+        'color': {'type': 'string', 'enum': ['yellow', 'pink', 'blue', 'green', 'purple', 'gray'], 'description': '便签颜色，默认 yellow'},
+        'textSize': {'type': 'string', 'enum': ['s', 'm', 'l'], 'description': '便签字号，默认 m；当大标题用 l'},
         'model': {'type': 'string', 'description': '图片 / 视频节点用的模型 id（见 list_models）；不填用默认模型'},
         'parameters': {
             'type': 'object',
@@ -49,7 +52,7 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
      '列出可用的图片 / 视频模型：擅长什么、参考图上限、参数和可选值、是否缺少密钥。选模型或设参数前先看。',
      {'type': 'object', 'properties': {'kind': {'type': 'string', 'enum': ['image', 'video']}}}),
     ('get_canvas',
-     '读取画布：节点 ID、类型、名称、位置、Prompt 摘要、生成状态、上游。传 node_ids 只看这些节点及其上下游。',
+     '读取画布：节点 ID、类型、名称、位置、Prompt 摘要、生成状态、上游；还有用户贴的便签（区域说明），每个节点注明它在哪张便签的区里。传 node_ids 只看这些节点及其上下游。',
      {'type': 'object', 'properties': {'node_ids': {'type': 'array', 'items': {'type': 'string'}}}}),
     ('get_node', '读取一个节点的完整信息：Prompt、参数、内容、上下游、最近一次生成结果或失败原因。',
      {'type': 'object', 'properties': {'node_id': {'type': 'string'}}, 'required': ['node_id']}),
@@ -61,14 +64,15 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
     ('create_nodes', '新建一个或多个节点。不填位置时自动排在画布右侧。',
      {'type': 'object', 'properties': {'nodes': {'type': 'array', 'items': NODE_SPEC, 'minItems': 1}},
       'required': ['nodes']}),
-    ('update_node', '修改节点：title、prompt（便签用 content）、model（换模型）、parameters（只写要改的项）。生成中的节点不能改。',
+    ('update_node', '修改节点：title、prompt（文本节点用 content）、model（换模型）、parameters（只写要改的项）；便签改 content、color、textSize。生成中的节点不能改。',
      {'type': 'object', 'properties': {
          'node_id': {'type': 'string'},
          'title': {'type': 'string'}, 'prompt': {'type': 'string'}, 'content': {'type': 'string'},
+         'color': NODE_SPEC['properties']['color'], 'textSize': NODE_SPEC['properties']['textSize'],
          'model': NODE_SPEC['properties']['model'],
          'parameters': NODE_SPEC['properties']['parameters'],
      }, 'required': ['node_id']}),
-    ('connect', '连线：source 作为 target 的参考。图片→图片/视频，视频→视频，便签→图片/视频（文字加到 Prompt 前）。',
+    ('connect', '连线：source 作为 target 的参考。图片→图片/视频，视频→视频，文本→图片/视频（文字加到 Prompt 前）。便签不能连线。',
      {'type': 'object', 'properties': {'source_id': {'type': 'string'}, 'target_id': {'type': 'string'}},
       'required': ['source_id', 'target_id']}),
     ('disconnect', '断开 source → target 的连线。',
@@ -127,7 +131,8 @@ async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> Tool
     if name == 'create_nodes':
         return tools.create_nodes(args['nodes'])
     if name == 'update_node':
-        changes = {key: args[key] for key in ('title', 'prompt', 'content', 'model', 'parameters') if key in args}
+        changes = {key: args[key] for key in ('title', 'prompt', 'content', 'model', 'parameters', 'color', 'textSize')
+                   if key in args}
         return tools.update_node(args['node_id'], changes)
     if name == 'connect':
         return tools.connect(args['source_id'], args['target_id'])

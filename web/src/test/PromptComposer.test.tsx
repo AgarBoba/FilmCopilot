@@ -111,8 +111,8 @@ describe('PromptComposer with a model registry', () => {
   it('lets the note hint be closed', async () => {
     render(<PromptComposer kind="image" prompt="" parameters={{}} noteCount={1} onPromptChange={vi.fn()}
       onParametersChange={vi.fn()} onGenerate={vi.fn()} />);
-    expect(screen.getByText(/上游 1 条便签/)).toBeInTheDocument();
+    expect(screen.getByText(/上游 1 个文本节点/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: '关闭提示' }));
-    expect(screen.queryByText(/上游 1 条便签/)).toBeNull();
+    expect(screen.queryByText(/上游 1 个文本节点/)).toBeNull();
   });
 });

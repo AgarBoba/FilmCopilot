@@ -110,7 +110,7 @@ describe('agent messages', () => {
       <AgentMessage event={event({ kind: 'assistant_text', text })} focusTitles={{}} onFocusNodes={vi.fn()}
         onSaveToCanvas={onSave} onConfirm={vi.fn()} pending={false} />,
     );
-    const buttons = screen.getAllByRole('button', { name: '存成便签' });
+    const buttons = screen.getAllByRole('button', { name: '存到画布' });
     expect(buttons).toHaveLength(3); // table, prompt, quote — plain text has none
     fireEvent.click(buttons[0]);
     expect(onSave).toHaveBeenLastCalledWith('| 镜号 | 画面 |\n| --- | --- |\n| 1 | 兔子啃胡萝卜 |', '实木菜板广告分镜表');
@@ -164,7 +164,7 @@ describe('agent messages', () => {
       <AgentMessage event={event({ kind: 'assistant_text', text })} focusTitles={{}} onFocusNodes={vi.fn()}
         onSaveToCanvas={onSave} onConfirm={vi.fn()} pending={false} />,
     );
-    fireEvent.click(screen.getByRole('button', { name: '存成便签' }));
+    fireEvent.click(screen.getByRole('button', { name: '存到画布' }));
     expect(onSave).toHaveBeenCalledWith('低角度微距，暖光扫过木纹', '镜头 2 Prompt');
   });
 
@@ -186,8 +186,8 @@ describe('note markdown', () => {
     const onChange = vi.fn();
     render(<ReactFlowProvider><NoteNode data={{ content: '# 设定\n\n- 米白色垂耳兔', onChange }} /></ReactFlowProvider>);
     expect(screen.getByRole('heading', { name: '设定' })).toBeInTheDocument();
-    fireEvent.doubleClick(screen.getByRole('button', { name: /便签内容/ }));
-    const textarea = screen.getByLabelText('便签内容') as HTMLTextAreaElement;
+    fireEvent.doubleClick(screen.getByRole('button', { name: /文本内容/ }));
+    const textarea = screen.getByLabelText('文本内容') as HTMLTextAreaElement;
     expect(textarea.value).toBe('# 设定\n\n- 米白色垂耳兔');
     fireEvent.change(textarea, { target: { value: '# 设定\n\n- 狐狸' } });
     fireEvent.blur(textarea);

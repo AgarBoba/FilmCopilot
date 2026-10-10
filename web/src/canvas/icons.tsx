@@ -125,3 +125,4 @@ export const ShieldIcon = ({ fill = 'none', half = false, ...p }: IconProps & { 
     <path d="M12 3.5 19 6.4v4.9c0 4.4-3 7.6-7 9.2-4-1.6-7-4.8-7-9.2V6.4z" fill={fill} />
   </Icon>
 );
+export const StickyIcon = (p: IconProps) => <Icon {...p}><path d="M5 4h14v11l-5 5H5z" /><path d="M14 20v-5h5" /></Icon>;

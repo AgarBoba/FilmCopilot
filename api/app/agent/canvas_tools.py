@@ -22,7 +22,11 @@ from .config import AgentConfig
 from .store import AgentStore
 
 BUSY = ('queued', 'running')
-KIND_LABELS = {'image': '图片', 'video': '视频', 'note': '便签'}
+KIND_LABELS = {'image': '图片', 'video': '视频', 'note': '文本', 'sticky': '便签'}
+STICKY_COLORS = {'yellow': '黄', 'pink': '粉', 'blue': '蓝', 'green': '绿', 'purple': '紫', 'gray': '灰'}
+STICKY_SIZES = ('s', 'm', 'l')
+# How far a sticky's area reaches: nodes to its right / below, in the same band of rows.
+STICKY_REACH_X, STICKY_REACH_Y = 2400, 900
 PROMPT_PREVIEW = 80
 NODE_WIDTH, NODE_HEIGHT, GAP = 300, 440, 40
 
@@ -30,7 +34,7 @@ NODE_WIDTH, NODE_HEIGHT, GAP = 300, 440, 40
 
 # Readable explanations for domain errors, so the model can correct itself.
 ERROR_TEXT = {
-    'INVALID_CONNECTION': '这两种节点不能这样连：图片节点只接收图片或便签；视频节点接收图片、视频或便签；便签不接收任何连线。',
+    'INVALID_CONNECTION': '这两种节点不能这样连：图片节点只接收图片或文本；视频节点接收图片、视频或文本；文本不接收任何连线；便签不能连线。',
     'CYCLE': '这样连会形成循环（A 参考 B，B 又参考 A），请换一个方向。',
     'DUPLICATE_EDGE': '这两个节点之间已经有这条连线了。',
     'SELF_LINK': '节点不能连到自己。',
@@ -102,7 +106,15 @@ class CanvasTools:
                 wanted.update(upstream[node_id])
                 wanted.update(downstream[node_id])
         conflicts.refresh(self.seen, self.repository.canvas_state(self.canvas_id), set(wanted) if wanted else None)
-        lines = [f'画布共 {len(snapshot.nodes)} 个节点、{len(snapshot.edges)} 条连线。']
+        stickies = [node for node in snapshot.nodes if node.nodeType == 'sticky']
+        lines = [f'画布共 {len(snapshot.nodes) - len(stickies)} 个节点、{len(snapshot.edges)} 条连线'
+                 + (f'，{len(stickies)} 张便签。' if stickies else '。')]
+        if stickies and not wanted:
+            lines.append('[便签]（用户给画布区域写的说明，不参与生成；节点后面的「区：」是它所在的那张便签）')
+            for sticky in stickies:
+                lines.append(f'- [{sticky.id}] {sticky_line(sticky)}；位置 ({round(sticky.x)}, {round(sticky.y)})'
+                             f'，大小 {round(sticky.width or 200)}×{round(sticky.height or 200)}')
+            lines.append('[节点]')
         open_notes = notes.open_notes(self.repository.database, self.canvas_id)
         note_counts: dict[str, int] = {}
         for note in open_notes:
@@ -110,6 +122,10 @@ class CanvasTools:
                 note_counts[note['node_id']] = note_counts.get(note['node_id'], 0) + 1
         for node in snapshot.nodes:
             if wanted and node.id not in wanted:
+                continue
+            if node.nodeType == 'sticky':
+                if wanted:
+                    lines.append(f'- [{node.id}] {sticky_line(node)}；位置 ({round(node.x)}, {round(node.y)})')
                 continue
             data = node.data
             text = data.get('content') if node.nodeType == 'note' else data.get('prompt')
@@ -133,6 +149,9 @@ class CanvasTools:
                 parts.append(f"上游：{', '.join(upstream[node.id])}")
             if node.id in snapshot.upstreamChanges:
                 parts.append('上游有更新')
+            area = area_of(node, stickies)
+            if area is not None:
+                parts.append(f'区：「{sticky_title(area)}」')
             if note_counts.get(node.id):
                 parts.append(f'用户备注 {note_counts[node.id]} 条（get_node 看内容）')
             lines.append('；'.join(parts))
@@ -183,6 +202,16 @@ class CanvasTools:
         data = node.data
         titles = {item.id: item.data.get('title', '') for item in snapshot.nodes}
         kinds = {item.id: item.nodeType for item in snapshot.nodes}
+        if node.nodeType == 'sticky':
+            lines = [f'便签 [{node.id}]（区域说明，不参与生成，不能连线）',
+                     f"文字：{data.get('content') or '（空）'}",
+                     f"颜色：{STICKY_COLORS.get(data.get('color'), data.get('color'))}；字号：{data.get('textSize', 'm')}",
+                     f'位置 ({round(node.x)}, {round(node.y)})，大小 {round(node.width or 200)}×{round(node.height or 200)}']
+            inside = [item for item in snapshot.nodes if item.nodeType != 'sticky'
+                      and area_of(item, [n for n in snapshot.nodes if n.nodeType == 'sticky']) is node]
+            if inside:
+                lines.append('这一区的节点：' + '、'.join(f"「{item.data.get('title', '')}」[{item.id}]" for item in inside))
+            return ToolResult('\n'.join(lines), summary='查看便签', touched=[node.id])
         lines = [f"{KIND_LABELS[node.nodeType]}节点「{data.get('title', '')}」[{node.id}]"]
         if node.nodeType == 'note':
             lines.append(f"文字：{data.get('content') or data.get('prompt') or '（空）'}")
@@ -296,9 +325,14 @@ class CanvasTools:
         for index, spec in enumerate(nodes):
             node_type = spec.get('type')
             if node_type not in KIND_LABELS:
-                return self._partial(created, f'第 {index + 1} 个节点类型不对，只能是 image、video 或 note。')
+                return self._partial(created, f'第 {index + 1} 个节点类型不对，只能是 image、video、note（文本）或 sticky（便签）。')
             data: dict[str, Any] = {}
-            if node_type == 'note':
+            if node_type == 'sticky':
+                sticky = sticky_data(spec)
+                if isinstance(sticky, str):
+                    return self._partial(created, sticky)
+                data.update(sticky)
+            elif node_type == 'note':
                 data['content'] = str(spec.get('content') or spec.get('prompt') or '')
             else:
                 data['prompt'] = str(spec.get('prompt') or '')
@@ -313,10 +347,15 @@ class CanvasTools:
             x, y = spec.get('x'), spec.get('y')
             if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
                 x, y = positions[index]
-            title = str(spec.get('title') or '').strip()[:60] or self._next_title(node_type)
+            if node_type == 'sticky':
+                title = sticky_title_from(data.get('content', ''))
+            else:
+                title = str(spec.get('title') or '').strip()[:60] or self._next_title(node_type)
             payload = {'nodeType': node_type, 'title': title, 'x': float(x), 'y': float(y), 'data': data}
             if node_type == 'note':
                 payload.update(note_size(data['content']))
+            elif node_type == 'sticky':
+                payload.update(sticky_size(data.get('content', ''), data.get('textSize', 'm'), spec))
             result = self._command('create_node', payload)
             if isinstance(result, ToolResult):
                 return self._partial(created, result.text)
@@ -324,7 +363,7 @@ class CanvasTools:
         titles = self._titles(created)
         return ToolResult(
             '已新建：' + '、'.join(f'「{titles[i]}」[{i}]' for i in created),
-            touched=created, summary=f'新建 {len(created)} 个节点',
+            touched=created, summary=new_summary(nodes, created),
         )
 
     def update_node(self, node_id: str, changes: dict[str, Any]) -> ToolResult:
@@ -339,11 +378,21 @@ class CanvasTools:
             if not title:
                 return self._error('标题不能为空。')
             data['title'] = title[:60]
-        if node['nodeType'] == 'note':
+        if node['nodeType'] == 'sticky':
+            if 'parameters' in changes or 'model' in changes or 'prompt' in changes:
+                return self._error('便签只能改文字（content）、颜色（color）和字号（textSize）。')
+            sticky = sticky_data(changes, partial=True)
+            if isinstance(sticky, str):
+                return self._error(sticky)
+            data.pop('title', None)
+            data.update(sticky)
+            if 'content' in sticky:
+                data['title'] = sticky_title_from(sticky['content'])
+        elif node['nodeType'] == 'note':
             if 'content' in changes or 'prompt' in changes:
                 data['content'] = str(changes.get('content', changes.get('prompt')) or '')
             if 'parameters' in changes or 'model' in changes:
-                return self._error('便签没有模型和生成参数。')
+                return self._error('文本节点没有模型和生成参数。')
         else:
             if 'prompt' in changes:
                 data['prompt'] = str(changes['prompt'] or '')
@@ -361,7 +410,7 @@ class CanvasTools:
                 data['model'] = model.id
                 data['parameters'] = parameters
         if not data:
-            return self._error('没有要修改的内容（可改 title、prompt / content、model、parameters）。')
+            return self._error('没有要修改的内容（可改 title、prompt / content、model、parameters；便签可改 content、color、textSize）。')
         aspects = {'gone'} | {conflicts.DATA_ASPECTS[key] for key in data}
         result = self._command('update_node', {'nodeId': node_id, 'data': data}, {node_id: aspects})
         if isinstance(result, ToolResult):
@@ -457,13 +506,13 @@ class CanvasTools:
             if node is None:
                 return self._error(ERROR_TEXT['NOT_FOUND'])
             title = node.data.get('title', '')
-            if node.nodeType == 'note':
-                return self._error(f'「{title}」是便签，不能生成。')
+            if node.nodeType in ('note', 'sticky'):
+                return self._error(f'「{title}」是{KIND_LABELS[node.nodeType]}，不能生成。')
             has_notes = any(
                 edge.target == node_id and nodes[edge.source].nodeType == 'note' for edge in snapshot.edges
             )
             if not str(node.data.get('prompt') or '').strip() and not has_notes:
-                return self._error(f'「{title}」没有 Prompt，也没有连接便签，先写 Prompt。')
+                return self._error(f'「{title}」没有 Prompt，也没有连接文本节点，先写 Prompt。')
             if reference_current:
                 if not node.data.get('assetId'):
                     return self._error(f'「{title}」还没有图片或视频，不能参考当前画面重画。')
@@ -673,3 +722,72 @@ class CanvasTools:
     @staticmethod
     def _error(message: str) -> ToolResult:
         return ToolResult(message, is_error=True)
+
+
+# ------------------------------------------------------------------ stickies
+
+def sticky_title(node: Any) -> str:
+    data = node.data if hasattr(node, 'data') else node.get('data', {})
+    return sticky_title_from(str(data.get('content') or '')) if data.get('content') else str(data.get('title') or '便签')
+
+
+def sticky_title_from(content: str) -> str:
+    """A sticky's name is its first line (shown bold on the canvas)."""
+    first = next((line.strip() for line in str(content).split('\n') if line.strip()), '')
+    return first[:40] or '便签'
+
+
+def sticky_line(node: Any) -> str:
+    data = node.data
+    text = ' / '.join(line.strip() for line in str(data.get('content') or '').split('\n') if line.strip())
+    if len(text) > PROMPT_PREVIEW:
+        text = text[:PROMPT_PREVIEW] + '…'
+    return f"{STICKY_COLORS.get(data.get('color'), '黄')}色便签「{text or '（空）'}」"
+
+
+def area_of(node: Any, stickies: list[Any]) -> Any | None:
+    """The sticky a node sits under: the nearest one above-left of it, preferring the same band of
+    rows (a sticky labels the row of nodes to its right and the rows just below it)."""
+    best, best_score = None, None
+    for sticky in stickies:
+        dx, dy = node.x - sticky.x, node.y - sticky.y
+        if dx < -40 or dy < -40 or dx > STICKY_REACH_X or dy > STICKY_REACH_Y:
+            continue
+        score = max(dy, 0) * 3 + max(dx, 0)
+        if best_score is None or score < best_score:
+            best, best_score = sticky, score
+    return best
+
+
+def sticky_data(spec: dict[str, Any], partial: bool = False) -> dict[str, Any] | str:
+    data: dict[str, Any] = {}
+    if 'content' in spec or not partial:
+        data['content'] = str(spec.get('content') or spec.get('text') or '')
+    if 'color' in spec or not partial:
+        color = spec.get('color') or 'yellow'
+        if color not in STICKY_COLORS:
+            return f"便签颜色只能是 {'、'.join(STICKY_COLORS)}。"
+        data['color'] = color
+    if 'textSize' in spec or 'text_size' in spec or not partial:
+        size = spec.get('textSize') or spec.get('text_size') or 'm'
+        if size not in STICKY_SIZES:
+            return '便签字号只能是 s、m、l。'
+        data['textSize'] = size
+    return data
+
+
+def sticky_size(content: str, text_size: str, spec: dict[str, Any]) -> dict[str, float]:
+    if isinstance(spec.get('width'), (int, float)) and isinstance(spec.get('height'), (int, float)):
+        return {'width': float(max(120, spec['width'])), 'height': float(max(120, spec['height']))}
+    per_line = {'s': 16, 'm': 11, 'l': 7}.get(text_size, 11)
+    rows = sum(max(1, -(-len(line) // per_line)) for line in str(content).split('\n'))
+    line_height = {'s': 20, 'm': 26, 'l': 36}.get(text_size, 26)
+    return {'width': 200.0, 'height': float(max(160, min(480, 48 + rows * line_height)))}
+
+
+def new_summary(specs: list[dict[str, Any]], created: list[str]) -> str:
+    stickies = sum(1 for spec in specs[:len(created)] if spec.get('type') == 'sticky')
+    others = len(created) - stickies
+    if stickies and others:
+        return f'新建 {others} 个节点、{stickies} 张便签'
+    return f'新建 {stickies} 张便签' if stickies else f'新建 {others} 个节点'

@@ -12,7 +12,9 @@ from .schemas import CommandEnvelope, CommandResult
 from .versions import NodeVersions, version_source
 
 
-_NODE_TYPES = {'image', 'video', 'note'}
+_NODE_TYPES = {'image', 'video', 'note', 'sticky'}
+STICKY_COLORS = ('yellow', 'pink', 'blue', 'green', 'purple', 'gray')
+STICKY_SIZES = ('s', 'm', 'l')
 
 
 
@@ -105,13 +107,21 @@ class CanvasCommandService:
         if node_type not in _NODE_TYPES:
             raise DomainError('INVALID_NODE_TYPE', f'Unsupported node type: {node_type}')
         node_id = str(payload.get('nodeId') or uuid4())
-        default_width = 300 if node_type != 'note' else 280
-        default_height = 260 if node_type != 'note' else 180
-        data = {
-            'title': payload.get('title') or f'Untitled {node_type}',
-            'prompt': payload.get('prompt', ''),
-            **payload.get('data', {}),
-        }
+        default_width, default_height = {'note': (280, 180), 'sticky': (200, 200)}.get(node_type, (300, 260))
+        if node_type == 'sticky':
+            # A label on the canvas: text, a paper colour and a text size. No prompt, no ports.
+            data = {'title': payload.get('title') or '便签', 'content': '', 'color': 'yellow', 'textSize': 'm',
+                    **payload.get('data', {})}
+            if data['color'] not in STICKY_COLORS:
+                raise DomainError('INVALID_PAYLOAD', f"color must be one of {', '.join(STICKY_COLORS)}")
+            if data['textSize'] not in STICKY_SIZES:
+                raise DomainError('INVALID_PAYLOAD', f"textSize must be one of {', '.join(STICKY_SIZES)}")
+        else:
+            data = {
+                'title': payload.get('title') or f'Untitled {node_type}',
+                'prompt': payload.get('prompt', ''),
+                **payload.get('data', {}),
+            }
         self.repository.insert_node(
             canvas_id,
             node_id,
@@ -254,8 +264,8 @@ class CanvasCommandService:
 
     def _update_note(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         node_id = self._required(payload, 'nodeId')
-        if self.repository.node_type(canvas_id, node_id) != 'note':
-            raise DomainError('INVALID_NODE_TYPE', 'Only note nodes accept update_note')
+        if self.repository.node_type(canvas_id, node_id) not in ('note', 'sticky'):
+            raise DomainError('INVALID_NODE_TYPE', 'Only text and sticky nodes accept update_note')
         self.repository.update_node(canvas_id, node_id, {'data': payload.get('data', payload)})
         return {'nodeId': node_id}
 

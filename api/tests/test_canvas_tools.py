@@ -46,7 +46,7 @@ def test_create_nodes_names_positions_and_marks_agent(repository):
     assert not result.is_error and len(result.touched) == 2
     nodes = {node.id: node for node in repository.get_snapshot(canvas_id).nodes}
     note, image = (nodes[i] for i in result.touched)
-    assert note.data['title'] == '便签 1' and note.data['content'] == '温暖的午后光线'
+    assert note.data['title'] == '文本 1' and note.data['content'] == '温暖的午后光线'
     assert image.data['parameters']['aspectRatio'] == '16:9' and image.data['parameters']['size'] == '2K'
     assert image.y > note.y  # stacked, not on top of each other
     long_note = tools.create_nodes([{'type': 'note', 'content': '\n'.join(['一行设定'] * 12)}]).touched[0]

@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-NodeType = Literal["image", "video", "note"]
+# note: shown as 「文本」 (its text feeds downstream prompts). sticky: 「便签」, a label on the canvas only.
+NodeType = Literal["image", "video", "note", "sticky"]
 
 
 @dataclass(frozen=True, slots=True)

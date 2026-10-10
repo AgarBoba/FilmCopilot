@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { NodeType } from '../domain/types';
-import { CommentIcon, ImageIcon, NoteIcon, PlusIcon, SparkIcon, UploadIcon, VideoIcon } from './icons';
+import { CommentIcon, ImageIcon, NoteIcon, PlusIcon, SparkIcon, StickyIcon, UploadIcon, VideoIcon } from './icons';
 
 
-const NODE_OPTIONS: { type: NodeType; label: string; hint: string; Icon: typeof ImageIcon }[] = [
-  { type: 'image', label: '图片', hint: '生成或放置图片', Icon: ImageIcon },
-  { type: 'video', label: '视频', hint: '生成或放置视频', Icon: VideoIcon },
-  { type: 'note', label: '便签', hint: '记录想法或提示词', Icon: NoteIcon },
+// Icon and name only; what each one is for shows on hover.
+const NODE_OPTIONS: { type: NodeType; label: string; hint: string; Icon: typeof ImageIcon; shortcut?: string }[] = [
+  { type: 'image', label: '图片', hint: '生成或上传一张图', Icon: ImageIcon },
+  { type: 'video', label: '视频', hint: '生成一段视频', Icon: VideoIcon },
+  { type: 'note', label: '文本', hint: '连到图片 / 视频，文字拼进提示词', Icon: NoteIcon },
+  { type: 'sticky', label: '便签', hint: '区域说明，不参与生成', Icon: StickyIcon, shortcut: 'S' },
 ];
 
 interface CanvasRailProps {
@@ -118,21 +120,21 @@ export function CanvasRail({
 
       {menuOpen && (
         <div className="rail-menu" role="menu" aria-label="选择节点类型">
-          {NODE_OPTIONS.map(({ type, label, hint, Icon }) => (
+          {NODE_OPTIONS.map(({ type, label, hint, Icon, shortcut }) => (
             <button
               key={type}
               type="button"
               role="menuitem"
+              data-tooltip={hint}
+              data-tooltip-side="right"
               onClick={() => {
                 setMenuOpen(false);
                 onAddNode(type);
               }}
             >
-              <span className="rail-menu-icon"><Icon /></span>
-              <span className="rail-menu-text">
-                <span className="rail-menu-label">{label}</span>
-                <span className="rail-menu-hint">{hint}</span>
-              </span>
+              <span className="rail-menu-icon"><Icon width={16} height={16} /></span>
+              <span className="rail-menu-label">{label}</span>
+              {shortcut && <span className="rail-menu-key">{shortcut}</span>}
             </button>
           ))}
         </div>

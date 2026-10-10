@@ -80,7 +80,7 @@ export function PromptComposer({
         className="nodrag nowheel"
         aria-label="Prompt"
         value={draft}
-        placeholder={noteCount ? '可以留空，会使用上游便签的文字' : '描述你想生成的画面…'}
+        placeholder={noteCount ? '可以留空，会使用上游文本的文字' : '描述你想生成的画面…'}
         readOnly={disabled}
         aria-readonly={disabled}
         onChange={(event) => setDraft(event.target.value)}
@@ -92,7 +92,7 @@ export function PromptComposer({
       )}
       {noteCount > 0 && noteHintHiddenFor !== noteCount && (
         <div className="prompt-note-hint" role="note">
-          <span>上游 {noteCount} 条便签的文字会放在这段提示词前面，一起发给模型</span>
+          <span>上游 {noteCount} 个文本节点的文字会放在这段提示词前面，一起发给模型</span>
           <button type="button" className="prompt-note-hint-close" aria-label="关闭提示"
             onClick={(event) => { event.stopPropagation(); setNoteHintHiddenFor(noteCount); }}>×</button>
         </div>

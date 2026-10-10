@@ -81,9 +81,9 @@ cd web && pnpm test -- --run && pnpm exec tsc -b
 | 目录 / 文件 | 管什么 |
 | --- | --- |
 | `canvas/CanvasShell.tsx` | 画布主体，什么都往这里接。改动容易冲突，见第 7 节。 |
-| `nodes/` | 图片 / 视频 / 便签节点、Prompt 输入区、视频播放、版本历史。 |
+| `nodes/` | 图片 / 视频 / 文本节点、便签、Prompt 输入区、视频播放、版本历史。 |
 | `agent/AgentPanel.tsx` | 面板：左右聊天（`turns.ts` 把消息分段）、输入栏（模型胶囊、技能 ✦、审核盾牌、上下文圆环）。 |
-| `agent/AgentMessage.tsx`、`Markdown.tsx`、`SessionList.tsx`、`MemoryView.tsx` | 单条消息、Markdown 和「存成便签」、对话列表、记忆页。 |
+| `agent/AgentMessage.tsx`、`Markdown.tsx`、`SessionList.tsx`、`MemoryView.tsx` | 单条消息、Markdown 和「存到画布」、对话列表、记忆页。 |
 | `comments/` | 图钉和新留言（`CommentLayer`）、讨论小窗（`CommentPopover`）、回复框（`CommentComposer`，勾选框和 @Agent 是同一件事）、时间线合并（`thread.ts`）。 |
 | `styles.css` | 全部样式，一个文件。颜色用 DESIGN.md 里的变量。 |
 

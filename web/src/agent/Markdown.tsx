@@ -10,7 +10,7 @@ interface MarkdownProps {
   className?: string;
   /**
    * Agent replies only. Special blocks — tables, code blocks, ```prompt blocks, quotes and
-   * ```note cards — get a "存成便签" button that saves just that block.
+   * ```note cards — get a "存到画布" button that saves just that block.
    */
   onSaveNote?: (content: string, title: string) => void;
 }
@@ -18,7 +18,7 @@ interface MarkdownProps {
 type BlockKind = 'table' | 'code' | 'prompt' | 'quote' | 'note';
 
 const KIND_FALLBACK: Record<BlockKind, string> = {
-  table: '表格', code: '代码', prompt: '提示词', quote: '摘录', note: '便签',
+  table: '表格', code: '代码', prompt: '提示词', quote: '摘录', note: '文本',
 };
 
 // hast nodes carry the source position of the markdown they came from.
@@ -95,7 +95,7 @@ function SaveButton({ onSave }: { onSave: () => void }) {
     <button
       type="button"
       className="agent-note-save"
-      data-tooltip="只把这一块存成便签，放到画布上"
+      data-tooltip="只把这一块存成文本节点，放到画布上"
       onClick={() => {
         onSave();
         setSaved(true);
@@ -103,7 +103,7 @@ function SaveButton({ onSave }: { onSave: () => void }) {
       }}
     >
       {saved ? <CheckIcon width={13} height={13} /> : <NoteAddIcon width={13} height={13} />}
-      {saved ? '已存' : '存成便签'}
+      {saved ? '已存' : '存到画布'}
     </button>
   );
 }
@@ -117,7 +117,7 @@ function DragHandle({ kind, title, content }: { kind: string; title: string; con
       role="button"
       tabIndex={-1}
       aria-label="拖到画布"
-      data-tooltip="拖到节点上：接在它的提示词后面；拖到空白处：新建便签"
+      data-tooltip="拖到节点上：接在它的提示词后面；拖到空白处：新建文本节点"
       onDragStart={(event) => {
         writeBlock(event.dataTransfer, { content, title, kind });
         // Show the whole block under the pointer, not just the little handle.
@@ -221,7 +221,7 @@ export function noteBlocks(text: string): string[] {
  * A note block (or any text being saved as a note): a leading "# 标题" line becomes the
  * note's title and is not repeated in the body.
  */
-export function splitNoteBlock(source: string, fallback = '便签'): { title: string; body: string } {
+export function splitNoteBlock(source: string, fallback = '文本'): { title: string; body: string } {
   const text = source.replace(/^\s*\n/, '');
   const match = /^#{1,6}\s+(.+?)\s*#*[ \t]*(?:\n|$)/.exec(text);
   if (match) {

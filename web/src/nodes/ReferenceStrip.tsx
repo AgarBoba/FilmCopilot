@@ -33,7 +33,7 @@ interface ReferenceStripProps {
   compact?: boolean;
 }
 
-const KIND_LABELS = { image: '图片', video: '视频', note: '便签' } as const;
+const KIND_LABELS = { image: '图片', video: '视频', note: '文本' } as const;
 const SNIPPET_LENGTH = 24;
 
 
@@ -177,7 +177,7 @@ interface NoteChipProps {
 /** A connected note: its name and the start of its text. The full text is in the tooltip. */
 function NoteChip({ reference, index, onRemove, removeTooltip }: NoteChipProps) {
   const text = reference.text?.trim() ?? '';
-  const name = reference.title?.trim() || `便签 ${index + 1}`;
+  const name = reference.title?.trim() || `文本 ${index + 1}`;
   const snippet = text.length > SNIPPET_LENGTH ? `${text.slice(0, SNIPPET_LENGTH)}…` : text;
   return (
     <div
@@ -186,13 +186,13 @@ function NoteChip({ reference, index, onRemove, removeTooltip }: NoteChipProps) 
       data-tooltip-side="bottom"
     >
       <span className="reference-note-name">{name}</span>
-      <span className="reference-note-text">{snippet || '空便签'}</span>
+      <span className="reference-note-text">{snippet || '空文本'}</span>
       {onRemove && (
         <button
           type="button"
           className="nodrag"
-          aria-label={`删除参考便签 ${index + 1}`}
-          data-tooltip={removeTooltip ?? '移除这个便签（会断开连线）'}
+          aria-label={`删除参考文本 ${index + 1}`}
+          data-tooltip={removeTooltip ?? '移除这个文本（会断开连线）'}
           onClick={(event) => {
             event.stopPropagation();
             onRemove(reference);

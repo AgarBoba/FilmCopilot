@@ -20,9 +20,10 @@ CanvasState = dict[str, dict[str, dict[str, Any]]]
 
 ASPECT_LABELS = {
     'gone': '删除了', 'layout': '移动了', 'title': '改了名字', 'prompt': '改了文字/Prompt',
-    'parameters': '改了参数', 'media': '换了图片/视频', 'inputs': '改了连线',
+    'parameters': '改了参数', 'media': '换了图片/视频', 'inputs': '改了连线', 'style': '改了颜色或字号',
 }
-DATA_ASPECTS = {'title': 'title', 'prompt': 'prompt', 'content': 'prompt', 'parameters': 'parameters', 'model': 'parameters', 'assetId': 'media'}
+DATA_ASPECTS = {'title': 'title', 'prompt': 'prompt', 'content': 'prompt', 'parameters': 'parameters', 'model': 'parameters', 'assetId': 'media',
+                'color': 'style', 'textSize': 'style'}  # the last two: a sticky's look
 
 
 def node_changes(seen: CanvasState, current: CanvasState, generated_assets: set[str]) -> dict[str, set[str]]:

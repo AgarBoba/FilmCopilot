@@ -155,11 +155,11 @@ describe('note references', () => {
     );
     expect(screen.getByText('风格')).toBeInTheDocument();
     expect(screen.getByText('温暖的午后光线，胶片质感')).toBeInTheDocument();
-    expect(screen.getByText('空便签')).toBeInTheDocument();
+    expect(screen.getByText('空文本')).toBeInTheDocument();
     // Only notes with text count.
-    expect(screen.getByText(/上游 1 条便签的文字/)).toBeInTheDocument();
+    expect(screen.getByText(/上游 1 个文本节点的文字/)).toBeInTheDocument();
     expect(screen.getByLabelText('Prompt').getAttribute('placeholder')).toContain('可以留空');
-    fireEvent.click(screen.getByRole('button', { name: '删除参考便签 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除参考文本 1' }));
     expect(onRemove).toHaveBeenCalledWith(expect.objectContaining({ edgeId: 'n1' }));
   });
 });

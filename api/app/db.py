@@ -36,7 +36,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS canvas_nodes (
                     canvas_id TEXT NOT NULL,
                     id TEXT NOT NULL,
-                    node_type TEXT NOT NULL CHECK (node_type IN ('image', 'video', 'note')),
+                    node_type TEXT NOT NULL CHECK (node_type IN ('image', 'video', 'note', 'sticky')),
                     x REAL NOT NULL DEFAULT 0,
                     y REAL NOT NULL DEFAULT 0,
                     width REAL,
@@ -282,6 +282,47 @@ class Database:
                     "ALTER TABLE canvases ADD COLUMN viewport_json TEXT NOT NULL DEFAULT '{\"x\": 0, \"y\": 0, \"zoom\": 1}'"
                 )
             self._migrate_comments(connection)
+        self._migrate_node_types()
+
+    def _migrate_node_types(self) -> None:
+        """Older databases only allow image / video / note nodes. SQLite can't change a CHECK in
+        place, so the table is rebuilt (the documented recipe: foreign keys off, copy, swap), which
+        leaves edges, jobs and versions pointing at the same rows."""
+        connection = self._connect()
+        try:
+            row = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'canvas_nodes'").fetchone()
+            if row is None or "'sticky'" in row['sql']:
+                return
+            connection.isolation_level = None
+            connection.execute('PRAGMA foreign_keys = OFF')
+            connection.execute('BEGIN')
+            connection.execute('''CREATE TABLE canvas_nodes_new (
+                    canvas_id TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    node_type TEXT NOT NULL CHECK (node_type IN ('image', 'video', 'note', 'sticky')),
+                    x REAL NOT NULL DEFAULT 0,
+                    y REAL NOT NULL DEFAULT 0,
+                    width REAL,
+                    height REAL,
+                    data_json TEXT NOT NULL DEFAULT '{}',
+                    PRIMARY KEY (canvas_id, id),
+                    FOREIGN KEY (canvas_id) REFERENCES canvases(id) ON DELETE CASCADE
+                )''')
+            connection.execute('''INSERT INTO canvas_nodes_new (canvas_id, id, node_type, x, y, width, height, data_json)
+                SELECT canvas_id, id, node_type, x, y, width, height, data_json FROM canvas_nodes ORDER BY rowid''')
+            connection.execute('DROP TABLE canvas_nodes')
+            connection.execute('ALTER TABLE canvas_nodes_new RENAME TO canvas_nodes')
+            problems = connection.execute('PRAGMA foreign_key_check').fetchall()
+            if problems:
+                connection.execute('ROLLBACK')
+                raise RuntimeError(f'canvas_nodes migration would break {len(problems)} references')
+            connection.execute('COMMIT')
+        finally:
+            try:
+                connection.execute('PRAGMA foreign_keys = ON')
+            finally:
+                connection.close()
 
     @staticmethod
     def _migrate_comments(connection: sqlite3.Connection) -> None:

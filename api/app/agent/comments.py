@@ -277,7 +277,7 @@ class CommentService:
             return '\n'.join(lines), []
         node = self._node(row['canvas_id'], row['node_id'])
         title = (node or {}).get('data', {}).get('title') or '未命名节点'
-        label = {'image': '图片节点', 'video': '视频节点', 'note': '便签'}.get((node or {}).get('nodeType'), '节点')
+        label = {'image': '图片节点', 'video': '视频节点', 'note': '文本节点', 'sticky': '便签'}.get((node or {}).get('nodeType'), '节点')
         if kind == 'node':
             lines.append(f"[留言位置] {label}「{title}」[{row['node_id']}]")
             return '\n'.join(lines), []

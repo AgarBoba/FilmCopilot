@@ -33,6 +33,7 @@ import type {
 } from '../domain/types';
 import { ImageNode } from '../nodes/ImageNode';
 import { NoteNode } from '../nodes/NoteNode';
+import { editStickyWhenItAppears, lastStickyColor, StickyNode } from '../nodes/StickyNode';
 import type { NodeReference } from '../nodes/ReferenceStrip';
 import { VideoNode } from '../nodes/VideoNode';
 import { ReferenceEdge, getVisibleEdgeIds } from '../edges/ReferenceEdge';
@@ -55,7 +56,7 @@ import { openComments, useCommentStore } from '../comments/commentStore';
 import { pinState, type CanvasComment } from '../comments/commentApi';
 
 
-const nodeTypes = { image: ImageNode, video: VideoNode, note: NoteNode };
+const nodeTypes = { image: ImageNode, video: VideoNode, note: NoteNode, sticky: StickyNode };
 const edgeTypes = { reference: ReferenceEdge };
 const CHOOSER_NODE_TYPES: ChooserNodeType[] = ['image', 'video'];
 // Rough node width, used to place a new upstream node so it ends at the drop point.
@@ -64,7 +65,7 @@ const NEW_NODE_HEIGHT = 440;
 const NODE_GAP = 40;
 const DUPLICATE_OFFSET = 40;
 const GHOST_PREFIX = 'ghost:';
-const NODE_TYPE_LABELS: Record<NodeType, string> = { image: '图片', video: '视频', note: '便签' };
+const NODE_TYPE_LABELS: Record<NodeType, string> = { image: '图片', video: '视频', note: '文本', sticky: '便签' };
 
 /** Default name for a new node: "图片 3" = one more than the highest number already used. */
 function defaultNodeTitle(nodeType: NodeType): string {
@@ -166,6 +167,9 @@ export function CanvasShell() {
   /** Set while an Option/Alt-drag is making copies: where the originals started. */
   const altDragRef = useRef<Map<string, { x: number; y: number }> | null>(null);
   const duplicateRef = useRef<(nodeIds: string[]) => void>(() => undefined);
+  /** S: a sticky where the pointer is (screen coordinates), or in the middle of the view. */
+  const addStickyRef = useRef<(at: { x: number; y: number } | null) => void>(() => undefined);
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef<string | null>(null);
   const deletionPendingRef = useRef(false);
@@ -212,6 +216,9 @@ export function CanvasShell() {
       } else if (event.key.toLowerCase() === 'c') {
         const store = useCommentStore.getState();
         store.setMode(!store.mode);
+      } else if (event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        addStickyRef.current(pointerRef.current);
       }
     }
     function onKeyUp(event: KeyboardEvent) {
@@ -294,6 +301,12 @@ export function CanvasShell() {
         },
         onStyleChange: (changes: { fontFamily?: string; fontSize?: number }) => {
           void persistNodeData(node.id, changes);
+        },
+        onStickyChange: (changes: Record<string, unknown>) => {
+          void persistNodeData(node.id, changes);
+        },
+        onDelete: () => {
+          void onBeforeDelete({ nodes: [{ id: node.id } as Node], edges: [] });
         },
         onPromptChange: (prompt: string) => {
           void persistNodeData(node.id, { prompt });
@@ -409,7 +422,7 @@ export function CanvasShell() {
 
   /** What each node looks like as a thumbnail (agent panel focus strip and message history). */
   const nodePreviews = useMemo(() => Object.fromEntries(nodes.map((node): [string, NodeReference] => {
-    const kind = node.type === 'note' ? 'note' : node.type === 'video' ? 'video' : 'image';
+    const kind = node.type === 'note' || node.type === 'sticky' ? 'note' : node.type === 'video' ? 'video' : 'image';
     const content = node.data.content ?? node.data.prompt;
     return [node.id, {
       nodeId: node.id,
@@ -466,12 +479,12 @@ export function CanvasShell() {
     const targetId = nodeUnder(event.clientX, event.clientY);
     if (!targetId) {
       const position = flowRef.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      const title = block.title || '便签';
+      const title = block.title || '文本';
       const nodeId = await addNode('note', {
         title, data: { content: block.content }, size: noteSizeFor(block.content),
         position: position ? { x: position.x - 20, y: position.y - 20 } : undefined,
       });
-      if (nodeId) showNotice(`已新建便签「${title}」`);
+      if (nodeId) showNotice(`已新建文本「${title}」`);
       return;
     }
     const node = nodes.find((item) => item.id === targetId);
@@ -481,8 +494,9 @@ export function CanvasShell() {
       showNotice(`「${name}」正在生成，提示词锁定中，没有改动`);
       return;
     }
-    const field = node.type === 'note' ? 'content' : 'prompt';
-    const before = String((node.type === 'note' ? node.data.content ?? node.data.prompt : node.data.prompt) ?? '');
+    const textual = node.type === 'note' || node.type === 'sticky';
+    const field = textual ? 'content' : 'prompt';
+    const before = String((textual ? node.data.content ?? node.data.prompt : node.data.prompt) ?? '');
     const after = appendText(before, block.content);
     await persistNodeData(targetId, { [field]: after });
     showNotice(`已接在「${name}」的${field === 'content' ? '文字' : '提示词'}后面`, () => {
@@ -539,6 +553,7 @@ export function CanvasShell() {
       data?: Record<string, unknown>;
       size?: { width: number; height: number };
       position?: { x: number; y: number };
+      nodeId?: string;
     },
   ) {
     const current = useCanvasStore.getState().snapshot;
@@ -549,6 +564,7 @@ export function CanvasShell() {
       idempotencyKey: commandKey('create-node'),
       payload: {
         nodeType,
+        ...(extra?.nodeId ? { nodeId: extra.nodeId } : {}),
         title: extra?.title || defaultNodeTitle(nodeType),
         ...(extra?.data ? { data: extra.data } : {}),
         ...(extra?.position ?? nextNodePosition()),
@@ -558,6 +574,22 @@ export function CanvasShell() {
     const nodeId = result?.payload.nodeId;
     return typeof nodeId === 'string' ? nodeId : undefined;
   }
+
+  /** A new 便签: last-used colour, straight into typing. At a screen point (S key) or the usual spot. */
+  async function addSticky(at?: { x: number; y: number } | null) {
+    const flowPoint = at ? flowRef.current?.screenToFlowPosition(at) : undefined;
+    // The id is chosen here so the node knows to open for typing however fast it shows up.
+    const id = crypto.randomUUID();
+    editStickyWhenItAppears(id);
+    await addNode('sticky', {
+      nodeId: id,
+      title: '便签',
+      data: { content: '', color: lastStickyColor(), textSize: 'm' },
+      size: { width: 200, height: 200 },
+      position: flowPoint ? { x: Math.round(flowPoint.x - 20), y: Math.round(flowPoint.y - 20) } : undefined,
+    });
+  }
+  addStickyRef.current = (at) => void addSticky(at);
 
   /** Big enough to show the whole text without scrolling, within reason. */
   function noteSizeFor(text: string) {
@@ -900,6 +932,8 @@ export function CanvasShell() {
         onDragOver={onBlockDragOver}
         onDragLeave={onBlockDragLeave}
         onDrop={(event) => void onBlockDrop(event)}
+        onPointerMove={(event) => { pointerRef.current = { x: event.clientX, y: event.clientY }; }}
+        onPointerLeave={() => { pointerRef.current = null; }}
         onPointerDownCapture={(event) => {
           if ((event.target as Element).closest('.react-flow__node')) {
             selectionBeforePointerRef.current = useCanvasStore.getState().selectedNodeIds;
@@ -955,7 +989,7 @@ export function CanvasShell() {
           {showMinimap && <MiniMap position="bottom-left" className="canvas-minimap" pannable zoomable />}
           <Panel position="center-left" className="canvas-panel">
             <CanvasRail
-              onAddNode={(type) => void addNode(type)}
+              onAddNode={(type) => void (type === 'sticky' ? addSticky() : addNode(type))}
               onUpload={requestUploadAsNewNode}
               commentMode={commentMode}
               onToggleComments={() => useCommentStore.getState().setMode(!commentMode)}
