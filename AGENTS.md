@@ -3,6 +3,8 @@
 读这份文件的是 Claude Code、Codex 这类编码 Agent，你在帮用户安装、运行、排错 Film Copilot，或者帮他接入新的生成模型。
 用户不一定是开发者，也可能从不打开终端：命令都由你来跑，跟用户说话用他的语言，讲结果，别贴命令日志。
 
+> 要改进这个项目的代码（不只是安装和运行）？先读 [docs/HANDOFF.md](docs/HANDOFF.md)：现状、代码地图、多个 session 并行怎么分工。
+
 Film Copilot 是一个在本机运行的无限画布，用来生成图片和视频。它由三部分组成：FastAPI 后端、一个 Worker、React 前端。
 - 画布里另有一个 Agent，它基于 Claude Agent SDK，用 Anthropic API Key。它和你没有关系，你不需要操作它。
 - 图片和视频由 `models/*.json` 里登记的模型生成。默认模型是 Replicate 上的 Seedream 5 Pro（图片）和 Seedance 2.0 Mini（视频）。

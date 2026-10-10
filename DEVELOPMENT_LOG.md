@@ -43,6 +43,10 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-10-10 交接文档
+
+- 新增 `docs/HANDOFF.md`：项目现状、代码地图、铁律、多个 session 并行的做法（每个 session 一个 worktree + 分支、各自的端口和 data、容易冲突的文件），以及没做 / 没验证的事项。`AGENTS.md` 开头加了指向它的一行。
+
 ### 2026-10-10 Agent 模型换成 5.5 一代
 
 - 面板可选模型：Opus 5.5（`claude-opus-5-5`）、Sonnet 5.5（`claude-sonnet-5-5`）、Haiku 5.5（`claude-haiku-5-5`），ID 以 Claude 官方文档的模型列表为准。对话摘要也改用 Haiku 5.5。
