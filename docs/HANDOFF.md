@@ -17,8 +17,9 @@ Film Copilot：本机运行的无限画布，用来生成图片和视频，画�
 | 项 | 值 |
 | --- | --- |
 | 仓库 | `/Users/justingu/Desktop/Agent Demo`，远端 `origin` = github.com/AgarBoba/FilmCopilot |
-| 开发分支 | `feature/infinite-media-canvas`，工作目录 `/Users/justingu/Desktop/Agent Demo/.worktrees/infinite-media-canvas` |
-| `main` | 10/10 已快进到和开发分支相同（`6f9a7dd`）。注意：仓库根目录那份 `main` 的检出文件是旧的，没人在那里跑，别在根目录直接开发 |
+| 主干 | **`main`**（10/10 起；GitHub 上的 `main` 是唯一正式版本）。主工作目录 `/Users/justingu/Desktop/Agent Demo/.worktrees/infinite-media-canvas` 检出的就是 `main` |
+| 旧分支 | `feature/infinite-media-canvas` 停在 `409c953`，不再使用 |
+| 仓库根目录 | `Agent Demo/` 本身是一份没人用的旧检出（HEAD 已分离），别在那里开发或启动 |
 | 测试 | 后端 pytest 177 通过；前端 vitest 91 通过，`tsc -b` 干净 |
 | 最近做完 | 留言改成真正的评论（普通留言 / @Agent）、Agent 面板左右聊天版式和新输入栏、上下文圆环、对话摘要和 recall 改进、模型换成 Opus / Sonnet / Haiku 5.5 |
 
@@ -106,11 +107,11 @@ cd web && pnpm test -- --run && pnpm exec tsc -b
 
 ## 7. 多个 session 并行：怎么不打架
 
-**每个 session 一个 git worktree + 一个分支**，从开发分支切出来，不要几个 session 挤在同一个工作目录里。
+**每个 session 一个 git worktree + 一个分支**，从最新的 `main` 切出来，不要几个 session 挤在同一个工作目录里。开工前先 `git pull origin main`。
 
 ```bash
 cd "/Users/justingu/Desktop/Agent Demo"
-git worktree add .worktrees/<短名> -b feat/<短名> feature/infinite-media-canvas
+git worktree add .worktrees/<短名> -b feat/<短名> main
 cd .worktrees/<短名>
 cp ../infinite-media-canvas/.env .env && chmod 600 .env   # 直接复制，不打开、不读内容
 python3 scripts/setup.py                                  # 各自的 .venv 和 node_modules
@@ -139,14 +140,18 @@ python3 scripts/setup.py                                  # 各自的 .venv 和 
 | `api/app/db.py` | 迁移 | 两个 session 同时加表很容易冲突，先说好谁加 |
 | `DEVELOPMENT_LOG.md`、`docs/DESIGN.md` | 大家都会往里写 | 冲突好解决，合并时两条都保留，按日期排 |
 
-**合并回去**：做完一块，在主工作目录里合并，跑一遍全量测试再交给 Justin：
+**合并回去**：做完一块，在主工作目录（检出的是 `main`）里合并，跑一遍全量测试再交给 Justin：
 
 ```bash
 cd "/Users/justingu/Desktop/Agent Demo/.worktrees/infinite-media-canvas"
+git pull origin main          # 先拿到别人已经合进去的
 git merge feat/<短名>
 ```
 
-不用的 worktree 用 `git worktree remove` 清掉。`main` 什么时候合由 Justin 决定。
+- 推到 GitHub 由 Justin 来：`git push origin main`。
+- 还在做的分支，定期把新的 `main` 合进来（`git merge main`），越早冲突越小。
+- 用 Codex 云端任务的：它从 GitHub 上的 `main` 开始做、以 PR 交回；派活前先确保本地改动已推上去，PR 合并后在本地 `git pull`。
+- 不用的 worktree 用 `git worktree remove` 清掉。
 
 ## 8. 云端 session 连 Justin 电脑时的坑（本机 session 可跳过）
 

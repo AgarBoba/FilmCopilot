@@ -8,7 +8,7 @@
 
 - 最近更新：2026-09-23
 - 本地项目目录：`/Users/justingu/Desktop/Agent Demo/.worktrees/infinite-media-canvas`
-- 当前分支：`feature/infinite-media-canvas`
+- 当前分支：`main`（10/10 起作为主干；`feature/infinite-media-canvas` 不再使用）
 - 最近已提交版本：`d80e36d fix: restore persisted viewport on canvas load`
 - 9/23 的改动均已提交；仓库当前没有配置 Git remote。
 - 本地 Web 地址：<http://127.0.0.1:5173/>
@@ -42,6 +42,12 @@
 API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.sh](scripts/dev.sh)。本地运行不等于已验证真实模型调用；没有 `REPLICATE_API_TOKEN` 时，自动化测试和 fake Provider 测试不能证明线上模型生成成功。
 
 ## 开发与修复记录
+
+### 2026-10-10 主干改成 main
+
+- `main` 快进到开发分支最新提交后，主工作目录 `.worktrees/infinite-media-canvas` 改为检出 `main`；`feature/infinite-media-canvas` 停在 `409c953`，不再使用。
+- 仓库根目录 `Agent Demo/` 原来检出着 `main`，但文件一直是旧版本（之前只移动过分支指针）；为了让主工作目录能检出 `main`，把根目录的 HEAD 分离了，文件没动。
+- `docs/HANDOFF.md` 的并行流程改成以 `main` 为准（含 Codex 云端任务的同步方式）。
 
 ### 2026-10-10 交接文档
 
