@@ -78,7 +78,7 @@ interface StickyNodeProps {
 /**
  * 便签: a coloured paper label for an area of the canvas. No ports, no title bar, never part
  * of a generation. Double-click to type; the first line is the bold name. Selected, a small
- * toolbar above it changes the colour and text size; the four corners resize it.
+ * toolbar above it changes the colour and text size; the bottom-right grip resizes it.
  */
 export function StickyNode({ id, data, selected = false }: StickyNodeProps) {
   const save = (content: string) => data.onStickyChange?.({ content, title: stickyTitle(content) });
@@ -108,20 +108,21 @@ export function StickyNode({ id, data, selected = false }: StickyNodeProps) {
   }, [selected]);
 
   const [first, ...rest] = draft.replace(/^(\s*\n)+/, '').split('\n');
-  const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
 
   return (
     <div className={`sticky-node is-${size} ${editing ? 'is-editing' : ''}`} style={{ background: color.hex }}>
-      {corners.map((corner) => (
-        <NodeResizeControl
-          key={corner}
-          className={`sticky-resize is-${corner} nodrag`}
-          position={corner}
-          minWidth={STICKY_MIN}
-          minHeight={STICKY_MIN}
-          onResizeEnd={(_, params) => data.onResize?.({ width: params.width, height: params.height })}
-        />
-      ))}
+      {/* Same grip as the other nodes: bottom-right only, shown on hover or when selected. */}
+      <NodeResizeControl
+        className="note-resize sticky-grip nodrag"
+        position="bottom-right"
+        minWidth={STICKY_MIN}
+        minHeight={STICKY_MIN}
+        onResizeEnd={(_, params) => data.onResize?.({ width: params.width, height: params.height })}
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+          <path d="M13 4v4.5A4.5 4.5 0 0 1 8.5 13H4" />
+        </svg>
+      </NodeResizeControl>
       <NodeToolbar isVisible={selected && !editing} position={Position.Top} offset={12} className="sticky-toolbar nodrag">
         <div className="sticky-swatches" role="radiogroup" aria-label="颜色">
           {STICKY_COLORS.map((item) => (

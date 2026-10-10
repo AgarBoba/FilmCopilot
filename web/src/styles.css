@@ -3793,7 +3793,6 @@ body.is-resizing-panel .agent-panel { transition: none; }
   font-family: inherit;
 }
 .theme-light .sticky-node { box-shadow: 0 4px 14px rgba(20, 24, 33, 0.14); }
-.react-flow__node.selected .sticky-node { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28), 0 0 0 2px var(--text-primary); }
 .sticky-text,
 .sticky-input {
   position: absolute;
@@ -3819,16 +3818,23 @@ body.is-resizing-panel .agent-panel { transition: none; }
 .sticky-node.is-l .sticky-title { font-size: 36px; }
 .sticky-node .comment-badge { top: 8px; right: 8px; }
 
-/* Four small corner squares, shown when selected. */
-.react-flow__resize-control.sticky-resize {
-  width: 10px;
-  height: 10px;
-  border: 1px solid var(--canvas-bg, #11131a);
-  border-radius: 2px;
-  background: var(--text-primary);
-  opacity: 0;
+/* Hover and selection follow the other nodes: a faint rim on hover, the white light when selected. */
+.sticky-node { transition: box-shadow 160ms ease, transform 160ms ease; }
+.react-flow__node-sticky:hover .sticky-node {
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34), 0 0 0 1px color-mix(in srgb, var(--text-primary) 45%, transparent);
 }
-.react-flow__node.selected .react-flow__resize-control.sticky-resize { opacity: 1; }
+.react-flow__node-sticky.selected .sticky-node,
+.react-flow__node-sticky.selected:hover .sticky-node {
+  box-shadow:
+    0 0 0 1.5px var(--sel-rim, var(--text-primary)),
+    0 0 22px var(--sel-glow, transparent),
+    0 10px 26px rgba(0, 0, 0, 0.34);
+}
+.react-flow__node-sticky:hover .react-flow__resize-control.handle.bottom.right.note-resize,
+.react-flow__node-sticky.selected .react-flow__resize-control.handle.bottom.right.note-resize { opacity: 1; }
+/* On paper the grip is dark, not the canvas grey; above the text box, which fills the paper. */
+.react-flow__node .react-flow__resize-control.handle.bottom.right.sticky-grip { z-index: 4; color: rgba(29, 29, 31, 0.4); }
+.react-flow__node .react-flow__resize-control.handle.bottom.right.sticky-grip:hover { color: rgba(29, 29, 31, 0.85); }
 
 .sticky-toolbar {
   display: flex;
