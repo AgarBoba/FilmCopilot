@@ -245,3 +245,21 @@ def test_models_are_chosen_validated_and_switched(repository):
     bad = tools.update_node(node, {'parameters': {'steps': 3}})
     assert bad.is_error and '没有参数 steps' in bad.text
     assert '模型：Seedream 5 Pro' in tools.get_node(node).text
+
+
+def test_the_agent_sees_each_node_size_and_new_nodes_do_not_overlap(repository):
+    tools, _, canvas_id = setup(repository)
+    long_text = '\n'.join(f'第 {i} 行设定文字' for i in range(12))
+    result = tools.create_nodes([
+        {'type': 'note', 'content': long_text},
+        {'type': 'image', 'prompt': '兔子'},
+        {'type': 'video', 'prompt': '兔子跳'},
+    ])
+    note, image, video = (next(n for n in repository.get_snapshot(canvas_id).nodes if n.id == i) for i in result.touched)
+    # Stacked by their real heights, with a gap.
+    assert image.y >= note.y + note.height + 40 and video.y >= image.y + image.height + 40
+    canvas = tools.get_canvas().text
+    assert '右边界 = x + 宽' in canvas
+    assert f'位置 ({round(image.x)}, {round(image.y)})，大小 300×260' in canvas
+    assert f'大小 {round(note.width)}×{round(note.height)}' in canvas
+    assert '大小 300×260' in tools.get_node(video.id).text

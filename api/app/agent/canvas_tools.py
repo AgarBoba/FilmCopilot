@@ -28,7 +28,8 @@ STICKY_SIZES = ('s', 'm', 'l')
 # How far a sticky's area reaches: nodes to its right / below, in the same band of rows.
 STICKY_REACH_X, STICKY_REACH_Y = 2400, 900
 PROMPT_PREVIEW = 80
-NODE_WIDTH, NODE_HEIGHT, GAP = 300, 440, 40
+# A new image / video card (unselected); sizes the agent sees are always the unselected ones.
+NODE_WIDTH, NODE_HEIGHT, GAP = 300, 260, 40
 
 # Models and their parameters come from models/*.json (see app/models_registry.py).
 
@@ -108,12 +109,13 @@ class CanvasTools:
         conflicts.refresh(self.seen, self.repository.canvas_state(self.canvas_id), set(wanted) if wanted else None)
         stickies = [node for node in snapshot.nodes if node.nodeType == 'sticky']
         lines = [f'画布共 {len(snapshot.nodes) - len(stickies)} 个节点、{len(snapshot.edges)} 条连线'
-                 + (f'，{len(stickies)} 张便签。' if stickies else '。')]
+                 + (f'，{len(stickies)} 张便签。' if stickies else '。')
+                 + '位置是左上角，大小是宽×高（节点没选中时的样子）；右边界 = x + 宽，下边界 = y + 高。']
         if stickies and not wanted:
             lines.append('[便签]（用户给画布区域写的说明，不参与生成；节点后面的「区：」是它所在的那张便签）')
             for sticky in stickies:
                 lines.append(f'- [{sticky.id}] {sticky_line(sticky)}；位置 ({round(sticky.x)}, {round(sticky.y)})'
-                             f'，大小 {round(sticky.width or 200)}×{round(sticky.height or 200)}')
+                             f'，大小 {size_text(sticky)}')
             lines.append('[节点]')
         open_notes = notes.open_notes(self.repository.database, self.canvas_id)
         note_counts: dict[str, int] = {}
@@ -134,7 +136,7 @@ class CanvasTools:
                 text = text[:PROMPT_PREVIEW] + '…'
             parts = [
                 f"- [{node.id}] {KIND_LABELS[node.nodeType]}「{data.get('title', '')}」",
-                f'位置 ({round(node.x)}, {round(node.y)})',
+                f'位置 ({round(node.x)}, {round(node.y)})，大小 {size_text(node)}',
             ]
             if node.nodeType != 'note':
                 parts.append('有内容' if data.get('assetId') else '无内容')
@@ -206,13 +208,14 @@ class CanvasTools:
             lines = [f'便签 [{node.id}]（区域说明，不参与生成，不能连线）',
                      f"文字：{data.get('content') or '（空）'}",
                      f"颜色：{STICKY_COLORS.get(data.get('color'), data.get('color'))}；字号：{data.get('textSize', 'm')}",
-                     f'位置 ({round(node.x)}, {round(node.y)})，大小 {round(node.width or 200)}×{round(node.height or 200)}']
+                     f'位置 ({round(node.x)}, {round(node.y)})，大小 {size_text(node)}']
             inside = [item for item in snapshot.nodes if item.nodeType != 'sticky'
                       and area_of(item, [n for n in snapshot.nodes if n.nodeType == 'sticky']) is node]
             if inside:
                 lines.append('这一区的节点：' + '、'.join(f"「{item.data.get('title', '')}」[{item.id}]" for item in inside))
             return ToolResult('\n'.join(lines), summary='查看便签', touched=[node.id])
-        lines = [f"{KIND_LABELS[node.nodeType]}节点「{data.get('title', '')}」[{node.id}]"]
+        lines = [f"{KIND_LABELS[node.nodeType]}节点「{data.get('title', '')}」[{node.id}]",
+                 f'位置 ({round(node.x)}, {round(node.y)})，大小 {size_text(node)}']
         if node.nodeType == 'note':
             lines.append(f"文字：{data.get('content') or data.get('prompt') or '（空）'}")
         else:
@@ -320,7 +323,7 @@ class CanvasTools:
     def create_nodes(self, nodes: list[dict[str, Any]]) -> ToolResult:
         if not nodes:
             return self._error('至少要新建一个节点。')
-        positions = self._free_positions(len(nodes))
+        column_x, column_y = self._free_column()
         created: list[str] = []
         for index, spec in enumerate(nodes):
             node_type = spec.get('type')
@@ -345,8 +348,9 @@ class CanvasTools:
                 data['model'] = model.id
                 data['parameters'] = parameters
             x, y = spec.get('x'), spec.get('y')
-            if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
-                x, y = positions[index]
+            auto = not isinstance(x, (int, float)) or not isinstance(y, (int, float))
+            if auto:
+                x, y = column_x, column_y
             if node_type == 'sticky':
                 title = sticky_title_from(data.get('content', ''))
             else:
@@ -360,6 +364,8 @@ class CanvasTools:
             if isinstance(result, ToolResult):
                 return self._partial(created, result.text)
             created.append(result['nodeId'])
+            if auto:  # the next one goes below this one, by its real height
+                column_y = float(y) + float(payload.get('height', NODE_HEIGHT)) + GAP
         titles = self._titles(created)
         return ToolResult(
             '已新建：' + '、'.join(f'「{titles[i]}」[{i}]' for i in created),
@@ -674,14 +680,13 @@ class CanvasTools:
                 used.append(int(suffix))
         return f'{label} {max(used) + 1}'
 
-    def _free_positions(self, count: int) -> list[tuple[float, float]]:
-        """A column to the right of everything already on the canvas."""
+    def _free_column(self) -> tuple[float, float]:
+        """Where a column of new nodes starts: right of everything already on the canvas."""
         nodes = self.repository.get_snapshot(self.canvas_id).nodes
         if not nodes:
-            return [(0.0, index * (NODE_HEIGHT + GAP)) for index in range(count)]
+            return 0.0, 0.0
         right = max(node.x + (node.width or NODE_WIDTH) for node in nodes) + GAP * 2
-        top = min(node.y for node in nodes)
-        return [(right, top + index * (NODE_HEIGHT + GAP)) for index in range(count)]
+        return right, min(node.y for node in nodes)
 
     @staticmethod
     def _pick_model(node_type: str, model_id: Any) -> ModelSpec | str:
@@ -791,3 +796,9 @@ def new_summary(specs: list[dict[str, Any]], created: list[str]) -> str:
     if stickies and others:
         return f'新建 {others} 个节点、{stickies} 张便签'
     return f'新建 {stickies} 张便签' if stickies else f'新建 {others} 个节点'
+
+
+def size_text(node: Any) -> str:
+    """Width × height as drawn when not selected (what is stored for every node)."""
+    default = {'note': (280, 180), 'sticky': (200, 200)}.get(node.nodeType, (NODE_WIDTH, NODE_HEIGHT))
+    return f'{round(node.width or default[0])}×{round(node.height or default[1])}'
