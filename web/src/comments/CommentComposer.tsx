@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { SendIcon } from '../canvas/icons';
 import { MENTION } from './commentApi';
@@ -39,6 +39,7 @@ export function CommentComposer({
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
+  const caretToEnd = useRef(false);
 
   // Opened with "@Agent " already in: type after it.
   useEffect(() => {
@@ -58,12 +59,17 @@ export function CommentComposer({
   function setAgent(on: boolean) {
     const next = on ? PREFIX + withoutMention(text) : withoutMention(text);
     setText(next);
-    const input = inputRef.current;
-    if (input) {
-      input.focus();
-      requestAnimationFrame(() => input.setSelectionRange(next.length, next.length));
-    }
+    caretToEnd.current = true;
+    inputRef.current?.focus();
   }
+
+  // After the tick changed the text: keep typing at the end, in the same render (no frame delay).
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!caretToEnd.current || !input) return;
+    caretToEnd.current = false;
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [text]);
 
   async function send() {
     if (!canSend) return;

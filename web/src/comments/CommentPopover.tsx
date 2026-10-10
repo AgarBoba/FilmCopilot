@@ -111,7 +111,9 @@ export function CommentPopover({ comment, at, bounds, where, onClose, onOpenInPa
 
   // Beside the pin, kept inside the canvas.
   const left = at ? sideOf(at.x, POPOVER_WIDTH, bounds.width) : Math.max(8, (bounds.width - POPOVER_WIDTH) / 2);
-  const top = at ? Math.min(Math.max(8, at.y - 32), Math.max(8, bounds.height - 420)) : 80;
+  const top = at ? Math.min(Math.max(8, at.y - 32), Math.max(8, bounds.height - 360)) : 80;
+  // Never past the bottom of the canvas: a long thread scrolls inside, the reply box stays visible.
+  const maxHeight = Math.max(200, Math.min(540, bounds.height - top - 8));
 
   const mood: AgentMood = comment.agentStatus === 'waiting' ? 'waiting'
     : comment.agentStatus === 'running' ? 'working' : 'idle';
@@ -173,7 +175,7 @@ export function CommentPopover({ comment, at, bounds, where, onClose, onOpenInPa
       className={`comment-popover comment-ui ${resolved ? 'is-resolved' : ''}`}
       role="dialog"
       aria-label={`留言 · ${where}`}
-      style={{ left, top, width: POPOVER_WIDTH }}
+      style={{ left, top, width: POPOVER_WIDTH, maxHeight }}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === 'Escape') {
@@ -192,6 +194,11 @@ export function CommentPopover({ comment, at, bounds, where, onClose, onOpenInPa
           ))}
         </div>
       )}
+      {/* Always on top: where it's pinned, and resolve / more / close. */}
+      <div className="comment-popover-head">
+        <span className="comment-popover-where" title={where}>{where}</span>
+        {corner}
+      </div>
       <div ref={bodyRef} className="comment-thread">
         {thread.map((item, index) => (
           <ThreadMessage
@@ -200,7 +207,7 @@ export function CommentPopover({ comment, at, bounds, where, onClose, onOpenInPa
             mood={item === lastAgent && !waitingRound ? mood : 'idle'}
             note={item === lastAgent && !waitingRound ? note : null}
             oldVersion={index === 0 && anchor.stale && anchor.version ? anchor : null}
-            controls={index === 0 ? corner : null}
+            controls={null}
           >
             {item.type === 'agent' && item.confirm && (
               <AgentMessage
