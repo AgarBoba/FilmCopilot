@@ -256,6 +256,30 @@ class Database:
                 INSERT INTO credit_ledger (delta, kind, label, ref, balance_after)
                     SELECT 500, 'welcome', '新手赠送', 'welcome', 500
                     WHERE NOT EXISTS (SELECT 1 FROM credit_ledger);
+                -- Problems found by the node checks (api/app/checks): what's connected to the node
+                -- doesn't fit its model. One row per image / video node, rewritten on every change.
+                CREATE TABLE IF NOT EXISTS node_checks (
+                    canvas_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    model_id TEXT,
+                    problems_json TEXT NOT NULL DEFAULT '[]',
+                    checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (canvas_id, node_id)
+                );
+                -- Generations a model's provider refused, translated (providers/errors.py), so the
+                -- agent can learn a model's unwritten rules and suggest adding them to models/<id>.md.
+                CREATE TABLE IF NOT EXISTS model_rejections (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    model_id TEXT NOT NULL,
+                    canvas_id TEXT,
+                    node_id TEXT,
+                    job_id TEXT,
+                    kind TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    raw_error TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS model_rejections_model ON model_rejections (model_id, id);
                 CREATE TABLE IF NOT EXISTS canvas_task_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     canvas_id TEXT NOT NULL,

@@ -63,6 +63,9 @@ def build_inputs(model: ModelSpec, request: GenerationRequest, attach: Any) -> d
         if not spec or not paths:
             continue
         files = [attach(path) for path in paths[: spec['max']]]
+        if spec.get('fields'):  # older endpoints: one field per reference, in connection order
+            inputs.update(zip(spec['fields'], files))
+            continue
         inputs[spec['field']] = files[0] if spec.get('single') else files
     for parameter in model.parameters:
         if parameter.key in request.parameters:

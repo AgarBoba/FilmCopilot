@@ -41,6 +41,7 @@ import { snapshotToReactFlow, useCanvasStore } from '../state/canvasStore';
 import { CanvasControls, type CanvasTool } from './CanvasControls';
 import { CanvasRail } from './CanvasRail';
 import { CreditsButton } from '../credits/CreditsButton';
+import { ModelDocsButton } from '../models/ModelDocsButton';
 import { TooltipLayer } from './TooltipLayer';
 import { AgentPanel } from '../agent/AgentPanel';
 import { splitNoteBlock } from '../agent/Markdown';
@@ -289,6 +290,7 @@ export function CanvasShell() {
         generationStatus: generationFor(node.id)?.status as string | undefined,
         generationError: generationFor(node.id)?.error as string | undefined,
         upstreamChanges: snapshot.upstreamChanges?.[node.id] ?? [],
+        checkProblems: snapshot.nodeChecks?.[node.id] ?? [],
         onUpload: () => {
           uploadTargetRef.current = node.id;
           fileInputRef.current?.click();
@@ -1062,7 +1064,7 @@ export function CanvasShell() {
           />
         )}
         {/* Outside React Flow so its popover sits above comment pins (z-index 20). */}
-        <div className="credits-dock"><CreditsButton /></div>
+        <div className="credits-dock"><CreditsButton /><ModelDocsButton /></div>
         {pendingConnection && (
           <ConnectionChooser
             position={pendingConnection.screen}

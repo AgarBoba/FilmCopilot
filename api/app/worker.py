@@ -10,7 +10,8 @@ from .db import Database
 from .events import EventStore
 from .media_metadata import read_image_metadata, read_video_metadata
 from .models_registry import ModelRegistry, ModelSpec, registry as default_registry
-from .providers.base import GenerationProvider, GenerationRequest, PredictionStatus
+from .providers import errors as provider_errors
+from .providers.base import GenerationProvider, GenerationRequest, PredictionStatus, ProviderNotConfigured
 from .repositories import CanvasRepository
 from .versions import version_source
 from .config import resolve_project_path
@@ -42,6 +43,7 @@ class Worker:
         if job is None:
             return False
         self._transition(job, 'running')
+        model = None
         try:
             snapshot = json.loads(job['request_json'])
             model = self.models.for_node(snapshot['nodeType'], snapshot.get('model'))
@@ -66,8 +68,19 @@ class Worker:
             can_attach = self._target_exists(job)
             target_status = 'completed' if can_attach else 'completed_unattached'
             self._complete(job, target_status, asset['id'] if can_attach else None, asset)
-        except Exception as error:
+        except ProviderNotConfigured as error:
             self._transition(job, 'failed', error=str(error))
+        except Exception as error:
+            if model is None:
+                self._transition(job, 'failed', error=str(error))
+                return True
+            # Layer 3 of the input rules: say why in plain words and remember it for the agent.
+            translated = provider_errors.translate(str(error))
+            try:
+                provider_errors.record(self.repository.database, model.id, job, translated)
+            except Exception:
+                pass
+            self._transition(job, 'failed', error=translated.text())
         return True
 
     def _provider_for(self, model: ModelSpec) -> GenerationProvider:
@@ -156,6 +169,9 @@ class Worker:
                         {'data': {**node['data'], 'assetId': asset['id']}},
                     )
             self.repository.update_generation_job(job['id'], status, output_asset_id=output_asset_id)
+            if status == 'completed':  # a new picture changes what the nodes below it would send
+                from .checks.store import refresh as refresh_checks
+                refresh_checks(self.repository, job['canvas_id'])
             revision = self.repository.bump_revision(job['canvas_id'])
             self.events.append(
                 job['canvas_id'],

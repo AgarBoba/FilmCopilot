@@ -9,6 +9,7 @@ from uuid import uuid4
 from .db import Database
 from .domain import DomainError, EdgeRecord, NodeType
 from .prompting import compose_prompt
+from .checks.store import load as load_checks
 from .upstream import upstream_changes
 from .versions import NodeVersions
 from .schemas import (
@@ -187,6 +188,7 @@ class CanvasRepository:
             assets=[self._json_row(row, ('metadata_json',)) for row in assets],
             jobs=[self._json_row(row, ('request_json', 'input_snapshot_json')) for row in jobs],
             upstreamChanges=upstream_changes(self, canvas_id),
+            nodeChecks=load_checks(self, canvas_id),
         )
 
     def _node_schema(self, row: sqlite3.Row) -> CanvasNodeSchema:

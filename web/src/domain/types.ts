@@ -86,6 +86,8 @@ export interface CanvasSnapshot {
   jobs?: Record<string, unknown>[];
   /** nodeId -> what changed upstream since the node's current result was generated */
   upstreamChanges?: Record<string, string[]>;
+  /** nodeId -> what's connected to it that doesn't fit its model (api/app/checks) */
+  nodeChecks?: Record<string, NodeCheckProblem[]>;
   viewport?: CanvasViewport;
 }
 
@@ -108,4 +110,12 @@ export interface CanvasEvent {
   revision: number;
   eventType: string;
   payload: Record<string, unknown>;
+}
+
+/** One problem the node checks found: error = generation is refused (no charge); warning = it runs anyway. */
+export interface NodeCheckProblem {
+  code: string;
+  message: string;
+  severity: 'error' | 'warning';
+  sourceNodeId?: string;
 }

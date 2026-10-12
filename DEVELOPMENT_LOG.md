@@ -43,6 +43,19 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-10-12 模型的输入要求：说明文档、节点检查、失败兜底三道关
+
+- 背景：模型对输入有各种要求（参考图比例、边长倍数、视频时长…），以前只有生成失败后才知道，Agent 也看不到。
+- 第一道，说明文档：每个模型旁边放 `models/<id>.md`（擅长 / 不擅长 / 输入限制 / 提示词 / 已知问题，固定小标题，`model_guides.py` 解析）；「提示词」里可以写 `技能：<插件>:<名字>` 指定提示词技能（新增内置技能 `seedance-prompt`）。模型 JSON 加 `family`、`capabilities`（词表 `models/_capabilities.md`，含 `omni_reference`）。新工具 `get_model_guide`；`list_models` 带功能、擅长 / 不擅长摘要、检查规则，可按功能筛选。注册表在 .md 变化时也会重读。
+- 第二道，节点检查（`api/app/checks/`）：JSON 的 `checks` 引用规则函数（aspect_range、side_range、side_multiple、max_pixels、duration_range、prompt_length、requires），另有内置检查（参考超出上限 = 提醒，模型不收的参考 = 错误，参数不合法 = 提醒）。每条改动画布的命令和生成完成后重算，存进新表 `node_checks`；快照多了 `nodeChecks`，节点右上方显示红 / 黄标记；Agent 在 get_canvas / get_node 和 create / update / connect / duplicate 的结果里看到。`start_generation` 有错误时直接拒绝，不扣积分。模型文件改了，下次读快照时自动重算。
+- 第三道，失败兜底（`providers/errors.py`）：provider 报错翻成一句人话加原始报错，存进新表 `model_rejections`；`get_model_guide` 和面板列出最近的拒绝。
+- 老式接口：`inputs.images.fields` 按连线顺序一张图一个字段（首帧 / 尾帧）；get_node 列出参考编号（omni 模型是 [Image1]…，老接口是首帧 / 尾帧）。
+- system prompt 加「模型的要求（三道关）」和选模型顺序（同家族 omni → 老式功能接口 → 告诉用户做不了）。
+- 前端：积分旁边加「模型」按钮，只读查看每个模型的说明文档、功能、家族、提示词技能、检查规则和最近的拒绝，以及功能词表。
+- 现有模型：Seedream 5 Pro 参考图 1:3～3:1、边长 ≥14；Seedance 2.0 Mini 参考图 0.4～2.5、边长 300～6000、参考视频 2～15 秒。**未验证**：这些数字取自火山引擎对同系列模型的说明，Replicate 版本的实际限制没有逐条试过；报错翻译的匹配规则是按常见措辞写的，没拿真实 Replicate 报错核对。
+- 行为变化：参考图太小 / 比例超出的生成现在会在提交时被拒（以前会扣积分后失败再退回）。`test_end_to_end` 的测试图从 320×240 改成 640×480。
+- 验证：后端 pytest 228 通过（新增 `tests/test_model_rules.py` 17 个，含「边长 16 的倍数」假模型）；前端 vitest 114 通过（新增 `modelDocs.test.tsx`），`tsc -b` 通过；本机起服务截图看过「模型」面板。
+
 ### 2026-10-10 Agent 不看图也知道画面：画面描述 + 画面来源
 
 - 现象：`get_canvas` / `get_node` 只给节点现在的 Prompt、模型、参数。用户改了 Prompt 没重新生成（或切回旧版）时，Agent 会按新 Prompt 去理解旧画面；上传的图配着一句还没执行的 Prompt，也会被当成画面描述。根因：这两个工具读的是节点设置，没读画面自己的出处。

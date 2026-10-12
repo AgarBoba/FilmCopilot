@@ -6,6 +6,13 @@
   "providerModel": "bytedance/seedance-2.0-mini",
   "default": true,
   "description": "字节跳动的视频模型：图生视频 / 文生视频，可参考最多 9 张图和 3 段视频，5 或 10 秒，可带声音。",
+  "family": "seedance-2.0",
+  "capabilities": ["omni_reference", "text_to_video", "reference_video", "audio"],
+  "checks": [
+    { "rule": "aspect_range", "min": 0.4, "max": 2.5 },
+    { "rule": "side_range", "min": 300, "max": 6000 },
+    { "rule": "duration_range", "target": "videos", "min": 2, "max": 15 }
+  ],
   "credits": { "base": 30, "multiply": { "duration": { "10": 2 }, "resolution": { "480p": 0.5 }, "generateAudio": { "false": 0.8 } } },
   "inputs": {
     "prompt": "prompt",

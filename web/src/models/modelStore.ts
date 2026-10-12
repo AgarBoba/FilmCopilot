@@ -29,6 +29,12 @@ export interface ModelInfo {
   providerReady?: boolean;
   /** Price per generation in credits (simulated); see credits/creditStore.ts. */
   credits?: ModelPrice;
+  /** Versions / endpoints of one model share a family (models/*.json `family`). */
+  family?: string;
+  /** Words from models/_capabilities.md. */
+  capabilities?: string[];
+  /** Whether models/<id>.md exists. */
+  hasGuide?: boolean;
 }
 
 /**

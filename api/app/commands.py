@@ -5,6 +5,8 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from .checks import blocking, check_inputs
+from .checks.store import refresh as refresh_checks
 from .domain import DomainError
 from .events import EventStore
 from .graph_rules import validate_connection
@@ -20,6 +22,9 @@ STICKY_SIZES = ('s', 'm', 'l')
 
 
 
+
+# Commands that can't change what any node would send to its model: skip re-running node checks.
+_NO_CHECK_COMMANDS = {'update_canvas', 'move_nodes', 'start_generation'}
 
 # Viewport changes are not canvas content; undo runs are never themselves undone.
 _UNTRACKED_COMMANDS = {'update_canvas', 'undo_agent_run'}
@@ -76,6 +81,8 @@ class CanvasCommandService:
                     track = bool(envelope.agentRunId) and envelope.command not in _UNTRACKED_COMMANDS
                     before = self.repository.canvas_state(canvas_id) if track else None
                     payload = self._dispatch(canvas_id, envelope)
+                    if envelope.command not in _NO_CHECK_COMMANDS:
+                        refresh_checks(self.repository, canvas_id)
                     revision = self.repository.bump_revision(canvas_id)
                     result = CommandResult(
                         revision=revision,
@@ -365,6 +372,10 @@ class CanvasCommandService:
             raise DomainError('NO_MODEL', f"没有可用的{'图片' if node_type == 'image' else '视频'}模型：检查 models/ 目录")
         snapshot['model'] = model.id
         snapshot['parameters'], _ = model.resolve_parameters(snapshot.get('parameters'))
+        # Layer 2 of the input rules (see checks/__init__.py): refuse before charging anything.
+        problems = blocking(check_inputs(model, snapshot))
+        if problems:
+            raise DomainError('MODEL_CHECK_FAILED', '没有生成，也没有扣积分：' + '；'.join(p.message for p in problems))
         from .credits import Credits, generation_price
         credits = Credits(self.repository.database)
         price = generation_price(model, snapshot['parameters'])

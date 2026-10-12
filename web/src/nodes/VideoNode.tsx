@@ -1,9 +1,10 @@
 import { useRef } from 'react';
 import { Position } from '@xyflow/react';
 
-import type { VideoGenerationParameters } from '../domain/types';
+import type { NodeCheckProblem, VideoGenerationParameters } from '../domain/types';
 import { NodeHandle } from './NodeHandles';
 import { NodeTitle } from './NodeTitle';
+import { CheckBadge } from './CheckBadge';
 import { UpstreamBadge } from './UpstreamBadge';
 import { EmptyPreview } from './EmptyPreview';
 import { MediaNodeActions } from './MediaNodeActions';
@@ -30,6 +31,8 @@ export interface VideoNodeData {
   generationStatus?: string;
   generationError?: string;
   upstreamChanges?: string[];
+  /** Problems the node checks found (inputs that don't fit the model). */
+  checkProblems?: NodeCheckProblem[];
   references?: Array<NodeReference | string>;
   onRemoveReference?: (reference: NodeReference) => void;
   onPromptChange?: (prompt: string) => void;
@@ -101,6 +104,7 @@ export function VideoNode({ id, data, positionAbsoluteX }: VideoNodeProps) {
       onMouseLeave={pausePreview}
     >
       {!busy && <UpstreamBadge changes={data.upstreamChanges} />}
+      {!busy && <CheckBadge problems={data.checkProblems} />}
       <NodeHandle type="target" position={Position.Left} id="target" />
       <NodeHandle type="source" position={Position.Right} id="source" />
       <NodeTag title={data.title?.trim() || '视频节点'} x={positionAbsoluteX} />

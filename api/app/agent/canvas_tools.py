@@ -8,6 +8,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..checks import store as checks_store
 from ..credits import price_text
 from ..crop import describe_source
 from ..commands import CanvasCommandService
@@ -187,6 +188,8 @@ class CanvasTools:
                 parts.append(f"上游：{', '.join(upstream[node.id])}")
             if node.id in snapshot.upstreamChanges:
                 parts.append('上游有更新')
+            if node.id in snapshot.nodeChecks:
+                parts.append('模型检查：' + checks_store.problem_text(snapshot.nodeChecks[node.id]))
             area = area_of(node, stickies)
             if area is not None:
                 parts.append(f'区：「{sticky_title(area)}」')
@@ -226,13 +229,22 @@ class CanvasTools:
             out.append('[已删除] ' + '、'.join(removed))
         return '\n'.join(out)
 
-    def list_models(self, kind: str | None = None) -> ToolResult:
-        """Models the canvas can use, with what each is good at and its parameters."""
+    def list_models(self, kind: str | None = None, capability: str | None = None) -> ToolResult:
+        """Models the canvas can use: what each can do and is good at, limits, parameters."""
         from ..providers import has_adapter, missing_env
-        models = [spec for spec in model_registry().all() if kind in (None, '', spec.kind)]
+        models_registry = model_registry()
+        vocabulary = models_registry.capabilities()
+        if capability and capability not in vocabulary:
+            return self._error(f'没有「{capability}」这个功能，可用的有：{", ".join(vocabulary)}')
+        models = [spec for spec in models_registry.all() if kind in (None, '', spec.kind)
+                  and (not capability or capability in spec.capabilities)]
         if not models:
+            if capability:
+                return ToolResult(f'没有支持 {capability}（{vocabulary[capability].meaning}）的'
+                                  f'{KIND_LABELS.get(kind or "", "")}模型。告诉用户现在做不了，或换个做法。',
+                                  summary='查看可用模型')
             return ToolResult('没有可用的模型。', summary='查看可用模型')
-        lines = []
+        lines = ['选定模型、写 Prompt 之前，先用 get_model_guide 看它的完整说明（输入限制、提示词写法、已知问题）。']
         for spec in models:
             missing = missing_env(spec.provider)
             if not has_adapter(spec.provider):
@@ -241,6 +253,15 @@ class CanvasTools:
                 state = f'（不可用：缺少 {", ".join(missing)}）' if missing else ''
             default = '，默认' if spec.default else ''
             lines.append(f'- [{spec.id}] {spec.label}：{KIND_LABELS[spec.kind]}模型{default}{state}。{spec.description}')
+            family = models_registry.family_of(spec)
+            lines.append(f"  功能：{'、'.join(spec.capabilities) or '（没写）'}"
+                         + (f"；同一模型的其他接口：{'、'.join(other.id for other in family)}" if family else ''))
+            if spec.guide is not None:
+                for section in ('擅长', '不擅长'):
+                    if text := spec.guide.summary(section):
+                        lines.append(f'  {section}：{text}')
+            if spec.checks:
+                lines.append(f"  节点检查：{'；'.join(spec.checks_text())}")
             lines.append(f'  价格：{price_text(spec)}')
             refs = [f'最多 {spec.max_images} 张参考图' if spec.max_images else '不接受参考图']
             if spec.kind == 'video':
@@ -257,6 +278,52 @@ class CanvasTools:
                     allowed = parameter.type
                 lines.append(f'  · {parameter.key}：{allowed}（默认 {parameter.default}）')
         return ToolResult('\n'.join(lines), summary='查看可用模型')
+
+    def get_model_guide(self, model_id: str) -> ToolResult:
+        """A model's whole guide (models/<id>.md), its capabilities explained, the rules the node
+        checks, its prompt skill, and what the provider refused recently."""
+        from ..providers import errors as provider_errors
+        from . import skills
+        models_registry = model_registry()
+        spec = models_registry.get(model_id)
+        if spec is None:
+            known = '、'.join(item.id for item in models_registry.all())
+            return self._error(f'没有叫 {model_id} 的模型，可用的有：{known}')
+        vocabulary = models_registry.capabilities()
+        lines = [f'模型 {spec.label} [{spec.id}]，{KIND_LABELS[spec.kind]}模型，家族 {spec.family or spec.id}']
+        if spec.capabilities:
+            lines.append('[功能]')
+            for word in spec.capabilities:
+                item = vocabulary.get(word)
+                lines.append(f'- {word}：{item.meaning}' + (f'（{item.tips}）' if item and item.tips else '') if item else f'- {word}')
+        family = models_registry.family_of(spec)
+        if family:
+            lines.append('[同一模型的其他接口] ' + '；'.join(
+                f"{other.id}（{'、'.join(other.capabilities) or '功能没写'}）" for other in family))
+        slots = spec.reference_slots('image')
+        refs = f'最多 {spec.max_images} 张参考图' if spec.max_images else '不接受参考图'
+        if slots:
+            refs = '参考图按连线顺序放进：' + '、'.join(f'第 {index + 1} 条连线→{slot}' for index, slot in enumerate(slots))
+        if spec.kind == 'video':
+            refs += f"，{f'最多 {spec.max_videos} 段参考视频' if spec.max_videos else '不接受参考视频'}"
+        lines.append(f'[参考上限] {refs}')
+        if spec.checks:
+            lines.append('[节点检查]（连上不符合的参考时，节点会报错，生成会被拒绝且不扣积分）' + '；'.join(spec.checks_text()))
+        if spec.guide is None:
+            lines.append(f'[说明文档] 还没有 models/{spec.id}.md，只能参考上面的信息和 list_models 里的简介。')
+        else:
+            if spec.guide.skill:
+                found = skills.find(spec.guide.skill)
+                lines.append(f'[提示词技能] 写这个模型的 Prompt 之前，先用 Skill 工具加载 {spec.guide.skill}'
+                             if found else f'[提示词技能] 说明里写了 {spec.guide.skill}，但没有找到这个技能，按下面的「提示词」写')
+            lines.append('[说明文档]')
+            lines.append(spec.guide.text.strip())
+        rejected = [item for item in provider_errors.recent(self.repository.database, spec.id)
+                    if item['kind'] in provider_errors.INPUT_KINDS or item['kind'] == 'other']
+        if rejected:
+            lines.append('[最近被模型拒绝]（说明文档里没写的限制可能藏在这里；确认是规律后，建议用户补进说明文档）')
+            lines.extend(f"- {item['created_at'][:16]} {item['message']}：{item['raw_error'][:160]}" for item in rejected)
+        return ToolResult('\n'.join(lines), summary=f'查看「{spec.label}」的说明')
 
     def get_node(self, node_id: str) -> ToolResult:
         snapshot = self.repository.get_snapshot(self.canvas_id)
@@ -317,11 +384,17 @@ class CanvasTools:
         refs = [edge.source for edge in snapshot.edges if edge.target == node.id]
         if refs:
             lines.append('上游：' + '、'.join(f"{KIND_LABELS[kinds[ref]]}「{titles[ref]}」[{ref}]" for ref in refs))
+            if node.nodeType in ('image', 'video'):
+                lines.extend(reference_order(model_registry().for_node(node.nodeType, data.get('model')),
+                                             refs, kinds, titles, {item.id: item.data.get('assetId') for item in snapshot.nodes}))
         outs = [edge.target for edge in snapshot.edges if edge.source == node.id]
         if outs:
             lines.append('下游：' + '、'.join(f"{KIND_LABELS[kinds[out]]}「{titles[out]}」[{out}]" for out in outs))
         if node.id in snapshot.upstreamChanges:
             lines.append('上游有更新：' + '；'.join(snapshot.upstreamChanges[node.id]))
+        if node.id in snapshot.nodeChecks:
+            lines.append('模型检查没通过（不解决的话生成会被拒绝；⚠ 的只是提醒）：'
+                         + checks_store.problem_text(snapshot.nodeChecks[node.id]))
         mine = [note for note in notes.open_notes(self.repository.database, self.canvas_id) if note['node_id'] == node.id]
         if mine:
             lines.append(f'用户备注（{len(mine)} 条未解决）：{notes.HINT}')
@@ -448,7 +521,7 @@ class CanvasTools:
                 column_y = float(y) + float(payload.get('height', NODE_HEIGHT)) + GAP
         titles = self._titles(created)
         return ToolResult(
-            '已新建：' + '、'.join(f'「{titles[i]}」[{i}]' for i in created),
+            '已新建：' + '、'.join(f'「{titles[i]}」[{i}]' for i in created) + self._check_note(created),
             touched=created, summary=new_summary(nodes, created),
         )
 
@@ -502,7 +575,8 @@ class CanvasTools:
         if isinstance(result, ToolResult):
             return result
         title = data.get('title') or node['data'].get('title', '')
-        return ToolResult(f"已更新「{title}」：{'、'.join(data)}", touched=[node_id], summary=f'修改「{title}」')
+        return ToolResult(f"已更新「{title}」：{'、'.join(data)}" + self._check_note([node_id]),
+                          touched=[node_id], summary=f'修改「{title}」')
 
     def connect(self, source_id: str, target_id: str) -> ToolResult:
         if (busy := self._busy_error([target_id])):
@@ -515,7 +589,8 @@ class CanvasTools:
             return result
         titles = self._titles([source_id, target_id])
         label = f'「{titles[source_id]}」→「{titles[target_id]}」'
-        return ToolResult(f'已连接{label}', touched=[source_id, target_id], summary=f'连接{label}')
+        return ToolResult(f'已连接{label}' + self._check_note([target_id]),
+                          touched=[source_id, target_id], summary=f'连接{label}')
 
     def disconnect(self, source_id: str, target_id: str) -> ToolResult:
         if (busy := self._busy_error([target_id])):
@@ -562,7 +637,7 @@ class CanvasTools:
         created = [item['nodeId'] for item in result['nodes']]
         titles = self._titles(created)
         return ToolResult(
-            '已复制：' + '、'.join(f'「{titles[i]}」[{i}]' for i in created),
+            '已复制：' + '、'.join(f'「{titles[i]}」[{i}]' for i in created) + self._check_note(created),
             touched=created, summary=f'复制 {len(created)} 个节点',
         )
 
@@ -680,6 +755,17 @@ class CanvasTools:
         return ToolResult('\n'.join(lines), images=images, touched=list(node_ids), summary='查看生成结果')
 
     # ---------------------------------------------------------------- helpers
+
+    def _check_note(self, node_ids: list[str]) -> str:
+        """Problems the node checks found on these nodes right after a change, for the tool result."""
+        found = checks_store.load(self.repository, self.canvas_id)
+        titles = self._titles([node_id for node_id in node_ids if node_id in found])
+        lines = [f"「{titles.get(node_id, node_id)}」：{checks_store.problem_text(found[node_id])}"
+                 for node_id in node_ids if node_id in found]
+        if not lines:
+            return ''
+        return ('\n模型检查没通过（节点上已标出；不解决的话生成会被拒绝，⚠ 的只是提醒）：\n'
+                + '\n'.join(f'- {line}' for line in lines))
 
     def _command(
         self, command: str, payload: dict[str, Any], deps: dict[str, set[str]] | None = None,
@@ -886,3 +972,27 @@ def size_text(node: Any) -> str:
     """Width × height as drawn when not selected (what is stored for every node)."""
     default = {'note': (280, 180), 'sticky': (200, 200)}.get(node.nodeType, (NODE_WIDTH, NODE_HEIGHT))
     return f'{round(node.width or default[0])}×{round(node.height or default[1])}'
+
+
+def reference_order(model: ModelSpec | None, refs: list[str], kinds: dict[str, str], titles: dict[str, str],
+                    assets: dict[str, Any]) -> list[str]:
+    """How the node's references reach the model, in connection order: [Image1]… for models that
+    take a list, or the named slot (首帧 / 尾帧…) for older one-field-per-reference endpoints."""
+    if model is None:
+        return []
+    lines = []
+    for kind, tag in (('image', 'Image'), ('video', 'Video')):
+        items = [ref for ref in refs if kinds.get(ref) == kind and assets.get(ref)]
+        if not items:
+            continue
+        slots = model.reference_slots(kind)
+        if slots:
+            frame_names = ('首帧', '尾帧') if {'first_frame', 'first_last_frame'} & set(model.capabilities) else ()
+            named = [f"{frame_names[index] if index < len(frame_names) else slot}←「{titles[ref]}」"
+                     for index, (slot, ref) in enumerate(zip(slots, items))]
+            lines.append(f'{KIND_LABELS[kind]}按连线顺序发给模型：' + '、'.join(named)
+                         + '（要换顺序就断开再按新顺序重连）')
+        else:
+            named = [f'[{tag}{index + 1}]「{titles[ref]}」' for index, ref in enumerate(items)]
+            lines.append(f'{KIND_LABELS[kind]}按连线顺序编号（Prompt 里用这个编号指代）：' + '、'.join(named))
+    return lines

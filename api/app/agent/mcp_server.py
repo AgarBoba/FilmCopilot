@@ -11,7 +11,8 @@ from claude_agent_sdk import ToolAnnotations, create_sdk_mcp_server, tool
 from .canvas_tools import CanvasTools, ToolResult
 
 SERVER_NAME = 'canvas'
-READ_ONLY = ('get_canvas', 'get_node', 'view_asset', 'get_node_versions', 'wait_for_generation', 'list_models')
+READ_ONLY = ('get_canvas', 'get_node', 'view_asset', 'get_node_versions', 'wait_for_generation', 'list_models',
+             'get_model_guide')
 # Memory tools never touch the canvas and never need confirmation (changes show in the chat with undo).
 MEMORY_TOOLS = ('remember', 'update_memory', 'forget', 'recall')
 MEMORY_CATEGORY_HELP = (
@@ -49,8 +50,14 @@ StepCallback = Callable[[str, dict[str, Any], ToolResult], Awaitable[None]]
 
 TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
     ('list_models',
-     '列出可用的图片 / 视频模型：擅长什么、参考图上限、参数和可选值、是否缺少密钥。选模型或设参数前先看。',
-     {'type': 'object', 'properties': {'kind': {'type': 'string', 'enum': ['image', 'video']}}}),
+     '列出可用的图片 / 视频模型：功能（capabilities）、擅长和不擅长、节点检查规则、参考上限、价格、参数和可选值、是否缺少密钥。'
+     '选模型或设参数前先看；传 capability 只列有这个功能的模型（如 first_last_frame、omni_reference）。',
+     {'type': 'object', 'properties': {'kind': {'type': 'string', 'enum': ['image', 'video']},
+                                       'capability': {'type': 'string', 'description': '功能词，见 get_model_guide 的 [功能] 或 models/_capabilities.md'}}}),
+    ('get_model_guide',
+     '读一个模型的完整说明：功能和用法、擅长 / 不擅长、输入限制（参考图比例、尺寸、时长…）、提示词写法和要加载的提示词技能、'
+     '已知问题、节点会检查的规则、最近被模型拒绝的原因。决定用某个模型做事、写它的 Prompt、或生成失败后，先读这个。',
+     {'type': 'object', 'properties': {'model_id': {'type': 'string'}}, 'required': ['model_id']}),
     ('get_canvas',
      '读取画布：节点 ID、类型、名称、位置、Prompt 摘要、画面描述（看过的才有）、画面来源提示、生成状态、上游；还有用户贴的便签（区域说明），每个节点注明它在哪张便签的区里。传 node_ids 只看这些节点及其上下游。'
      '同一个对话里第二次起只返回和你上次看到时相比变化的部分（其余以上次为准）；确实需要完整列表时传 full=true。',
@@ -121,7 +128,9 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
 
 async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> ToolResult:
     if name == 'list_models':
-        return tools.list_models(args.get('kind'))
+        return tools.list_models(args.get('kind'), args.get('capability'))
+    if name == 'get_model_guide':
+        return tools.get_model_guide(args['model_id'])
     if name == 'get_canvas':
         return tools.get_canvas(args.get('node_ids'), bool(args.get('full')))
     if name == 'get_node':

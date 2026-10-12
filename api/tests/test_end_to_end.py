@@ -6,7 +6,8 @@ from PIL import Image
 
 def make_png() -> bytes:
     output = BytesIO()
-    Image.new('RGB', (320, 240), color=(90, 100, 120)).save(output, format='PNG')
+    # Seedance's node check wants every side of a reference image to be 300 px or more.
+    Image.new('RGB', (640, 480), color=(90, 100, 120)).save(output, format='PNG')
     return output.getvalue()
 
 

@@ -1,8 +1,9 @@
 import { Position } from '@xyflow/react';
 
-import type { ImageGenerationParameters } from '../domain/types';
+import type { ImageGenerationParameters, NodeCheckProblem } from '../domain/types';
 import { NodeHandle } from './NodeHandles';
 import { NodeTitle } from './NodeTitle';
+import { CheckBadge } from './CheckBadge';
 import { UpstreamBadge } from './UpstreamBadge';
 import { EmptyPreview } from './EmptyPreview';
 import { MediaNodeActions } from './MediaNodeActions';
@@ -26,6 +27,8 @@ export interface ImageNodeData {
   generationStatus?: string;
   generationError?: string;
   upstreamChanges?: string[];
+  /** Problems the node checks found (inputs that don't fit the model). */
+  checkProblems?: NodeCheckProblem[];
   onPromptChange?: (prompt: string) => void;
   onParametersChange?: (parameters: ImageGenerationParameters) => void;
   onGenerateRequest?: (request: { prompt: string; parameters: ImageGenerationParameters; model?: string }) => void;
@@ -54,6 +57,7 @@ export function ImageNode({ id, data, positionAbsoluteX }: ImageNodeProps) {
   return (
     <div className="media-node image-node" data-testid="image-node">
       {!busy && <UpstreamBadge changes={data.upstreamChanges} />}
+      {!busy && <CheckBadge problems={data.checkProblems} />}
       <NodeHandle type="target" position={Position.Left} id="target" />
       <NodeHandle type="source" position={Position.Right} id="source" />
       <NodeTag title={data.title?.trim() || '图片节点'} x={positionAbsoluteX} />

@@ -38,6 +38,8 @@ class CanvasSnapshot(BaseModel):
     jobs: list[dict[str, Any]] = Field(default_factory=list)
     # nodeId -> what changed upstream since the node's current result was generated
     upstreamChanges: dict[str, list[str]] = Field(default_factory=dict)
+    # nodeId -> problems found by the node checks (checks/): inputs that don't fit the node's model
+    nodeChecks: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
 
 
 Actor = Literal['user', 'agent']

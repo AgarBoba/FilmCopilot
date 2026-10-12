@@ -13,20 +13,27 @@ A model file:
     providerModel what that provider calls the model, e.g. "black-forest-labs/flux-kontext-pro"
     default       true for at most one model per kind: used by new nodes
     description   one or two sentences for the agent: what the model is good at
+    family        optional: models that are versions / endpoints of one model share it,
+                  e.g. "kling-3.0" for "kling-3.0" and "kling-3.0-motion-control"
+    capabilities  optional: words from models/_capabilities.md (what the model can do)
+    checks        optional: input rules checked on the node, see checks/__init__.py
     inputs        prompt: provider field for the prompt text
-                  images / videos: {field, max, single?} where reference images / videos go
+                  images / videos: {field, max, single?} where reference images / videos go,
+                  or {fields: [...]} for one field per reference in connection order
+                  (older first / last frame endpoints: ["start_image", "end_image"])
     parameters    list of {key, label, type, field, default, options?|min?|max?}
                   type: enum | boolean | integer | number | string
     fixedInputs   optional constant provider inputs
     credits       optional price per generation (simulated credits, see credits.py):
                   a number, or {"base": N, "multiply": {paramKey: {value: factor}}}
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 from pathlib import Path
 from typing import Any
 
 from .config import PROJECT_ROOT
+from .model_guides import Capability, ModelGuide, parse_guide, read_capabilities, CAPABILITIES_FILE
 
 MODELS_DIR = PROJECT_ROOT / 'models'
 KINDS = ('image', 'video')
@@ -102,6 +109,10 @@ class ModelSpec:
     default: bool = False
     source: str = ''
     credits: dict[str, Any] | None = None  # price spec (credits.py); None = the kind's default
+    family: str = ''
+    capabilities: tuple[str, ...] = ()
+    checks: tuple[dict[str, Any], ...] = ()
+    guide: ModelGuide | None = None  # models/<id>.md, attached by the registry
 
     def default_parameters(self) -> dict[str, Any]:
         return {parameter.key: parameter.default for parameter in self.parameters}
@@ -134,7 +145,19 @@ class ModelSpec:
             'maxImages': self.max_images, 'maxVideos': self.max_videos,
             'parameters': [parameter.public() for parameter in self.parameters],
             'credits': self.price(),
+            'family': self.family or self.id,
+            'capabilities': list(self.capabilities),
+            'hasGuide': self.guide is not None,
         }
+
+    def checks_text(self) -> list[str]:
+        from .checks import describe_check
+        return [describe_check(check) for check in self.checks]
+
+    def reference_slots(self, kind: str) -> list[str]:
+        """Names of the per-reference fields of an older endpoint, in connection order."""
+        spec = self.image_input if kind == 'image' else self.video_input
+        return list((spec or {}).get('fields') or [])
 
     def price(self) -> dict[str, Any]:
         """The price spec with the default filled in, for the canvas to show before generating."""
@@ -165,6 +188,12 @@ def parse_model(data: dict[str, Any], source: str = '<inline>') -> ModelSpec:
         spec = inputs.get(name)
         if spec is None:
             media[name] = None
+            continue
+        fields = spec.get('fields') if isinstance(spec, dict) else None
+        if fields is not None:
+            if not isinstance(fields, list) or not fields or not all(isinstance(item, str) for item in fields):
+                raise ModelFileError(f'{where}: inputs.{name}.fields 要写成字段名列表，例如 ["start_image", "end_image"]')
+            media[name] = {'field': fields[0], 'fields': list(fields), 'max': len(fields), 'single': True}
             continue
         if not isinstance(spec, dict) or not isinstance(spec.get('field'), str):
             raise ModelFileError(f'{where}: inputs.{name} 要写成 {{"field": "...", "max": N}}')
@@ -207,6 +236,17 @@ def parse_model(data: dict[str, Any], source: str = '<inline>') -> ModelSpec:
         unknown = [key for key in credits['multiply'] if key not in known]
         if unknown:
             raise ModelFileError(f'{where}: credits.multiply 里的 {", ".join(unknown)} 不是这个模型的参数')
+    from .checks import validate_checks
+    try:
+        checks = validate_checks(data.get('checks'), where)
+    except ValueError as error:
+        raise ModelFileError(str(error)) from error
+    capabilities = data.get('capabilities') or []
+    if not isinstance(capabilities, list) or not all(isinstance(item, str) for item in capabilities):
+        raise ModelFileError(f'{where}: "capabilities" 要写成列表，例如 ["omni_reference", "text_to_video"]')
+    family = data.get('family') or ''
+    if not isinstance(family, str):
+        raise ModelFileError(f'{where}: "family" 要是文字')
     return ModelSpec(
         id=model_id,
         label=str(data.get('label') or model_id),
@@ -222,20 +262,28 @@ def parse_model(data: dict[str, Any], source: str = '<inline>') -> ModelSpec:
         default=bool(data.get('default')),
         source=source,
         credits=credits,
+        family=family,
+        capabilities=tuple(dict.fromkeys(capabilities)),
+        checks=checks,
     )
 
 
 class ModelRegistry:
-    """Reads models/*.json, and re-reads when a file changes (no restart after adding one)."""
+    """Reads models/*.json and their models/*.md guides, and re-reads when a file changes
+    (no restart after adding or editing one)."""
 
     def __init__(self, directory: Path = MODELS_DIR) -> None:
         self.directory = directory
         self._stamp: tuple = ()
         self._models: dict[str, ModelSpec] = {}
+        self._capabilities: dict[str, Capability] = {}
+        self._capabilities_text = ''
         self.errors: list[str] = []
 
     def _current_stamp(self) -> tuple:
-        files = sorted(self.directory.glob('*.json')) if self.directory.exists() else []
+        if not self.directory.exists():
+            return ()
+        files = sorted([*self.directory.glob('*.json'), *self.directory.glob('*.md')])
         return tuple((path.name, path.stat().st_mtime_ns) for path in files)
 
     def _load(self) -> None:
@@ -244,7 +292,10 @@ class ModelRegistry:
             return
         models: dict[str, ModelSpec] = {}
         errors: list[str] = []
+        capabilities, capabilities_text = read_capabilities(self.directory)
         for name, _ in stamp:
+            if not name.endswith('.json'):
+                continue
             path = self.directory / name
             try:
                 spec = parse_model(json.loads(path.read_text(encoding='utf-8')), f'models/{name}')
@@ -257,12 +308,37 @@ class ModelRegistry:
             if spec.id in models:
                 errors.append(f'models/{name}: id "{spec.id}" 和 {models[spec.id].source} 重复')
                 continue
+            unknown = [word for word in spec.capabilities if word not in capabilities]
+            if unknown:
+                errors.append(f'models/{name}: capabilities 里的 {", ".join(unknown)} 不在 models/{CAPABILITIES_FILE} '
+                              '的词表里（先在词表里加一行，或改成表里已有的词）')
+                spec = replace(spec, capabilities=tuple(word for word in spec.capabilities if word in capabilities))
+            guide_path = path.with_suffix('.md')
+            if guide_path.exists():
+                guide = parse_guide(guide_path.read_text(encoding='utf-8'))
+                if guide.missing:
+                    errors.append(f'models/{guide_path.name}: 缺少小标题 {"、".join("## " + item for item in guide.missing)}')
+                spec = replace(spec, guide=guide)
             models[spec.id] = spec
         for kind in KINDS:
             defaults = [spec.id for spec in models.values() if spec.kind == kind and spec.default]
             if len(defaults) > 1:
                 errors.append(f'{kind} 有多个 default：{", ".join(defaults)}（只保留一个）')
         self._models, self.errors, self._stamp = models, errors, stamp
+        self._capabilities, self._capabilities_text = capabilities, capabilities_text
+
+    def capabilities(self) -> dict[str, Capability]:
+        self._load()
+        return dict(self._capabilities)
+
+    def capabilities_text(self) -> str:
+        self._load()
+        return self._capabilities_text
+
+    def family_of(self, spec: ModelSpec) -> list[ModelSpec]:
+        """Other models of the same family (other versions or endpoints of one model)."""
+        family = spec.family or spec.id
+        return [other for other in self.all() if other.id != spec.id and (other.family or other.id) == family]
 
     def all(self) -> list[ModelSpec]:
         self._load()

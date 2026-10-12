@@ -130,3 +130,6 @@ export const StickyIcon = (p: IconProps) => <Icon {...p}><path d="M5 4h14v11l-5 
 export const CoinIcon = (p: IconProps) => (
   <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5 13.3 10.7 16.5 12l-3.2 1.3L12 16.5l-1.3-3.2L7.5 12l3.2-1.3z" /></Icon>
 );
+export const BookIcon = (p: IconProps) => (
+  <Icon {...p}><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z" /><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 7.5h6M9 11h4" /></Icon>
+);

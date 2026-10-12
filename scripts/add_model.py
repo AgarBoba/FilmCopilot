@@ -186,6 +186,32 @@ def fetch_replicate(provider_model: str) -> tuple[dict[str, Any], str]:
     return schema, model.get('description') or ''
 
 
+GUIDE_TEMPLATE = """# {label}
+
+一两句介绍：哪家的模型、通过什么调用。
+
+## 擅长
+
+- TODO
+
+## 不擅长
+
+- TODO
+
+## 输入限制
+
+- TODO：参考图比例、尺寸、数量，参考视频时长等（能写成节点检查的，也写进 JSON 的 checks）
+
+## 提示词
+
+- TODO：这个模型的提示词写法。官方有提示词技能时，加一行「技能：<插件>:<技能名>」
+
+## 已知问题
+
+- 暂无。
+"""
+
+
 def main() -> None:
     reexec_in_venv()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -229,6 +255,11 @@ def main() -> None:
                 other_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
                 notes.append(f'原默认模型 {other.id} 已改成非默认')
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    guide = path.with_suffix('.md')
+    if not guide.exists():
+        guide.write_text(GUIDE_TEMPLATE.format(label=data.get('label') or data['id']), encoding='utf-8')
+        notes.append(f'写好 {guide.relative_to(ROOT)}：画布 Agent 用这个模型前会先读它（擅长 / 不擅长 / 输入限制 / 提示词 / 已知问题）')
+    notes.append('在模型文件里补上 family、capabilities（词表见 models/_capabilities.md）和 checks（节点检查规则）')
 
     print(f"✓ 写好了 {path.relative_to(ROOT)}（{data['kind']}，{len(data['parameters'])} 个参数）")
     print('  输入: ' + ', '.join(f'{k}→{v if isinstance(v, str) else v["field"]}' for k, v in data['inputs'].items()))
