@@ -5,6 +5,7 @@ canvas command that can change a node's inputs (commands.py) and when a generati
 (worker.py: a new picture upstream changes what the nodes below it would send).
 """
 import json
+import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from . import Problem, check_inputs
@@ -63,10 +64,20 @@ def refresh(repository: 'CanvasRepository', canvas_id: str) -> None:
 
 def load(repository: 'CanvasRepository', canvas_id: str) -> dict[str, list[dict[str, Any]]]:
     """nodeId -> problems, only for nodes that have any."""
-    if _checked_with.get(canvas_id) != _models_stamp() and repository.database.active_connection() is None:
+    stamp = _models_stamp()
+    if _checked_with.get(canvas_id) != stamp and repository.database.active_connection() is None:
         # First read since start, or a model file changed: results may be missing or stale.
-        with repository.transaction():
-            refresh(repository, canvas_id)
+        has_media = repository._fetchone(
+            "SELECT 1 FROM canvas_nodes WHERE canvas_id = ? AND node_type IN ('image', 'video') LIMIT 1",
+            (canvas_id,))
+        if has_media is None:
+            _checked_with[canvas_id] = stamp
+        else:
+            try:
+                with repository.transaction():
+                    refresh(repository, canvas_id)
+            except sqlite3.OperationalError:
+                pass  # someone else is writing; the next read (or edit) re-checks
     rows = repository._fetchall(
         'SELECT node_id, problems_json FROM node_checks WHERE canvas_id = ?', (canvas_id,))
     found = {}

@@ -133,7 +133,7 @@ python3 scripts/add_model.py owner/name [--kind video] [--id my-id] [--default]
      { "rule": "side_multiple", "of": 16 }
    ]
    ```
-   可用规则（都可以加 `"target": "videos"` 改查参考视频）：`aspect_range`（宽高比 min～max）、`side_range`（每条边像素 min～max）、`side_multiple`（宽高是 of 的倍数）、`max_pixels`（总像素上限）、`duration_range`（参考视频秒数）、`prompt_length`（Prompt 字数上限）、`requires`（至少要连几个 `images` / `videos`）。真有新类型的规则时，在 `api/app/checks/__init__.py` 加一个函数。
+   可用规则（都可以加 `"target": "videos"` 改查参考视频）：`aspect_range`（宽高比 min～max）、`side_range`（每条边像素 min～max）、`side_multiple`（宽高是 of 的倍数）、`max_pixels`（总像素上限）、`pixel_range`（总像素 min～max）、`total_duration`（所有参考视频加起来的秒数上限）、`duration_range`（参考视频秒数）、`prompt_length`（Prompt 字数上限）、`requires`（至少要连几个 `images` / `videos`）。真有新类型的规则时，在 `api/app/checks/__init__.py` 加一个函数。
 3. **生成失败兜底**：模型服务拒绝时，`api/app/providers/errors.py` 把常见报错翻成一句人话（带原始报错），存进 `model_rejections` 表。Agent 按原因调整一次再试；`get_model_guide` 和「模型」面板会列出最近的拒绝原因，发现是规律就补进说明文档。
 
 ## 2. provider 对接代码

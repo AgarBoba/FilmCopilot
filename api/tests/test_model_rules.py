@@ -289,3 +289,36 @@ def test_model_guide_api(client):
     words = [item['name'] for item in client.get('/api/models/capabilities').json()['capabilities']]
     assert 'omni_reference' in words and 'first_last_frame' in words
     assert client.get('/api/models').json()['models'][0]['capabilities']
+
+
+# ------------------------------------------------------------ Seedance 2.5: two endpoints, one family
+
+def test_seedance_25_video_rules_pixel_range_and_total_duration():
+    model = registry().get('seedance-2.5')
+    ok = ref(1280, 720, '镜头', kind='video', seconds=10)
+    assert check_inputs(model, {'prompt': 'p', 'references': [ok, {**ok, 'sourceTitle': '镜头 2'}]}) == []
+    codes = lambda refs: sorted(problem.code for problem in check_inputs(model, {'prompt': 'p', 'references': refs}))
+    assert codes([ref(640, 360, kind='video', seconds=5)]) == ['pixel_range']  # 230,400 px, below 480p
+    assert codes([{**ok, 'duration_seconds': 20}, {**ok, 'duration_seconds': 15}]) == ['total_duration']
+    assert '8,295,044' in ' '.join(model.checks_text())
+
+
+def test_seedance_25_frames_endpoint_puts_references_in_first_and_last_frame(repository, tmp_path):
+    frames = registry().get('seedance-2.5-frames')
+    assert registry().family_of(frames)[0].id == 'seedance-2.5'
+    inputs = build_inputs(frames, GenerationRequest('p', images=['a.png', 'b.png']), lambda path: path)
+    assert (inputs['image'], inputs['last_frame_image'], inputs['aspect_ratio']) == ('a.png', 'b.png', 'adaptive')
+    assert [problem.code for problem in check_inputs(frames, {'references': []})] == ['requires']
+
+    tools, _, canvas_id = setup(repository)
+    first, last, video = tools.create_nodes([
+        {'type': 'image', 'title': '开场'}, {'type': 'image', 'title': '结尾'},
+        {'type': 'video', 'prompt': '镜头环绕', 'model': 'seedance-2.5-frames'},
+    ]).touched
+    add_asset(repository, canvas_id, first, tmp_path / 'a.png', 'a', (800, 800))
+    add_asset(repository, canvas_id, last, tmp_path / 'b.png', 'b', (800, 800))
+    tools.connect(first, video)
+    tools.connect(last, video)
+    assert '首帧←「开场」、尾帧←「结尾」' in tools.get_node(video).text
+    text = tools.list_models(capability='first_last_frame').text
+    assert 'seedance-2.5-frames' in text and '同一模型的其他接口：seedance-2.5' in text

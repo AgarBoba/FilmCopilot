@@ -43,6 +43,16 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-10-12 接入 Seedance 2.5（全能参考 + 首尾帧两个接口）
+
+- 新模型文件：`models/seedance-2.5.json`（全能参考：最多 30 张图、10 段视频，4～30 秒或 Auto，480p / 720p，7 种画幅 + adaptive，带声音）和 `models/seedance-2.5-frames.json`（同一个 Replicate 模型的首帧 / 首尾帧字段 `image` / `last_frame_image`，按连线顺序；画幅固定 adaptive）。两个都写 `"family": "seedance-2.5"`，是「同家族 omni 接口 + 老式功能接口」的第一个实例。各自配了说明文档。
+- 限制来源：火山方舟《Doubao Seedance 2.5 教程》使用限制一节（2026-09-30 更新）+ Replicate 的接口 schema（resolution 只有 480p / 720p，duration 默认 5，aspect_ratio 默认 16:9，画布里默认改成 adaptive）。节点检查：参考图宽高比 0.4～2.5、边长 300～6000；参考视频同样的比例和边长、总像素 407,696～8,295,044、每段 2～30 秒、加起来 ≤30 秒。
+- 新增两条检查规则：`pixel_range`、`total_duration`。数字格式改成大数带千分位。
+- 价格：按 Replicate 无参考视频的价格估（720p $0.2312/秒 → 5 秒 116 积分，480p ×0.45，Auto 按 10 秒）；有参考视频时实际约 4 倍，模拟积分没区分，写进了说明文档的「已知问题」。
+- 提示词技能：说明文档写的是官方 `sd25-pe`（`my-skills:sd25-pe`，装在本机 `data/agent-skills/skills/`，不进 git）。没装时 get_model_guide 会提示找不到，Agent 按说明文档里摘的官方规则写。
+- 修复：快照读取时的「补算检查」在并发创建画布时会撞上数据库锁（`test_concurrent_creation_of_default_canvas_is_idempotent` 偶发失败）。现在空画布直接跳过，遇到锁就先用已存的结果。
+- 验证：后端 pytest 230 通过（新增 2 个），前端 114 通过，`tsc -b` 通过；`check_model.py` 两个新模型都通过（本环境没有 Replicate token）。**未验证**：没有真实生成过；编辑 / 延长视频这类按提示词判断任务类型的行为没有实测。
+
 ### 2026-10-12 模型的输入要求：说明文档、节点检查、失败兜底三道关
 
 - 背景：模型对输入有各种要求（参考图比例、边长倍数、视频时长…），以前只有生成失败后才知道，Agent 也看不到。

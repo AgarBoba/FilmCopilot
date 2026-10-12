@@ -61,6 +61,8 @@ def _name(ref: dict[str, Any]) -> str:
 
 
 def _number(value: float) -> str:
+    if float(value).is_integer():
+        return f'{int(value):,}' if abs(value) >= 10000 else str(int(value))
     return f'{value:g}'
 
 
@@ -149,6 +151,31 @@ def _max_pixels(settings: dict[str, Any], inputs: Inputs) -> list[Problem]:
     return problems
 
 
+def _pixel_range(settings: dict[str, Any], inputs: Inputs) -> list[Problem]:
+    low, high = settings.get('min'), settings.get('max')
+    problems = []
+    for ref, width, height in _sized(inputs, settings):
+        pixels = width * height
+        if (low is not None and pixels < low) or (high is not None and pixels > high):
+            problems.append(Problem(
+                'pixel_range',
+                f'{_name(ref)}是 {width}×{height}（{pixels:,} 像素），{inputs.model_label} 要求'
+                f'{TARGET_LABEL[_target(settings)]}总像素{_range_text(low, high)}。',
+                source_node_id=ref.get('sourceNodeId'),
+            ))
+    return problems
+
+
+def _total_duration(settings: dict[str, Any], inputs: Inputs) -> list[Problem]:
+    limit = settings['max']
+    items = inputs.of(_target(settings, 'videos'))
+    total = sum(ref.get('duration_seconds') or 0 for ref in items)
+    if total <= limit:
+        return []
+    return [Problem('total_duration', f'连着的 {len(items)} 段参考视频一共 {total:.1f} 秒，'
+                                      f'{inputs.model_label} 要求加起来不超过 {_number(limit)} 秒。少连几段或剪短一些。')]
+
+
 def _duration_range(settings: dict[str, Any], inputs: Inputs) -> list[Problem]:
     low, high = settings.get('min'), settings.get('max')
     problems = []
@@ -201,6 +228,12 @@ RULES: dict[str, Rule] = {
     'max_pixels': Rule(
         {'max': NUMBER, 'target': str}, ('max',), _max_pixels,
         lambda s: f"{TARGET_LABEL[_target(s)]}最多 {int(s['max']):,} 像素"),
+    'pixel_range': Rule(
+        {'min': NUMBER, 'max': NUMBER, 'target': str}, (), _pixel_range,
+        lambda s: f"{TARGET_LABEL[_target(s)]}总像素{_range_text(s.get('min'), s.get('max'))}"),
+    'total_duration': Rule(
+        {'max': NUMBER, 'target': str}, ('max',), _total_duration,
+        lambda s: f"参考视频加起来不超过 {_number(s['max'])} 秒"),
     'duration_range': Rule(
         {'min': NUMBER, 'max': NUMBER, 'target': str}, (), _duration_range,
         lambda s: f"参考视频时长{_range_text(s.get('min'), s.get('max'), ' 秒')}"),
@@ -240,7 +273,7 @@ def validate_checks(raw: Any, where: str) -> tuple[dict[str, Any], ...]:
                 raise ValueError(f'{at}: {key} 类型不对')
         if 'target' in settings and settings['target'] not in TARGETS:
             raise ValueError(f'{at}: target 只能是 images 或 videos')
-        if not settings and item['rule'] in ('aspect_range', 'side_range', 'duration_range', 'requires'):
+        if not settings and item['rule'] in ('aspect_range', 'side_range', 'pixel_range', 'duration_range', 'requires'):
             raise ValueError(f'{at}: {item["rule"]} 至少要写一个范围')
         checks.append({'rule': item['rule'], **settings})
     return tuple(checks)

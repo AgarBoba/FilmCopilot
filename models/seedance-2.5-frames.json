@@ -1,0 +1,32 @@
+{
+  "id": "seedance-2.5-frames",
+  "label": "Seedance 2.5 首尾帧",
+  "kind": "video",
+  "provider": "replicate",
+  "providerModel": "bytedance/seedance-2.5",
+  "default": false,
+  "description": "Seedance 2.5 的首帧 / 首尾帧接口：第 1 条连线的图是首帧，第 2 条是尾帧，画面严格从首帧开始。画幅自动跟随首帧。不能再加别的参考。",
+  "family": "seedance-2.5",
+  "capabilities": ["first_frame", "first_last_frame", "audio"],
+  "checks": [
+    { "rule": "requires", "images": 1 },
+    { "rule": "aspect_range", "min": 0.4, "max": 2.5 },
+    { "rule": "side_range", "min": 300, "max": 6000 }
+  ],
+  "credits": { "base": 116, "multiply": {
+    "duration": { "-1": 2, "10": 2, "15": 3, "20": 4, "30": 6 },
+    "resolution": { "480p": 0.45 } } },
+  "inputs": {
+    "prompt": "prompt",
+    "images": { "fields": ["image", "last_frame_image"] }
+  },
+  "parameters": [
+    { "key": "duration", "label": "Duration", "type": "enum", "field": "duration", "default": 5,
+      "options": [{ "value": 5, "label": "5s" }, { "value": 10, "label": "10s" }, { "value": 15, "label": "15s" },
+                  { "value": 20, "label": "20s" }, { "value": 30, "label": "30s" }, { "value": -1, "label": "Auto" }] },
+    { "key": "resolution", "label": "Resolution", "type": "enum", "field": "resolution", "default": "720p",
+      "options": [{ "value": "480p", "label": "480p" }, { "value": "720p", "label": "720p" }] },
+    { "key": "generateAudio", "label": "Audio", "type": "boolean", "field": "generate_audio", "default": true }
+  ],
+  "fixedInputs": { "aspect_ratio": "adaptive" }
+}
