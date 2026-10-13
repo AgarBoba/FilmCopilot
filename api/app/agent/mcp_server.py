@@ -100,6 +100,22 @@ TOOL_SPECS: list[tuple[str, str, dict[str, Any]]] = [
      '（参考原图重画，用来做局部修改）。',
      {'type': 'object', 'properties': {'node_ids': ID_LIST, 'reference_current': {'type': 'boolean'}},
       'required': ['node_ids']}),
+    ('extract_frame',
+     '从一个视频节点截取一帧，存成新的图片节点（原视频不变，不花积分）。at：last（默认，最后一帧）、first，或从开头算的秒数。'
+     '做长镜头时用来取上一段的末帧，当下一段的首帧 / 尾帧。',
+     {'type': 'object', 'properties': {'node_id': {'type': 'string'},
+                                       'at': {'description': 'last | first | 秒数', 'anyOf': [
+                                           {'type': 'string', 'enum': ['last', 'first']}, {'type': 'number'}]}},
+      'required': ['node_id']}),
+    ('join_videos',
+     '把几个视频节点按顺序首尾拼接成一个新的视频节点（原视频不变，不花积分）。每段可用 start / end（秒）裁掉开头或结尾，'
+     '比如去掉两段之间重复的部分。画面尺寸以第一段为准，统一成 24 帧；有一段没声音时那段补静音。',
+     {'type': 'object', 'properties': {
+         'clips': {'type': 'array', 'minItems': 2, 'items': {'type': 'object', 'properties': {
+             'node_id': {'type': 'string'}, 'start': {'type': 'number'}, 'end': {'type': 'number'}},
+             'required': ['node_id']}},
+         'title': {'type': 'string'}},
+      'required': ['clips']}),
     ('wait_for_generation', '等待这些节点的生成完成，返回结果图片（视频为关键帧）或失败原因。',
      {'type': 'object', 'properties': {'node_ids': ID_LIST}, 'required': ['node_ids']}),
     ('remember',
@@ -157,6 +173,10 @@ async def call_tool(tools: CanvasTools, name: str, args: dict[str, Any]) -> Tool
         return tools.delete_nodes(args['node_ids'])
     if name == 'generate':
         return tools.generate(args['node_ids'], bool(args.get('reference_current')))
+    if name == 'extract_frame':
+        return tools.extract_frame(args['node_id'], args.get('at', 'last'))
+    if name == 'join_videos':
+        return tools.join_videos(args['clips'], args.get('title'))
     if name == 'wait_for_generation':
         return await tools.wait_for_generation(args['node_ids'])
     if name in MEMORY_TOOLS:

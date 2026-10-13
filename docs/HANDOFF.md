@@ -62,6 +62,7 @@ cd web && pnpm test -- --run && pnpm exec tsc -b
 | `db.py` | 建表和迁移（如 `_migrate_comments`）。加表或加列都在这里，旧库要能自动升级。 |
 | `repositories.py` / `versions.py` / `upstream.py` | 读画布；节点的版本历史；「上游有更新」。 |
 | `worker.py` / `providers/` / `models_registry.py` | 生成任务和模型登记。 |
+| `clips.py` | 本机视频操作：截取一帧成图片节点（extract_frame）、多段视频按顺序拼接（join_videos），给一镜到底长镜头用。 |
 | `credits.py` | 模拟积分：流水表 `credit_ledger`、生成价格（模型文件的 `credits`）、扣费和退回。生成在 `commands._start_generation` 扣，失败在 worker 退，删节点在 `repositories.delete_node` 退；Agent 每轮在 `runtime._charge_turn` 扣。 |
 | `routes/` | HTTP 接口：`agent.py`、`comments.py`、`canvases.py` 等。 |
 

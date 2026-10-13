@@ -36,7 +36,7 @@ TASK_TOOLS = ('TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet')
 BUILTIN_TOOLS = (SKILL_TOOL, *WEB_TOOLS, *TASK_TOOLS)
 
 # Order in the / menu: the most common jobs first. Skills not listed follow, by name.
-BUILTIN_ORDER = ('storyboard', 'prompt-craft', 'review', 'canvas-layout')
+BUILTIN_ORDER = ('storyboard', 'long-take', 'prompt-craft', 'review', 'canvas-layout')
 NAME_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,63}$')
 
 

@@ -16,7 +16,7 @@ from ..db import Database
 from ..models_registry import registry as model_registry
 
 SOURCE_LABELS = {'generated': '生成', 'uploaded': '上传', 'copied': '复制', 'restored': '切回旧版', 'edited': '其他',
-                 'cropped': '裁剪'}
+                 'cropped': '裁剪', 'frame': '从视频截取', 'joined': '拼接'}
 
 
 def origins(database: Database, canvas_id: str) -> dict[tuple[str, str], dict[str, Any]]:

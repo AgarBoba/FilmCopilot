@@ -15,7 +15,7 @@ READ_ONLY_TOOLS = {'get_canvas', 'get_node', 'view_asset', 'get_node_versions', 
                    'get_model_guide'}
 WRITE_TOOLS = {
     'create_nodes', 'update_node', 'connect', 'disconnect', 'move_nodes',
-    'duplicate_nodes', 'delete_nodes', 'generate',
+    'duplicate_nodes', 'delete_nodes', 'generate', 'extract_frame', 'join_videos',
 }
 ASK_IN_DEFAULT_MODE = {'generate', 'delete_nodes'}
 MEMORY_TOOLS = {'remember', 'update_memory', 'forget', 'recall'}
@@ -75,6 +75,12 @@ def describe_request(tool_name: str, args: dict[str, Any], titles: dict[str, str
     if name == 'delete_nodes':
         ids = list(args.get('node_ids') or [])
         return f'删除 {len(ids)} 个节点：{names(ids)}'
+    if name == 'extract_frame':
+        where = {'last': '末帧', 'first': '首帧'}.get(args.get('at', 'last'), f"第 {args.get('at')} 秒")
+        return f"从{names([args.get('node_id', '')])}截取{where}，新建一个图片节点"
+    if name == 'join_videos':
+        ids = [clip.get('node_id', '') for clip in args.get('clips') or [] if isinstance(clip, dict)]
+        return f'把 {len(ids)} 段视频按顺序拼成一个新视频：{names(ids)}'
     if name == 'create_nodes':
         return f"新建 {len(args.get('nodes') or [])} 个节点"
     if name == 'update_node':

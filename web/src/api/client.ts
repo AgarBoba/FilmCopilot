@@ -87,6 +87,8 @@ export const api = {
     const eventTypes = [
       'canvas.create_node',
       'canvas.crop_image',
+      'canvas.extract_frame',
+      'canvas.join_videos',
       'canvas.update_node',
       'canvas.delete_node',
       'canvas.delete_elements',

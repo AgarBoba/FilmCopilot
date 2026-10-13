@@ -125,6 +125,8 @@ class CanvasCommandService:
         handlers = {
             'create_node': self._create_node,
             'crop_image': self._crop_image,
+            'extract_frame': self._extract_frame,
+            'join_videos': self._join_videos,
             'update_node': self._update_node,
             'move_nodes': self._move_nodes,
             'delete_node': self._delete_node,
@@ -143,6 +145,14 @@ class CanvasCommandService:
         if handler is None:
             raise DomainError('UNKNOWN_COMMAND', f'Unknown canvas command {envelope.command}')
         return handler(canvas_id, envelope.payload)
+
+    def _extract_frame(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        from .clips import extract_frame
+        return extract_frame(self.repository, canvas_id, payload, self.data_dir)
+
+    def _join_videos(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        from .clips import join_videos
+        return join_videos(self.repository, canvas_id, payload, self.data_dir)
 
     def _crop_image(self, canvas_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         from .crop import crop_image

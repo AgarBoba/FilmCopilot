@@ -7,7 +7,7 @@
   "default": false,
   "description": "字节跳动 Seedance 旗舰视频模型（全能参考）：一次最长 30 秒，最多参考 30 张图和 10 段视频，带同步声音；也能按提示词编辑或延长参考视频。比 2.0 Mini 贵很多。",
   "family": "seedance-2.5",
-  "capabilities": ["omni_reference", "text_to_video", "reference_video", "audio"],
+  "capabilities": ["omni_reference", "text_to_video", "reference_video", "video_extend", "video_edit", "audio"],
   "checks": [
     { "rule": "aspect_range", "min": 0.4, "max": 2.5 },
     { "rule": "side_range", "min": 300, "max": 6000 },

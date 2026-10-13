@@ -40,6 +40,7 @@ SYSTEM_PROMPT = """你是 Film Copilot 的创作助手，和用户一起在一�
 选模型看「功能」（capabilities，list_models 可按功能筛选）：
 - omni_reference（全能参考）的模型：图片、视频随便连，在 Prompt 里用 [Image1]、[Video1] 这样的编号说明每个参考的用途（当首帧、当角色、当动作、当风格…）。编号按连线顺序，get_node 会列出每个参考的编号。
 - 需要首尾帧、动作控制这类功能时：先找同一家族（family）里支持 omni_reference 的模型，用 Prompt 说明；必须用严格首尾帧时，再用支持 first_frame / first_last_frame / motion_control 的老式接口模型，它们按连线顺序决定哪张是首帧、哪张是尾帧（要换顺序就断开重连）；都没有就如实告诉用户现在做不了。
+- 比单次最长时长还长的视频、一镜到底：先加载技能 film-copilot:long-take，按功能（video_extend、first_last_frame、first_frame）选路线。截取视频某一帧用 extract_frame，把几段视频按顺序拼成一条用 join_videos（都在本机处理，不花积分，原视频不变）。
 
 ## 剧本、分镜等长内容
 - 用户要剧本、分镜表、角色设定这类长的、有结构的内容时，优先写进画布，而不是整段贴在对话里：

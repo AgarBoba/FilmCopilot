@@ -80,7 +80,8 @@ def crop_image(repository, canvas_id: str, payload: dict, data_dir: Path) -> dic
 def describe_source(data: dict) -> str | None:
     origin = data.get('cropSource')
     if not isinstance(origin, dict):
-        return None
+        from .clips import describe_clip_source
+        return describe_clip_source(data)
     rect = origin.get('rect', {})
     return (f"裁剪来源：「{origin.get('title', '图片节点')}」[{origin.get('nodeId', '')}] "
             f"第 {origin.get('version', 1)} 版；来源素材 [{origin.get('assetId', '')}]；"

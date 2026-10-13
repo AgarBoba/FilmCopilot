@@ -655,6 +655,65 @@ class CanvasTools:
             summary=f'删除 {len(node_ids)} 个节点',
         )
 
+    def extract_frame(self, node_id: str, at: Any = 'last') -> ToolResult:
+        """Take one frame of a video node (last / first / at N seconds) as a new image node."""
+        snapshot = self.repository.get_snapshot(self.canvas_id)
+        node = next((item for item in snapshot.nodes if item.id == node_id), None)
+        if node is None:
+            return self._error(ERROR_TEXT['NOT_FOUND'])
+        title = node.data.get('title', '')
+        if node.nodeType != 'video' or not node.data.get('assetId'):
+            return self._error(f'「{title}」不是有视频的视频节点，不能截取画面。')
+        if (busy := self._busy_error([node_id])):
+            return busy
+        result = self._command('extract_frame', {'sourceNodeId': node_id, 'at': at}, {node_id: {'gone', 'media'}})
+        if isinstance(result, ToolResult):
+            return result
+        new_id = result['nodeId']
+        new_title = self._titles([new_id]).get(new_id, '')
+        return ToolResult(
+            f"已从「{title}」截取 {result['at']:g} 秒处的画面（{result['width']}×{result['height']}），"
+            f"新建图片节点「{new_title}」[{new_id}]。要当下一段的首帧或尾帧，就把它连到那个视频节点上。",
+            touched=[node_id, new_id], summary=f'从「{title}」截取画面',
+        )
+
+    def join_videos(self, clips: list[dict[str, Any]], title: str | None = None) -> ToolResult:
+        """Join video nodes end to end (each optionally trimmed) into a new video node."""
+        if not isinstance(clips, list) or len(clips) < 2:
+            return self._error('至少要两段视频才能拼接。')
+        snapshot = self.repository.get_snapshot(self.canvas_id)
+        nodes = {node.id: node for node in snapshot.nodes}
+        payload_clips, deps = [], {}
+        for clip in clips:
+            node_id = clip.get('node_id') if isinstance(clip, dict) else None
+            node = nodes.get(node_id)
+            if node is None:
+                return self._error(ERROR_TEXT['NOT_FOUND'])
+            if node.nodeType != 'video' or not node.data.get('assetId'):
+                return self._error(f"「{node.data.get('title', '')}」不是有视频的视频节点，不能拼接。")
+            item = {'nodeId': node_id}
+            for key in ('start', 'end'):
+                if clip.get(key) is not None:
+                    item[key] = clip[key]
+            payload_clips.append(item)
+            deps[node_id] = {'gone', 'media'}
+        if (busy := self._busy_error(list(deps))):
+            return busy
+        payload: dict[str, Any] = {'clips': payload_clips}
+        if title:
+            payload['title'] = title
+        result = self._command('join_videos', payload, deps)
+        if isinstance(result, ToolResult):
+            return result
+        new_id = result['nodeId']
+        new_title = self._titles([new_id]).get(new_id, '')
+        duration = result.get('duration') or 0
+        return ToolResult(
+            f"已把 {result['clips']} 段视频按顺序拼成「{new_title}」[{new_id}]，共 {duration:.1f} 秒，"
+            f"{result['width']}×{result['height']}。用 view_asset 看拼接处有没有跳。",
+            touched=[*deps, new_id], summary=f"拼接 {result['clips']} 段视频",
+        )
+
     def generate(self, node_ids: list[str], reference_current: bool = False) -> ToolResult:
         """Start generations. reference_current: also send each node's current picture / video
         as a reference ("参考原图重画": the result replaces it, the old one stays as a version)."""

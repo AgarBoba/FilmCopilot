@@ -43,6 +43,18 @@ API、Web 和 Worker 的启动方式见 [README.md](README.md) 与 [scripts/dev.
 
 ## 开发与修复记录
 
+### 2026-10-13 一镜到底长镜头：技能 + 截帧 / 拼接工具 + 延长视频功能词
+
+- 目的：用户给参考素材，让 Agent 做比模型单次最长时长还长的一镜到底视频（比如 30 秒、1 分钟）。按「技法 / 能力 / 工具」三层来：技法写成技能、只认功能词不认模型名；模型能做什么写在模型 JSON 的 capabilities 和说明里；技法要用到的基础操作做成工具。
+- 功能词表（models/_capabilities.md）加了 `video_extend`（延长视频）和 `video_edit`（编辑视频）；seedance-2.5 标上这两个功能，说明里补了官方「一镜到底」「多轮延长」的说法和「延长结果是否带原视频不确定，生成完看时长」的已知问题。
+- 新技能 `film-copilot:long-take`（一镜到底长镜头），排在内置技能第 2 位：按功能选路线——A 单次最长够就一次生成（按时间段写提示词）；B 有 video_extend 就逐段延长；C 有 first_last_frame 就先做关键帧再首尾帧接力；D 只有 first_frame 就末帧接力；都没有就如实说做不了。还有分段和衔接点怎么选、先给用户看分段表和总价、每段生成后检查接缝、越接越偏怎么办。系统提示词加了一句指向它。
+- 新工具（本机 ffmpeg，不花积分，原视频不变，结果是新节点并记录来源）：
+  - `extract_frame(node_id, at)`：截取视频的末帧 / 首帧 / 第 N 秒，新建图片节点（data.frameSource）。
+  - `join_videos(clips, title)`：按顺序首尾拼接多段视频，每段可用 start / end 裁剪；尺寸跟第一段、统一 24 帧，有的段没声音就补静音（data.joinSource）。
+  - 对应画布命令 `extract_frame` / `join_videos`（`api/app/clips.py`），权限和新建节点一样（每步确认模式下要确认，其余直接执行）；get_node / get_canvas 会写「截取来源 / 拼接来源」；版本来源标「从视频截取」「拼接」。
+- Seedance 2.5 官方信息（字节 Seed 7/31 发布文）：单次最长 30 秒（2.0 是 15 秒）、参考最多 30 图 / 10 视频 / 10 音频、支持多轮延长到几分钟、带同步声音、时间点级编辑。Replicate 上的字段名没能在线核对（本机网络连不上 Replicate API），沿用已有的 seedance-2.5 / seedance-2.5-frames 模型文件。
+- 验证：后端 pytest 234 通过（新增 `tests/test_clips.py`：用 ffmpeg 现做测试视频，验证末帧颜色、指定秒数、非法参数、拼接时长和裁剪、混合有无声音、工具文字、权限、功能词和技能）；前端 vitest 114 通过，tsc 干净。没在真实模型上跑过一镜到底全流程。
+
 ### 2026-10-12 接入 Seedance 2.5（全能参考 + 首尾帧两个接口）
 
 - 新模型文件：`models/seedance-2.5.json`（全能参考：最多 30 张图、10 段视频，4～30 秒或 Auto，480p / 720p，7 种画幅 + adaptive，带声音）和 `models/seedance-2.5-frames.json`（同一个 Replicate 模型的首帧 / 首尾帧字段 `image` / `last_frame_image`，按连线顺序；画幅固定 adaptive）。两个都写 `"family": "seedance-2.5"`，是「同家族 omni 接口 + 老式功能接口」的第一个实例。各自配了说明文档。
